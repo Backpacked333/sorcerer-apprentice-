@@ -1,36 +1,68 @@
 import Link from "next/link";
 
-const cards = [
-  { href: "/erp", title: "Sandbox ERP", body: "Accounts payable at a machine builder near Stuttgart. Three invoices for the expert, three for the new hire, five for the autopilot.", tag: "sandbox" },
-  { href: "/capture", title: "1 · Capture", body: "The expert shares the ERP tab. The apprentice watches, stays quiet while she works, asks why at the pause.", tag: "expert" },
-  { href: "/map", title: "2 · Map", body: "The debrief closes the open slots, the teach-back is confirmed, and the Work Map becomes clickable.", tag: "debrief" },
-  { href: "/teach", title: "3 · Teach", body: "The new hire works a case the expert never showed. The tutor steps in before a wrong value is saved.", tag: "new hire" },
+const knowledge = [
+  { title: "The decision", body: "What changed, and at which moment in the work." },
+  { title: "The reason", body: "The expert’s own words, attached to that moment." },
+  { title: "The boundaries", body: "When the approach changes. When to stop and ask." },
 ];
 
 export default function Home() {
   return (
-    <main className="grid-bg min-h-screen">
-      <div className="mx-auto max-w-5xl px-6 py-16">
-        <p className="panel-title">Tacit · the AI Apprentice</p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight">We know more than we can tell.</h1>
-        <p className="mt-3 max-w-2xl text-muted">
-          A recorder captures what happened. An automation tool copies the clicks. An apprentice asks why, learns the limit and the moment to stop, and refuses to say it
-          understands until the expert says so.
-        </p>
-        <div className="mt-10 grid gap-4 sm:grid-cols-2">
-          {cards.map((c) => (
-            <Link key={c.href} href={c.href} className="panel p-5 transition hover:border-amber">
-              <div className="flex items-center justify-between">
-                <h2 className="text-lg font-medium">{c.title}</h2>
-                <span className="tag">{c.tag}</span>
-              </div>
-              <p className="mt-2 text-sm text-muted">{c.body}</p>
-            </Link>
-          ))}
+    <main className="min-h-screen">
+      <header className="border-b border-line">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-5">
+          <Link href="/" className="flex items-center gap-3 text-lg font-semibold tracking-tight" aria-label="Tacit home">
+            <span className="brand-mark" aria-hidden="true">t</span>Tacit
+          </Link>
+          <nav aria-label="Main navigation" className="flex flex-wrap gap-6 text-sm text-muted">
+            <Link href="/map" className="hover:text-ink">Work Maps</Link>
+            <Link href="/capture" className="hover:text-ink">Capture</Link>
+            <Link href="/teach" className="hover:text-ink">Practice</Link>
+          </nav>
         </div>
-        <p className="mt-10 text-xs text-muted">
-          Keyless mode runs the whole flow with the ERP&apos;s own telemetry and the browser&apos;s speech synthesis. Add ElevenLabs and AI Gateway keys in <span className="mono">.env.local</span> for the real voice agents and vision.
-        </p>
+      </header>
+      <div className="mx-auto max-w-6xl px-6 py-12 md:py-20">
+        <div className="grid items-start gap-12 lg:grid-cols-[1.1fr_1fr] lg:gap-20">
+          <section aria-labelledby="welcome-title">
+            <p className="panel-title">Experience, made shareable</p>
+            <h1 id="welcome-title" className="mt-5 max-w-xl text-4xl font-medium leading-[1.12] tracking-tight md:text-6xl">
+              Keep the know-how.<br /><span className="text-amber">Not just the steps.</span>
+            </h1>
+            <p className="mt-6 max-w-lg text-lg leading-relaxed text-muted">
+              The small decisions. The reasons behind them. The moment to ask for help.
+              Turn an expert’s experience into a Work Map someone else can learn from.
+            </p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/map" className="btn btn-primary px-5 py-3">Explore Work Maps <span aria-hidden="true">↗</span></Link>
+              <Link href="/capture" className="btn px-5 py-3">Share your know-how</Link>
+            </div>
+            <p className="mt-4 text-sm text-muted">Start with what’s already been learned, or capture something new.</p>
+          </section>
+          <section aria-labelledby="knowledge-title" className="panel p-6 md:p-8">
+            <p className="panel-title">Inside a Work Map</p>
+            <h2 id="knowledge-title" className="mt-2 text-2xl font-medium tracking-tight">The why belongs with the work.</h2>
+            <p className="mt-3 text-sm leading-relaxed text-muted">A connected record of decisions, evidence and the expert’s reasoning—not a transcript to sift through.</p>
+            <ol className="knowledge-outline mt-7">
+              {knowledge.map((item, index) => (
+                <li key={item.title} className="relative pb-7 pl-10 last:pb-0">
+                  <span className="knowledge-node mono" aria-hidden="true">{index + 1}</span>
+                  <h3 className="font-medium">{item.title}</h3>
+                  <p className="mt-1 text-sm leading-relaxed text-muted">{item.body}</p>
+                </li>
+              ))}
+            </ol>
+            <p className="mt-7 border-t border-line pt-5 text-sm text-muted">Missing explanations stay visible. The expert decides when the map is right.</p>
+          </section>
+        </div>
+        <section aria-label="How Tacit works" className="mt-16 grid gap-8 border-t border-line pt-8 md:grid-cols-3">
+          <div><p className="panel-title">01 · Capture</p><h2 className="mt-2 text-lg font-medium">Make room for the expert.</h2><p className="mt-2 text-sm leading-relaxed text-muted">Work through a case and share the reasoning behind a decision. You choose what to share.</p></div>
+          <div><p className="panel-title">02 · Map</p><h2 className="mt-2 text-lg font-medium">Give knowledge a shape.</h2><p className="mt-2 text-sm leading-relaxed text-muted">Connect the screen moment, the explanation and its limits. Review and confirm what was learned.</p></div>
+          <div><p className="panel-title">03 · Teach</p><h2 className="mt-2 text-lg font-medium">Let someone else try.</h2><p className="mt-2 text-sm leading-relaxed text-muted">Use the confirmed map on a new case. See what was understood independently and where help was needed.</p></div>
+        </section>
+        <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6 text-sm text-muted">
+          <p>Keyless mode uses ERP telemetry and browser speech—not live vision or ElevenLabs.</p>
+          <Link href="/erp" className="underline underline-offset-4 hover:text-ink">Open the ERP sandbox</Link>
+        </footer>
       </div>
     </main>
   );

@@ -114,10 +114,27 @@ function mediaRefs(log: SessionLog): { frames: Set<string>; clips: Set<string> }
   };
 }
 
+function evidenceWithdrawn(previous: SessionLog, next: SessionLog): boolean {
+  const before = mediaRefs(previous);
+  const after = mediaRefs(next);
+  return [...before.frames].some((id) => !after.frames.has(id))
+    || [...before.clips].some((id) => !after.clips.has(id))
+    || JSON.stringify(previous.offRecord) !== JSON.stringify(next.offRecord);
+}
+
 function objectPath(workspace: string, sessionId: string, kind: "frames" | "clips", id: string, extension = kind === "frames" ? "jpg" : "webm"): string {
   assertId(sessionId);
   assertId(id);
   return `${workspace}/${sessionId}/${kind}/${id}.${extension}`;
+}
+
+async function deleteDerivedMap(workspace: string, sessionId: string): Promise<void> {
+  if (backend() === "supabase") {
+    const { error } = await db().from("work_maps").delete().eq("owner_id", workspace).eq("session_id", sessionId);
+    if (error) throw error;
+    return;
+  }
+  await fs.rm(localPath(workspace, "maps", sessionId), { force: true });
 }
 
 async function deleteRemovedMedia(workspace: string, previous: SessionLog | undefined, next: SessionLog): Promise<void> {
@@ -157,13 +174,14 @@ export async function saveSession(session: SessionLog): Promise<void> {
   assertId(session.id);
   const workspace = await owner();
   const previous = await getSession(session.id);
+  if (previous && evidenceWithdrawn(previous, session)) await deleteDerivedMap(workspace, session.id);
+  await deleteRemovedMedia(workspace, previous, session);
   if (backend() === "supabase") {
     const { error } = await db().from("sessions").upsert({ owner_id: workspace, id: session.id, data: session }, { onConflict: "owner_id,id" });
     if (error) throw error;
   } else {
     await writeJson(localPath(workspace, "sessions", session.id), session);
   }
-  await deleteRemovedMedia(workspace, previous, session);
 }
 
 export async function listSessions(): Promise<Pick<SessionLog, "id" | "mode" | "task" | "expertName" | "startedAt" | "endedAt">[]> {
@@ -265,6 +283,16 @@ export async function saveClip(sessionId: string, audioId: string, bytes: Uint8A
 }
 export async function readClip(sessionId: string, audioId: string): Promise<Uint8Array | undefined> {
   return readObject("clips", sessionId, audioId);
+}
+export async function deleteClip(sessionId: string, audioId: string): Promise<void> {
+  const workspace = await owner();
+  const key = objectPath(workspace, sessionId, "clips", audioId);
+  if (backend() === "supabase") {
+    const { error } = await db().storage.from(SUPABASE_BUCKET).remove([key]);
+    if (error) throw error;
+    return;
+  }
+  await fs.rm(localMediaPath(workspace, sessionId, "clips", audioId, "webm"), { force: true });
 }
 export async function saveFrame(sessionId: string, frameId: string, bytes: Uint8Array, contentType: "image/jpeg" | "image/png" = "image/jpeg"): Promise<string> {
   const workspace = await owner();

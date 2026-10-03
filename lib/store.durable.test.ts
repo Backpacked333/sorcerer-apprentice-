@@ -23,6 +23,7 @@ const dataRoot = path.join(process.cwd(), ".data");
 const rows = new Map<string, Record<string, unknown>>();
 const media = new Map<string, Uint8Array>();
 const rateCounts = new Map<string, number>();
+let failNextMediaRemove = false;
 
 function rowKey(table: string, row: Record<string, unknown>): string {
   const id = table === "work_maps" ? row.session_id : table === "erp_state" ? row.owner_id : row.id;
@@ -38,9 +39,11 @@ function makeClient() {
     from(table: string) {
       let filters: Record<string, unknown> = {};
       let updateValue: Record<string, unknown> | undefined;
+      let deleting = false;
       const query: any = {
         select: () => query,
         eq: (key: string, value: unknown) => { filters[key] = value; return query; },
+        delete: () => { deleting = true; return query; },
         maybeSingle: async () => {
           const row = [...rows.entries()].find(([key, value]) => key.startsWith(`${table}:`) && matches(value, filters))?.[1];
           return { data: row ?? null, error: null };
@@ -51,6 +54,10 @@ function makeClient() {
         },
         update: (value: Record<string, unknown>) => { updateValue = value; return query; },
         then: (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) => {
+          if (deleting) {
+            for (const [key, row] of rows) if (key.startsWith(`${table}:`) && matches(row, filters)) rows.delete(key);
+            return Promise.resolve({ data: null, error: null }).then(resolve, reject);
+          }
           if (updateValue) for (const [key, row] of rows) if (key.startsWith(`${table}:`) && matches(row, filters)) rows.set(key, { ...row, ...updateValue });
           const data = [...rows.entries()].filter(([key, value]) => key.startsWith(`${table}:`) && matches(value, filters)).map(([, value]) => value);
           return Promise.resolve({ data, error: null }).then(resolve, reject);
@@ -90,6 +97,10 @@ function makeClient() {
           return { data: new Blob([buffer]), error: null };
         },
         remove: async (keys: string[]) => {
+          if (failNextMediaRemove) {
+            failNextMediaRemove = false;
+            return { error: new Error("temporary storage removal failure") };
+          }
           keys.forEach((key) => media.delete(key));
           return { error: null };
         },
@@ -107,6 +118,7 @@ beforeEach(() => {
   rows.clear();
   media.clear();
   rateCounts.clear();
+  failNextMediaRemove = false;
   supabaseMock.createClient.mockImplementation(() => makeClient());
   cookie.value = ownerA;
   cookie.request = true;
@@ -154,6 +166,16 @@ describe("workspace durable store", () => {
     expect((await store.getErpState()).guard).toEqual({ teachSessionId: "t_2" });
     expect((await store.getErpState()).invoices).toHaveLength(1);
 
+    const otherWorkspaceClip = new Uint8Array([0x1a, 0x45, 0xdf, 0xa4]);
+    cookie.value = ownerB;
+    await store.saveClip("s_1", "a_1", otherWorkspaceClip);
+    cookie.value = ownerA;
+    await store.deleteClip("s_1", "a_1");
+    expect(await store.readClip("s_1", "a_1")).toBeUndefined();
+    cookie.value = ownerB;
+    expect(await store.readClip("s_1", "a_1")).toEqual(otherWorkspaceClip);
+    cookie.value = ownerA;
+
     store = await loadStore();
     expect(await store.getSession("s_1")).toBeDefined();
     expect((await store.getMap("s_1"))?.revision).toBe(1);
@@ -173,6 +195,41 @@ describe("workspace durable store", () => {
     expect(await store.allowRateLimit("frames", 1, 60)).toBe(false);
   });
 
+  it("invalidates derived maps before retryable media cleanup and leaves old references until removal succeeds", async () => {
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only");
+    vi.stubEnv("STORAGE_BACKEND", "supabase");
+    const store = await loadStore();
+    const session = emptySession("s_retry", "capture", "task", "expert");
+    await store.saveSession(session);
+    const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
+    await store.saveFrame(session.id, "f_retry", bytes);
+    const withFrame = {
+      ...session,
+      frames: [{ id: "f_retry", t: 1, dataUrl: "/api/sessions/s_retry/frames?frameId=f_retry", width: 1, height: 1, piiRegionsBlurred: 0 }],
+    };
+    await store.saveSession(withFrame);
+    await store.saveMap(emptyMap(session.id, "task", "expert"));
+    expect(await store.getMap(session.id)).toBeDefined();
+
+    failNextMediaRemove = true;
+    await expect(store.saveSession(session)).rejects.toThrow("temporary storage removal failure");
+    expect(await store.getMap(session.id)).toBeUndefined();
+    expect(await store.getSession(session.id)).toMatchObject({ frames: [{ id: "f_retry" }] });
+    expect(await store.readFrame(session.id, "f_retry")).toEqual(bytes);
+
+    await store.saveSession(session);
+    expect(await store.getSession(session.id)).toMatchObject({ frames: [] });
+    expect(await store.readFrame(session.id, "f_retry")).toBeUndefined();
+    expect(await store.getMap(session.id)).toBeUndefined();
+
+    await store.saveMap(emptyMap(session.id, "task", "expert"));
+    const changedOffRecord = structuredClone(await store.getSession(session.id));
+    changedOffRecord!.offRecord.push({ from: 1, to: 2 });
+    await store.saveSession(changedOffRecord!);
+    expect(await store.getMap(session.id)).toBeUndefined();
+  });
+
   it("keeps the keyless local store usable for seeded CLI sessions", async () => {
     cookie.request = false;
     vi.stubEnv("STORE_OWNER_ID", localOwner);
@@ -185,6 +242,9 @@ describe("workspace durable store", () => {
     await store.saveSession(session);
     expect(await store.getSession("s_seed")).toMatchObject({ id: "s_seed", task: "seed" });
     expect(await store.listSessions()).toHaveLength(1);
+    cookie.request = true;
+    cookie.value = ownerB;
+    expect(await store.getSession("s_seed")).toMatchObject({ id: "s_seed", task: "seed" });
     const frameBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
     await store.saveFrame("s_seed", "f_seed", frameBytes, "image/png");
     const withFrame = { ...session, frames: [{ id: "f_seed", t: 1, dataUrl: "/api/sessions/s_seed/frames?frameId=f_seed", width: 1, height: 1, piiRegionsBlurred: 0 }] };
@@ -192,6 +252,18 @@ describe("workspace durable store", () => {
     expect(await store.readFrame("s_seed", "f_seed")).toEqual(frameBytes);
     await store.saveSession(session);
     expect(await store.readFrame("s_seed", "f_seed")).toBeUndefined();
+
+    vi.stubEnv("VERCEL", "1");
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only");
+    const production = await loadStore();
+    const productionSession = emptySession("s_prod", "capture", "production", "expert");
+    cookie.value = ownerB;
+    await production.saveSession(productionSession);
+    cookie.value = ownerA;
+    expect(await production.getSession("s_prod")).toBeUndefined();
+    cookie.value = ownerB;
+    expect(await production.getSession("s_prod")).toMatchObject({ id: "s_prod", task: "production" });
   });
 
   it("rejects invalid identifiers, invalid stored maps, partial config, and Vercel fallback", async () => {

@@ -13,8 +13,8 @@ Hack-Nation × ElevenLabs "AI Apprentice": three modules on one pipeline, one ar
 
 ```bash
 npm install
-npm run seed:session        # two demo sessions: one debrief-ready, one confirmed for Teach
-npm run dev                 # http://localhost:3000
+STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session
+STORAGE_BACKEND=local STORE_OWNER_ID=local npm run dev  # http://localhost:3000
 ```
 
 1. Open the ERP in one tab: `/erp` (Sabine's queue: 4471, 4472, 4473).
@@ -165,6 +165,6 @@ npx vercel deploy --prod
 
 Use Vercel's Next.js framework preset. Select the Supabase project URL/key from step 1, not an unrelated existing database. Run `/api/health` after deployment; verify storage is ready and inspect provider readiness separately. Open two fresh browser contexts: each should start with its own sessions and ERP state. Create a session, upload evidence, refresh, and confirm it survives a new server process/deployment.
 
-For a local seeded rehearsal, use `npm run seed:session` in explicit local mode. Local `.data/` is not uploaded to Vercel. Production users create their own captures; do not treat a seeded recording as evidence of a live challenge run.
+For a local seeded rehearsal, run both `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session` and `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run dev`. The explicit local owner lets browser requests read the seeded workspace outside Vercel; production remains cookie-scoped. Local `.data/` is not uploaded to Vercel. Production users create their own captures; do not treat a seeded recording as evidence of a live challenge run.
 
 Do not connect automatic production deployment to an older `main` revision until this deployment change is merged. This repository's earlier long-running Node hosting recommendation is superseded for this deployment by Supabase + Vercel.

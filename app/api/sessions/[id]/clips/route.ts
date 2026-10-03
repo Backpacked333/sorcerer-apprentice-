@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { allowRateLimit, getSession, readClip, saveClip } from "@/lib/store";
+import { allowRateLimit, deleteClip, getSession, readClip, saveClip } from "@/lib/store";
 import { BadRequestError, bytesToArrayBuffer, jsonError, readRequestBytes, RateLimitError, RequestLimitError, UnsupportedMediaError } from "@/lib/request";
 
 type Ctx = { params: Promise<{ id: string }> };
@@ -40,6 +40,20 @@ export async function GET(req: Request, { params }: Ctx) {
     const bytes = await readClip(id, audioId);
     if (!bytes) return NextResponse.json({ error: "not found" }, { status: 404 });
     return new Response(new Uint8Array(bytes), { headers: { "content-type": "audio/webm", "cache-control": "no-store" } });
+  } catch (error) {
+    return jsonError(error);
+  }
+}
+
+export async function DELETE(req: Request, { params }: Ctx) {
+  try {
+    const { id } = await params;
+    const session = await getSession(id);
+    if (!session) return NextResponse.json({ error: "not found" }, { status: 404 });
+    const audioId = new URL(req.url).searchParams.get("audioId") ?? "";
+    if (!audioId) throw new BadRequestError();
+    await deleteClip(id, audioId);
+    return NextResponse.json({ ok: true, audioId });
   } catch (error) {
     return jsonError(error);
   }

@@ -7,11 +7,12 @@ const store = vi.hoisted(() => ({
   readFrame: vi.fn(),
   saveClip: vi.fn(async () => "s_1/s_1/clips/a_1.webm"),
   readClip: vi.fn(),
+  deleteClip: vi.fn(async () => {}),
 }));
 vi.mock("@/lib/store", () => store);
 
 import { POST as postFrame } from "../app/api/sessions/[id]/frames/route";
-import { POST as postClip } from "../app/api/sessions/[id]/clips/route";
+import { DELETE as deleteClipRoute, POST as postClip } from "../app/api/sessions/[id]/clips/route";
 
 describe("frame upload boundary", () => {
   it("rejects non-image media", async () => {
@@ -58,5 +59,16 @@ describe("frame upload boundary", () => {
     largeForm.append("file", new Blob([clip], { type: "audio/webm" }), "clip.webm");
     const oversized = await postClip(new Request("http://localhost/api/sessions/s_1/clips", { method: "POST", body: largeForm }), { params: Promise.resolve({ id: "s_1" }) });
     expect(oversized.status).toBe(413);
+  });
+
+  it("deletes clips only after an owned session lookup", async () => {
+    store.getSession.mockResolvedValueOnce(null as never);
+    const missing = await deleteClipRoute(new Request("http://localhost/api/sessions/s_1/clips?audioId=a_1", { method: "DELETE" }), { params: Promise.resolve({ id: "s_1" }) });
+    expect(missing.status).toBe(404);
+    expect(store.deleteClip).not.toHaveBeenCalled();
+
+    const response = await deleteClipRoute(new Request("http://localhost/api/sessions/s_1/clips?audioId=a_1", { method: "DELETE" }), { params: Promise.resolve({ id: "s_1" }) });
+    expect(response.status).toBe(200);
+    expect(store.deleteClip).toHaveBeenCalledWith("s_1", "a_1");
   });
 });

@@ -23,6 +23,8 @@ function localOwner(): string {
  * fail closed because proxy.ts mints one before rendering.
  */
 export async function getWorkspaceId(): Promise<string> {
+  const localOverride = process.env.STORE_OWNER_ID?.trim();
+  if (!process.env.VERCEL && process.env.STORAGE_BACKEND === "local" && localOverride) return localOverride;
   let cookieStore: Awaited<ReturnType<typeof cookies>>;
   try {
     cookieStore = await cookies();

@@ -7,6 +7,7 @@ import { CandidateQueue, buildCandidates, extractThresholds, narrationFills, new
 import { describeEvent, emptySession, type Frame, type QuestionWindow, type ScreenEvent, type SessionLog, type TranscriptSegment } from "@/lib/events";
 import { redactText } from "@/lib/redact";
 import { computeMetrics } from "@/lib/metrics";
+import { uploadWithConsentEpoch } from "@/lib/recording-consent";
 import { createSessionSync } from "@/lib/session-sync";
 import { Meter } from "./Meter";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
@@ -50,6 +51,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const recorder = useRef<MediaRecorder | null>(null);
   const micStream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
+  const recordingConsentEpoch = useRef(0);
   const entitiesRedacted = useRef(0);
   const dirty = useRef(false);
   const sync = useRef<ReturnType<typeof createSessionSync> | null>(null);
@@ -125,10 +127,20 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
 
   // ---------- windows ----------
   const startRecorder = useCallback(async () => {
+    const consentEpoch = recordingConsentEpoch.current;
     try {
-      micStream.current ??= await navigator.mediaDevices.getUserMedia({ audio: true });
+      let stream = micStream.current;
+      if (!stream) {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        if (consentEpoch !== recordingConsentEpoch.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        micStream.current = stream;
+      }
+      if (consentEpoch !== recordingConsentEpoch.current) return;
       chunks.current = [];
-      const r = new MediaRecorder(micStream.current, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
+      const r = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
       r.ondataavailable = (ev) => ev.data.size && chunks.current.push(ev.data);
       r.start(250);
       recorder.current = r;
@@ -137,7 +149,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     }
   }, []);
 
-  const stopRecorder = useCallback(async (save = true): Promise<string | undefined> => {
+  const stopRecorder = useCallback(async (save = true, consentEpoch = recordingConsentEpoch.current): Promise<string | undefined> => {
     const r = recorder.current;
     recorder.current = null;
     if (!r) return undefined;
@@ -147,14 +159,26 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     });
     const blob = new Blob(chunks.current, { type: "audio/webm" });
     chunks.current = [];
-    if (!save) return undefined;
+    if (!save || consentEpoch !== recordingConsentEpoch.current) return undefined;
     if (blob.size < 2000) return undefined;
     const audioId = `clip_${Date.now().toString(36)}`;
     const fd = new FormData();
     fd.append("audioId", audioId);
     fd.append("file", blob, `${audioId}.webm`);
-    const response = await fetch(`/api/sessions/${log.current.id}/clips`, { method: "POST", body: fd }).catch(() => null);
-    if (!response?.ok) {
+    const clipsUrl = `/api/sessions/${log.current.id}/clips`;
+    const saved = await uploadWithConsentEpoch(
+      consentEpoch,
+      () => recordingConsentEpoch.current,
+      async () => {
+        const response = await fetch(clipsUrl, { method: "POST", body: fd }).catch(() => null);
+        if (!response?.ok) throw new Error("clip upload failed");
+      },
+      async () => {
+        const response = await fetch(`${clipsUrl}?audioId=${encodeURIComponent(audioId)}`, { method: "DELETE" }).catch(() => null);
+        if (!response?.ok) throw new Error("clip discard failed");
+      },
+    ).catch(() => false);
+    if (!saved) {
       setSyncError("Could not save the answer audio.");
       return undefined;
     }
@@ -169,16 +193,31 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       const L = log.current;
       const qw = L.windows.find((x) => x.id === w.id);
       const t = nowSecs();
+      const consentEpoch = recordingConsentEpoch.current;
       voiceRef.current.setMicMuted(true);
-      const audioId = await stopRecorder(outcome !== "off_record");
-      if (qw) {
+      const audioId = await stopRecorder(outcome !== "off_record", consentEpoch);
+      const consentWithdrawn = consentEpoch !== recordingConsentEpoch.current || qw?.outcome === "off_record";
+      if (consentWithdrawn && outcome !== "off_record") {
+        if (audioId) {
+          const response = await fetch(`/api/sessions/${L.id}/clips?audioId=${encodeURIComponent(audioId)}`, { method: "DELETE" }).catch(() => null);
+          if (!response?.ok) setSyncError("Could not discard the answer audio.");
+        }
+        return;
+      }
+      if (qw && outcome === "off_record") {
+        qw.closedAt = t;
+        qw.outcome = "off_record";
+        qw.answerText = "";
+        qw.answerAudioId = undefined;
+        qw.logged = undefined;
+      } else if (qw) {
         qw.closedAt = t;
         qw.outcome = outcome;
         if (extra?.logged) qw.logged = extra.logged;
         if (extra?.answerText) qw.answerText = [qw.answerText, extra.answerText].filter(Boolean).join(" ");
         if (outcome === "answered" && !qw.answerText && qw.logged?.reason) qw.answerText = qw.logged.reason;
         if (outcome === "answered") qw.answeredAt ??= t;
-        qw.answerAudioId = outcome === "off_record" ? undefined : audioId;
+        qw.answerAudioId = audioId;
       }
       if (outcome === "answered") queue.current.markFilled(w.candidateId);
       else {
@@ -212,6 +251,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   // ---------- off the record ----------
   const strike = useCallback(
     (fromSecs?: number, toSecs?: number) => {
+      recordingConsentEpoch.current += 1;
       const L = log.current;
       const t = nowSecs();
       const w = governor.current.window;

@@ -1,12 +1,22 @@
 import { NextResponse } from "next/server";
+import { gatewayConfigured } from "@/lib/model-contracts";
 import { listSessions, storageBackend } from "@/lib/store";
 
 export async function GET() {
-  const voiceAvailable = Boolean(process.env.ELEVENLABS_API_KEY);
-  const gatewayAvailable = Boolean(process.env.AI_GATEWAY_API_KEY);
+  const voiceConfiguration = {
+    apiKey: Boolean(process.env.ELEVENLABS_API_KEY),
+    interviewerAgent: Boolean(process.env.NEXT_PUBLIC_INTERVIEWER_AGENT_ID),
+    tutorAgent: Boolean(process.env.NEXT_PUBLIC_TUTOR_AGENT_ID),
+  };
+  const voiceConfigured = Object.values(voiceConfiguration).every(Boolean);
+  const gatewayIsConfigured = gatewayConfigured();
   const integrations = {
-    voice: { available: voiceAvailable, status: voiceAvailable ? "ready" : "degraded" },
-    gateway: { available: gatewayAvailable, status: gatewayAvailable ? "ready" : "degraded" },
+    voice: {
+      configured: voiceConfigured,
+      ...voiceConfiguration,
+      status: voiceConfigured ? "configured" : "degraded",
+    },
+    gateway: { configured: gatewayIsConfigured, status: gatewayIsConfigured ? "configured" : "degraded" },
   };
   let backend: string;
   try {

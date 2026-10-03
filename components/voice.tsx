@@ -35,7 +35,7 @@ export interface VoiceConnectOptions {
 
 export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOptions = {}) {
   const agentOverrides = {
-    ...(opts.firstMessage ? { firstMessage: opts.firstMessage } : {}),
+    ...(opts.firstMessage !== undefined ? { firstMessage: opts.firstMessage } : {}),
     ...(opts.prompt ? { prompt: { prompt: opts.prompt } } : {}),
     ...(opts.language ? { language: opts.language as "en" } : {}),
   };
@@ -50,6 +50,62 @@ export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOpti
     },
     ...(Object.keys(agentOverrides).length ? { overrides: { agent: agentOverrides } } : {}),
   };
+}
+
+export type ConnectionOutcome =
+  | { kind: "connected" | "cancelled"; generation: number }
+  | { kind: "degraded"; generation: number; reason: string };
+
+export function createConnectionLifecycle({
+  onOutcome,
+  endSession,
+  schedule = (fn, ms) => globalThis.setTimeout(fn, ms) as unknown as number,
+  cancelTimer = (timer) => globalThis.clearTimeout(timer),
+}: {
+  onOutcome: (outcome: ConnectionOutcome) => void;
+  endSession: () => void;
+  schedule?: (fn: () => void, ms: number) => number;
+  cancelTimer?: (timer: number) => void;
+}) {
+  let nextGeneration = 0;
+  let attempt: { generation: number; waitForFirstMessage: boolean; connected: boolean; sawSpeaking: boolean; timer: number; promise: Promise<ConnectionOutcome>; resolve: (outcome: ConnectionOutcome) => void } | undefined;
+
+  const settle = (generation: number, outcome: ConnectionOutcome, end: boolean) => {
+    if (!attempt || attempt.generation !== generation) return false;
+    cancelTimer(attempt.timer);
+    const resolve = attempt.resolve;
+    attempt = undefined;
+    if (end) endSession();
+    onOutcome(outcome);
+    resolve(outcome);
+    return true;
+  };
+  const start = (waitForFirstMessage: boolean) => {
+    if (attempt) return { generation: attempt.generation, promise: attempt.promise, isNew: false };
+    const generation = ++nextGeneration;
+    let resolve!: (outcome: ConnectionOutcome) => void;
+    const promise = new Promise<ConnectionOutcome>((done) => { resolve = done; });
+    const timer = schedule(() => settle(generation, { kind: "degraded", generation, reason: "Agent connection timed out after 20 seconds." }, true), 20_000);
+    attempt = { generation, waitForFirstMessage, connected: false, sawSpeaking: false, timer, promise, resolve };
+    return { generation, promise, isNew: true };
+  };
+  const connected = (generation: number) => {
+    if (!attempt || attempt.generation !== generation) return false;
+    attempt.connected = true;
+    cancelTimer(attempt.timer);
+    if (!attempt.waitForFirstMessage) return settle(generation, { kind: "connected", generation }, false);
+    attempt.timer = schedule(() => settle(generation, { kind: "connected", generation }, false), 15_000);
+    return true;
+  };
+  const mode = (generation: number, value: "speaking" | "listening") => {
+    if (!attempt || attempt.generation !== generation || !attempt.connected || !attempt.waitForFirstMessage) return false;
+    if (value === "speaking") attempt.sawSpeaking = true;
+    else if (attempt.sawSpeaking) return settle(generation, { kind: "connected", generation }, false);
+    return true;
+  };
+  const fail = (generation: number, reason: string) => settle(generation, { kind: "degraded", generation, reason }, true);
+  const cancel = (generation: number) => settle(generation, { kind: "cancelled", generation }, true);
+  return { start, connected, mode, fail, cancel, activeGeneration: () => attempt?.generation };
 }
 
 export interface VoiceApi {
@@ -72,6 +128,7 @@ export interface VoiceApi {
 
 const VoiceContext = createContext<VoiceApi | null>(null);
 const VoiceDebugContext = createContext<((event: VoiceDebugEvent) => void) | undefined>(undefined);
+const VoiceHealthContext = createContext<(reason?: string) => void>(() => {});
 
 export function useVoice(): VoiceApi {
   const v = useContext(VoiceContext);
@@ -105,84 +162,58 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const [messages, setMessages] = useState<VoiceMessage[]>([]);
   const [fallbackSpeaking, setFallbackSpeaking] = useState(false);
   const [fallbackConnected, setFallbackConnected] = useState(false);
-  const [degraded, setDegraded] = useState(false);
-  const [lastError, setLastError] = useState<string>();
+  const [voiceError, setVoiceError] = useState<string>();
+  const [sttError, setSttError] = useState<string>();
   const controls = useConversationControls();
   const conversationStatus = useConversationStatus();
   const conversationMode = useConversationMode();
-  const connectAttempt = useRef<{
-    resolve: () => void;
-    firstMessage?: string;
-    connected: boolean;
-    sawSpeaking: boolean;
-    timer: number;
-  } | undefined>(undefined);
-  const explicitDisconnect = useRef(false);
+  const firstMessages = useRef(new Map<number, string>());
+  const establishedGeneration = useRef<number | undefined>(undefined);
+  const outcomeHandler = useRef<(outcome: ConnectionOutcome) => void>(() => {});
+  const lifecycle = useRef<ReturnType<typeof createConnectionLifecycle> | undefined>(undefined);
+  if (!lifecycle.current) lifecycle.current = createConnectionLifecycle({
+    onOutcome: (outcome) => outcomeHandler.current(outcome),
+    endSession: controls.endSession,
+  });
   const lastVadEventAt = useRef(0);
+  const speakFallbackRef = useRef<(text: string) => Promise<void>>(async () => {});
   const emit = useCallback((src: VoiceDebugEvent["src"], type: string, data?: unknown) => {
     onDebugEvent?.({ at: Date.now(), src, type, ...(data === undefined ? {} : { data }) });
   }, [onDebugEvent]);
-  const finishConnect = useCallback(() => {
-    const attempt = connectAttempt.current;
-    if (!attempt) return;
-    window.clearTimeout(attempt.timer);
-    connectAttempt.current = undefined;
-    attempt.resolve();
-  }, []);
-  const degradeConnect = useCallback((reason: string) => {
-    setDegraded(true);
-    setLastError(reason);
+  const activateFallback = useCallback((reason: string, generation?: number) => {
+    if (generation !== undefined && establishedGeneration.current !== generation) return;
+    establishedGeneration.current = undefined;
+    setVoiceError(reason);
     setFallbackConnected(true);
     emit("agent", "degraded", { reason });
-    const firstMessage = connectAttempt.current?.firstMessage;
-    finishConnect();
-    if (firstMessage) void speakFallbackRef.current(firstMessage);
-  }, [emit, finishConnect]);
-  const speakFallbackRef = useRef<(text: string) => Promise<void>>(async () => {});
+  }, [emit]);
+
+  useEffect(() => {
+    outcomeHandler.current = (outcome) => {
+      const firstMessage = firstMessages.current.get(outcome.generation);
+      firstMessages.current.delete(outcome.generation);
+      if (outcome.kind === "connected") {
+        establishedGeneration.current = outcome.generation;
+        window.speechSynthesis?.cancel();
+        setFallbackConnected(false);
+        setVoiceError(undefined);
+      } else if (outcome.kind === "degraded") {
+        activateFallback(outcome.reason);
+        if (firstMessage) void speakFallbackRef.current(firstMessage);
+      } else {
+        setFallbackConnected(false);
+      }
+      emit("agent", `connect_${outcome.kind}`, outcome);
+    };
+  }, [activateFallback, emit]);
 
   useConversation({
     micMuted,
-    onConnect: (data) => {
-      window.speechSynthesis?.cancel();
-      setFallbackConnected(false);
-      setDegraded(false);
-      setLastError(undefined);
-      emit("agent", "connect", data);
-      const attempt = connectAttempt.current;
-      if (!attempt) return;
-      attempt.connected = true;
-      window.clearTimeout(attempt.timer);
-      if (!attempt.firstMessage) return finishConnect();
-      attempt.timer = window.setTimeout(finishConnect, 15_000);
-    },
-    onDisconnect: (details) => {
-      emit("agent", "disconnect", details);
-      const wasExplicit = explicitDisconnect.current;
-      explicitDisconnect.current = false;
-      if (connectAttempt.current && !wasExplicit) return degradeConnect(`Agent disconnected before it was ready (${details.reason}).`);
-      if (connectAttempt.current) finishConnect();
-      if (!wasExplicit && details.reason !== "user") {
-        setDegraded(true);
-        setLastError(`Agent disconnected (${details.reason}).`);
-        setFallbackConnected(true);
-      }
-    },
-    onError: (message, context) => {
-      emit("agent", "error", { message, context });
-      if (connectAttempt.current) degradeConnect(message);
-      else {
-        setDegraded(true);
-        setLastError(message);
-      }
-    },
+    onConnect: (data) => emit("agent", "connect", data),
+    onDisconnect: (details) => emit("agent", "disconnect", details),
+    onError: (message, context) => emit("agent", "error", { message, context }),
     onStatusChange: (data) => emit("agent", "status", data),
-    onModeChange: (data) => {
-      emit("agent", "mode", data);
-      const attempt = connectAttempt.current;
-      if (!attempt?.firstMessage) return;
-      if (data.mode === "speaking") attempt.sawSpeaking = true;
-      else if (attempt.connected && attempt.sawSpeaking) finishConnect();
-    },
+    onModeChange: (data) => emit("agent", "mode", data),
     onMessage: (m) => {
       setMessages((xs) => [...xs, { role: m.role === "agent" ? "agent" : "user", text: m.message, t: Date.now() }]);
       emit("agent", "message", m);
@@ -264,38 +295,38 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     async (opts) => {
       if (configuredMode === "fallback") {
         setFallbackConnected(true);
-        setLastError(undefined);
+        setVoiceError(undefined);
         if (opts?.firstMessage) await speakFallback(opts.firstMessage);
         return;
       }
       if (conversationStatus.status === "connected") return;
-      if (connectAttempt.current) return new Promise<void>((resolve) => {
-        const priorResolve = connectAttempt.current!.resolve;
-        connectAttempt.current!.resolve = () => {
-          priorResolve();
-          resolve();
-        };
-      });
-      setDegraded(false);
-      setLastError(undefined);
-      explicitDisconnect.current = false;
-      return new Promise<void>((resolve) => {
-        connectAttempt.current = {
-          resolve,
-          firstMessage: opts?.firstMessage || undefined,
-          connected: false,
-          sawSpeaking: false,
-          timer: window.setTimeout(() => degradeConnect("Agent connection timed out after 20 seconds."), 20_000),
+      setVoiceError(undefined);
+      const attempt = lifecycle.current!.start(Boolean(opts?.firstMessage));
+      if (attempt.isNew) {
+        if (opts?.firstMessage !== undefined) firstMessages.current.set(attempt.generation, opts.firstMessage);
+        const fail = (reason: string) => {
+          if (!lifecycle.current!.fail(attempt.generation, reason)) {
+            controls.endSession();
+            activateFallback(reason, attempt.generation);
+          }
         };
         try {
           const inputDeviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
-          controls.startSession({ ...buildAgentSessionOptions(agentId!, opts), ...(inputDeviceId ? { inputDeviceId } : {}) });
+          controls.startSession({
+            ...buildAgentSessionOptions(agentId!, opts),
+            ...(inputDeviceId ? { inputDeviceId } : {}),
+            onConnect: () => lifecycle.current!.connected(attempt.generation),
+            onModeChange: ({ mode }) => lifecycle.current!.mode(attempt.generation, mode),
+            onError: (message) => fail(message),
+            onDisconnect: (details) => fail(`Agent disconnected (${details.reason}).`),
+          });
         } catch (error) {
-          degradeConnect(error instanceof Error ? error.message : String(error));
+          fail(error instanceof Error ? error.message : String(error));
         }
-      });
+      }
+      await attempt.promise;
     },
-    [agentId, configuredMode, controls, conversationStatus.status, degradeConnect, speakFallback],
+    [activateFallback, agentId, configuredMode, controls, conversationStatus.status, speakFallback],
   );
 
   const disconnect = useCallback(() => {
@@ -304,15 +335,20 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       setFallbackConnected(false);
       return;
     }
-    explicitDisconnect.current = true;
     window.speechSynthesis?.cancel();
     setFallbackConnected(false);
-    controls.endSession();
+    setVoiceError(undefined);
+    const pending = lifecycle.current!.activeGeneration();
+    if (pending !== undefined) lifecycle.current!.cancel(pending);
+    else {
+      establishedGeneration.current = undefined;
+      controls.endSession();
+    }
   }, [configuredMode, controls]);
 
   const say = useCallback<VoiceApi["say"]>(
     (tag, text, spoken) => {
-      if (configuredMode === "fallback" || degraded || conversationStatus.status !== "connected") {
+      if (configuredMode === "fallback" || voiceError || conversationStatus.status !== "connected") {
         void speakFallback(spoken ?? text);
         return;
       }
@@ -320,11 +356,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       try {
         controls.sendUserMessage(`[${tag}] ${text}`);
       } catch (error) {
-        degradeConnect(error instanceof Error ? error.message : String(error));
+        controls.endSession();
+        activateFallback(error instanceof Error ? error.message : String(error), establishedGeneration.current);
         void speakFallback(spoken ?? text);
       }
     },
-    [configuredMode, controls, conversationStatus.status, degradeConnect, degraded, speakFallback],
+    [activateFallback, configuredMode, controls, conversationStatus.status, voiceError, speakFallback],
   );
 
   const setMicMuted = useCallback(
@@ -336,16 +373,16 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const sendContext = useCallback(
     (text: string) => {
-      if (configuredMode === "agent" && !degraded && conversationStatus.status === "connected") {
+      if (configuredMode === "agent" && !voiceError && conversationStatus.status === "connected") {
         try {
           controls.sendContextualUpdate(text);
         } catch (error) {
-          setDegraded(true);
-          setLastError(error instanceof Error ? error.message : String(error));
+          controls.endSession();
+          activateFallback(error instanceof Error ? error.message : String(error), establishedGeneration.current);
         }
       }
     },
-    [configuredMode, controls, conversationStatus.status, degraded],
+    [activateFallback, configuredMode, controls, conversationStatus.status, voiceError],
   );
 
   const getId = useCallback(() => {
@@ -357,11 +394,9 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     }
   }, [configuredMode, controls]);
 
-  useEffect(() => () => {
-    if (connectAttempt.current) window.clearTimeout(connectAttempt.current.timer);
-  }, []);
-
-  const mode: VoiceApi["mode"] = configuredMode === "agent" && !degraded ? "agent" : "fallback";
+  const mode: VoiceApi["mode"] = configuredMode === "agent" && !voiceError ? "agent" : "fallback";
+  const degraded = Boolean(voiceError || sttError);
+  const lastError = voiceError ?? sttError;
 
   const api = useMemo<VoiceApi>(
     () => ({
@@ -383,7 +418,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     [mode, fallbackConnected, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext],
   );
 
-  return <VoiceDebugContext.Provider value={onDebugEvent}><VoiceContext.Provider value={api}>{children}</VoiceContext.Provider></VoiceDebugContext.Provider>;
+  return <VoiceHealthContext.Provider value={setSttError}><VoiceDebugContext.Provider value={onDebugEvent}><VoiceContext.Provider value={api}>{children}</VoiceContext.Provider></VoiceDebugContext.Provider></VoiceHealthContext.Provider>;
 }
 
 // ---------- Transcription: Scribe v2 Realtime, or the browser's recognizer when there is no key ----------
@@ -397,6 +432,7 @@ export interface TranscriberOptions {
 
 export function useTranscriber(opts: TranscriberOptions) {
   const debug = useContext(VoiceDebugContext);
+  const reportHealth = useContext(VoiceHealthContext);
   const [engine, setEngine] = useState<"scribe" | "webspeech" | "none">("none");
   const [connected, setConnected] = useState(false);
   const optsRef = useRef(opts);
@@ -420,22 +456,34 @@ export function useTranscriber(opts: TranscriberOptions) {
     },
     onConnect: () => {
       setConnected(true);
+      reportHealth(undefined);
       debug?.({ at: Date.now(), src: "scribe", type: "connect" });
     },
     onDisconnect: () => {
       setConnected(false);
+      if (optsRef.current.enabled) reportHealth("Scribe disconnected; using browser transcription if available.");
       debug?.({ at: Date.now(), src: "scribe", type: "disconnect" });
     },
-    onError: (error) => debug?.({ at: Date.now(), src: "scribe", type: "error", data: error instanceof Error ? error.message : String(error) }),
+    onError: (error) => {
+      const reason = error instanceof Error ? error.message : String(error);
+      reportHealth(`Scribe error: ${reason}`);
+      debug?.({ at: Date.now(), src: "scribe", type: "error", data: reason });
+    },
   });
 
   useEffect(() => {
-    if (!opts.enabled) return;
+    if (!opts.enabled) {
+      reportHealth(undefined);
+      return;
+    }
     let cancelled = false;
     (async () => {
+      let scribeReason = "Scribe token unavailable";
       try {
         const res = await fetch("/api/scribe-token");
-        const { token } = res.ok ? await res.json() : { token: null };
+        const body = res.ok ? await res.json() as { token?: string | null; reason?: string } : { token: null, reason: `token endpoint returned ${res.status}` };
+        const { token } = body;
+        scribeReason = body.reason ?? scribeReason;
         if (token) {
           if (cancelled) return;
           const deviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
@@ -443,12 +491,14 @@ export function useTranscriber(opts: TranscriberOptions) {
           setEngine("scribe");
           return;
         }
-      } catch {
+      } catch (error) {
+        scribeReason = error instanceof Error ? error.message : String(error);
         /* fall through to the browser recognizer */
       }
       const Ctor = (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike; SpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition ?? (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition;
       if (!Ctor) {
         setEngine("none");
+        reportHealth(`Speech transcription unavailable: ${scribeReason}`);
         return;
       }
       const r = new Ctor();
@@ -460,8 +510,13 @@ export function useTranscriber(opts: TranscriberOptions) {
           const res = ev.results[i];
           const text = res[0].transcript.trim();
           if (!text) continue;
-          if (res.isFinal) optsRef.current.onCommitted(text);
-          else optsRef.current.onPartial(text);
+          if (res.isFinal) {
+            debug?.({ at: Date.now(), src: "scribe", type: "commit", data: { text, engine: "webspeech" } });
+            optsRef.current.onCommitted(text);
+          } else {
+            debug?.({ at: Date.now(), src: "scribe", type: "partial", data: { text, engine: "webspeech" } });
+            optsRef.current.onPartial(text);
+          }
         }
       };
       r.onend = () => {
@@ -473,14 +528,16 @@ export function useTranscriber(opts: TranscriberOptions) {
           }
         }
       };
-      r.onerror = () => {};
+      r.onerror = () => reportHealth("Browser transcription error.");
       recognizer.current = r;
       try {
         r.start();
         setEngine("webspeech");
         setConnected(true);
+        reportHealth(`Scribe unavailable; browser transcription active (${scribeReason}).`);
       } catch {
         setEngine("none");
+        reportHealth(`Speech transcription unavailable: ${scribeReason}`);
       }
     })();
     return () => {
@@ -497,6 +554,7 @@ export function useTranscriber(opts: TranscriberOptions) {
       }
       scribe.disconnect();
       setConnected(false);
+      reportHealth(undefined);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opts.enabled]);

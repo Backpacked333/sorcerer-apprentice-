@@ -44,6 +44,7 @@ export class VoiceHubConnectionCoordinator {
   private tokenAttempted = false;
   private nextGeneration = 1;
   private demandWindow = 0;
+  private controlledClose: { demandWindow: number; configFingerprint: string } | undefined;
 
   update({ demanded, configFingerprint }: { demanded: boolean; configFingerprint: string }): { stopResources: boolean; needsReconcile: boolean } {
     const demandStopped = this.demanded && !demanded;
@@ -56,6 +57,7 @@ export class VoiceHubConnectionCoordinator {
       this.fatalLatched = false;
       this.fallbackAttempted = false;
       this.tokenAttempted = false;
+      this.controlledClose = undefined;
     } else if (demandStarted) {
       this.fatalLatched = false;
       this.fallbackAttempted = false;
@@ -90,6 +92,26 @@ export class VoiceHubConnectionCoordinator {
   settle(generation: number): boolean {
     if (this.inFlight?.generation === generation) this.inFlight = undefined;
     return this.demanded;
+  }
+
+  expectControlledClose(): void {
+    if (!this.demanded) return;
+    this.controlledClose = { demandWindow: this.demandWindow, configFingerprint: this.configFingerprint };
+  }
+
+  consumeControlledClose(): boolean {
+    const expected = this.controlledClose;
+    this.controlledClose = undefined;
+    return Boolean(
+      expected
+      && this.demanded
+      && expected.demandWindow === this.demandWindow
+      && expected.configFingerprint === this.configFingerprint,
+    );
+  }
+
+  replacementInstalled(generation: number): void {
+    if (this.isCurrent(generation)) this.controlledClose = undefined;
   }
 
   latchFatal(): boolean {

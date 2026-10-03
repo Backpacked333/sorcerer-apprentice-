@@ -280,6 +280,24 @@ describe("VoiceHubConnectionCoordinator", () => {
     expect(coordinator.beginTokenAttempt()).toEqual({ generation: 2, configFingerprint: "config-b" });
   });
 
+  it("does not let a suppressed old CLOSE mask an unexpected replacement CLOSE", () => {
+    const coordinator = new VoiceHubConnectionCoordinator();
+    coordinator.update({ demanded: true, configFingerprint: "config-a" });
+    const original = coordinator.beginTokenAttempt()!;
+    coordinator.settle(original.generation);
+
+    coordinator.update({ demanded: true, configFingerprint: "config-b" });
+    coordinator.expectControlledClose();
+    const replacement = coordinator.beginTokenAttempt()!;
+    // Installed SDK suppresses the old CLOSE because the replacement is now current.
+    coordinator.replacementInstalled(replacement.generation);
+    coordinator.settle(replacement.generation);
+
+    expect(coordinator.consumeControlledClose()).toBe(false);
+    expect(coordinator.latchFatal()).toBe(true);
+    expect(coordinator.snapshot().fatalLatched).toBe(true);
+  });
+
   it("fingerprints every effective Scribe and WebSpeech option including empty keyterms", () => {
     const base = { language: "en", deviceId: "mic-1", keyterms: ["Acme"], filterBackgroundAudio: true };
     expect(voiceHubConfigFingerprint(base)).not.toBe(voiceHubConfigFingerprint({ ...base, language: "de" }));

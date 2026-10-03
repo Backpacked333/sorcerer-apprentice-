@@ -418,7 +418,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const emitRef = useRef<(src: VoiceDebugEvent["src"], type: string, data?: unknown) => void>(() => {});
   const fatalScribeRef = useRef<(reason: string) => void>(() => {});
   const scribeDisconnectRef = useRef<() => void>(() => {});
-  const intentionalScribeDisconnectRef = useRef(false);
   const reconcileRef = useRef<() => void>(() => {});
   const authorization = useRef<ReturnType<typeof createSpeechAuthorizationLatch> | undefined>(undefined);
   if (!authorization.current) authorization.current = createSpeechAuthorizationLatch({
@@ -643,15 +642,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         emitRef.current("scribe", "connect");
       },
       onDisconnect: () => {
-        const intentional = intentionalScribeDisconnectRef.current;
-        intentionalScribeDisconnectRef.current = false;
+        const controlled = coordinatorRef.current!.consumeControlledClose();
         if (!mountedRef.current) return;
         setTranscriberState({ engine: "none", connected: false, partial: "" });
         emitRef.current("scribe", "disconnect");
-        if (!intentional && transcriberDemandRef.current) {
-          fatal("Scribe disconnected.");
-          intentionalScribeDisconnectRef.current = false;
-        }
+        if (!controlled && transcriberDemandRef.current) fatal("Scribe disconnected.");
         reconcileRef.current();
       },
       onError: (error) => fatal(error instanceof Error ? error.message : "Scribe connection error"),
@@ -681,10 +676,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         },
         recognizer: recognizer.current,
         clearRecognizer: () => { recognizer.current = null; },
-        disconnectScribe: () => {
-          intentionalScribeDisconnectRef.current = true;
-          scribeDisconnectRef.current();
-        },
+        disconnectScribe: () => scribeDisconnectRef.current(),
       });
     };
   }, []);
@@ -707,7 +699,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     setTranscriberState({ engine: "none", connected: false, partial: "" });
     setSttError(`Transcription offline: ${reason}`);
     emitRef.current("scribe", "fatal", reason);
-    intentionalScribeDisconnectRef.current = true;
     scribeDisconnectRef.current();
     reconcileRef.current();
   };
@@ -718,7 +709,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     if (transition.stopResources) {
       stopBrowserRecognizer();
       if (scribeStatus !== "disconnected") {
-        intentionalScribeDisconnectRef.current = scribeStatus !== "error";
+        if (scribeStatus !== "error") coordinatorRef.current!.expectControlledClose();
         scribeDisconnect();
       }
       setTranscriberState({ engine: "none", connected: false, partial: "" });
@@ -805,6 +796,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
             token: body.token,
             ...attemptConfig,
           }));
+          coordinator.replacementInstalled(attempt.generation);
           return;
         }
         shouldFallback = true;

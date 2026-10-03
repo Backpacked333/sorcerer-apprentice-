@@ -138,19 +138,24 @@ interface VoiceApi {
   mode: "agent" | "fallback";              // agent = ElevenAgents; fallback = browser speech (keyless)
   connected: boolean; status: string; isSpeaking: boolean; micMuted: boolean;
   messages: { role: "user"|"agent"; text: string; t: number }[];
-  connect(opts?: { firstMessage?: string; prompt?: string; language?: string }): Promise<void>;
+  degraded: boolean; lastError?: string;    // true/reason when voice or STT is on a labeled fallback
+  connect(opts?: { firstMessage?: string; prompt?: string; language?: string; dynamicVariables?: Record<string,string> }): Promise<void>;
   disconnect(): void;
+  getId(): string | undefined;              // safe before/after a live agent session
   say(tag: string, text: string, spoken?: string): void;   // agent mode: sends "[TAG] text" as a user message; fallback: speaks `spoken ?? text`
   setMicMuted(muted: boolean): void;
   sendContext(text: string): void;                          // contextual update: adds context, never triggers speech
 }
-<VoiceProvider agentId? tools={ref}>…</VoiceProvider>       useVoice(): VoiceApi
+type VoiceDebugEvent = { at: number; src: "agent"|"scribe"|"turn"|"gate"|"tool"; type: string; data?: unknown };
+interface VoiceProviderProps { agentId?: string; tools: MutableRefObject<ToolHandlers>; onDebugEvent?: (event: VoiceDebugEvent) => void }
+<VoiceProvider agentId={id} tools={ref} onDebugEvent={callback}>…</VoiceProvider>
+useVoice(): VoiceApi
 useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
 type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
 ```
 
-**What A guarantees to C and D:** after `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; anything transcribed while `isSpeaking` is never attributed to the human; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
+**What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; anything transcribed while `isSpeaking` is never attributed to the human; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
 
 ### 3.1 Tag protocol (page → agent, via `say`)
 

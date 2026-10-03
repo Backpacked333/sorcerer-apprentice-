@@ -5,7 +5,8 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 ## Done and merged (WP ids)
 
 - WA-1/WA-9 prompt v2 and prompt/tool protocol regression tests merged in PR #2.
-- WA-1 provisioning script is idempotent, read-only-checkable, Expressive Mode explicit, and preserves an existing knowledge base; merge pending.
+- WA-1 provisioning script is idempotent, read-only-checkable, Expressive Mode explicit, and preserves an existing knowledge base; merged in PR #3.
+- WA-1 awaited connection contract, generation-safe failure fallback, SDK/Scribe debug tap, and keyed/keyless `/voice-check` diagnostics are implemented; merge pending.
 
 ## Verified live by a human (who, when, what they did)
 
@@ -15,6 +16,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 - Prompt tone, phrasing and structural silence: run HT-1 then HT-2 from `docs/lanes/A-voice-and-timing.md` with headphones, followed by the speaker echo check in HT-4.
 - Live provisioning: after explicit approval and a key, run `npm run agents:create` twice and confirm identical IDs, then `npm run agents:create -- --check` and confirm prompt hashes/tool counts/settings.
+- Awaited connect and `/voice-check`: run HT-1 with a real agent key and microphone; verify connect id, event order, exact Scribe commit, and audible response timing. Headless checks cannot verify audio or permissions.
 
 ## Blocked on (lane, handshake id, what exactly)
 
@@ -22,7 +24,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Next 3 things
 
-1. Merge WA-1 provisioning and awaited-connect diagnostics.
+1. Merge WA-1 awaited-connect diagnostics and announce P-9/P-13.
 2. With explicit approval and a key, update both shared agents and run `npm run agents:create -- --check`.
 3. Run HT-1 on `/voice-check`, then record the first missing log line or the pass.
 
@@ -30,3 +32,4 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 - Prompt text is automated-test verified but not yet deployed or judged by a human listener.
 - Keyless fallback remains the only executable path in this environment until the ElevenLabs key is supplied.
+- A keyed connection, first-message speaking edge, microphone gate, and Scribe event order remain human-unverified.

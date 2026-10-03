@@ -45,6 +45,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
+| `lib/smoke-runtime.mjs`, `lib/smoke-runtime.test.ts` | **B** | smoke environment isolation, process cleanup and console guards |
 | `lib/workmap.ts` | **C** | THE contract: additive only |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
 | `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |

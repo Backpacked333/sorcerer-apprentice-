@@ -48,7 +48,7 @@ function visibleRect(el: Element, view: Window) {
     if (/^(fixed|absolute)$/.test(view.getComputedStyle(node).position)) return r;
   }
   let x = r.x, y = r.y, right = r.right ?? r.x + r.width, bottom = r.bottom ?? r.y + r.height;
-  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+  for (let parent: HTMLElement | null = el.parentElement; parent; parent = parent.parentElement) {
     const style = view.getComputedStyle(parent), bounds = parent.getBoundingClientRect();
     const sx = parent.offsetWidth ? bounds.width / parent.offsetWidth : 1;
     const sy = parent.offsetHeight ? bounds.height / parent.offsetHeight : 1;

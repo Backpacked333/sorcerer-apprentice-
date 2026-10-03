@@ -241,10 +241,11 @@ function finishSpeech(state: TurnState, at: number): TurnTransition {
 
 function closeListening(state: TurnState, at: number, via: TurnClose["via"], extra: Partial<TurnClose> = {}): TurnTransition {
   const captured = heard(state);
+  const answeredAt = captured.heard && Number.isFinite(state.lastHumanSpeechAt) ? state.lastHumanSpeechAt : undefined;
   return enterClosing(state, {
     via,
     ...captured,
-    answeredAt: captured.heard ? at : undefined,
+    answeredAt,
     startedAt: at,
     ...extra,
   });
@@ -300,9 +301,12 @@ function send(state: TurnState, event: Extract<TurnEvent, { type: "SEND" }>): Tu
       squelchedSpeechStarted: state.phase === "speaking",
     },
     effects: [
-      { type: "RESOLVE", result: resultFrom(state, superseded, event.at) },
       { type: "SQUELCH" },
       { type: "MUTE" },
+      ...(state.options?.recordClip && (state.phase === "listening" || state.phase === "closing")
+        ? ([{ type: "CLIP_STOP", upload: false, audioId: state.audioId }] satisfies TurnEffect[])
+        : []),
+      { type: "RESOLVE", result: resultFrom(state, superseded, event.at) },
       { type: "SEND_CONTEXT", text: NOTE_CANCELLED },
     ],
   };
@@ -332,6 +336,13 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
 
   if (event.type === "HUMAN_COMMIT") {
     const source = event.source ?? "scribe";
+    if (
+      state.phase === "closing" &&
+      state.close &&
+      (state.close.via === "typed" || state.close.via === "aborted" || state.close.via === "spoken")
+    ) {
+      return { state, effects: [] };
+    }
     const next: TurnState = {
       ...state,
       scribeText: source === "scribe" ? append(state.scribeText, event.text) : state.scribeText,
@@ -339,12 +350,13 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
       partial: "",
       lastHumanSpeechAt: event.at,
     };
-    if (state.phase === "closing" && state.close && state.close.via !== "aborted") {
+    if (state.phase === "closing" && state.close) {
       const captured = heard(next);
       next.close = {
         ...state.close,
+        ...(state.close.via === "timeout" ? { via: "scribe" as const } : {}),
         ...captured,
-        answeredAt: captured.heard ? state.close.answeredAt ?? event.at : state.close.answeredAt,
+        answeredAt: captured.heard ? event.at : state.close.answeredAt,
       };
     }
     return {
@@ -498,16 +510,21 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
     const effectiveSilence = Number.isFinite(state.lastAgentSpeechEnd) && state.lastAgentSpeechEnd > askedAt ? 8 : silenceCloseSecs;
     const captured = heard(state);
     const silenceAnchor = Math.max(state.lastHumanSpeechAt, state.lastAgentSpeechEnd, askedAt);
+    if (state.partial) {
+      if (event.at - state.lastPartialAt + EPSILON >= silenceCloseSecs + 2) {
+        const withPartial = {
+          ...state,
+          scribeText: append(state.scribeText, state.partial),
+          partial: "",
+          lastHumanSpeechAt: state.lastPartialAt,
+        };
+        return closeListening(withPartial, event.at, "scribe", { answeredAt: state.lastPartialAt });
+      }
+      const maxSecs = state.options?.maxSecs ?? 60;
+      if (event.at - askedAt + EPSILON < maxSecs) return { state, effects: [] };
+    }
     if (captured.heard && event.at - silenceAnchor + EPSILON >= effectiveSilence) {
       return closeListening(state, event.at, "scribe");
-    }
-    if (
-      !captured.heard &&
-      state.partial &&
-      event.at - state.lastPartialAt + EPSILON >= silenceCloseSecs + 2
-    ) {
-      const withPartial = { ...state, scribeText: state.partial, partial: "" };
-      return closeListening(withPartial, event.at, "scribe");
     }
     const maxSecs = state.options?.maxSecs ?? 60;
     if (event.at - askedAt + EPSILON >= maxSecs) {

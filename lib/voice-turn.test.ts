@@ -21,18 +21,19 @@ function apply(state: TurnState, event: TurnEvent) {
   return reduce(state, event);
 }
 
-function start(opts: TurnOptions = options, at = 10, agentConnected = true) {
+function start(opts: TurnOptions = options, at = 10, agentConnected = true, audioId?: string) {
   const sent = apply(initialTurnState, {
     type: "SEND",
     at,
     options: opts,
     agentConnected,
+    audioId,
   });
   return apply(sent.state, { type: "TICK", at });
 }
 
-function listening(opts: TurnOptions = options) {
-  let current = start(opts);
+function listening(opts: TurnOptions = options, audioId?: string) {
+  let current = start(opts, 10, true, audioId);
   current = apply(current.state, { type: "SPEAK_START", at: 11, source: "agent" });
   current = apply(current.state, { type: "SPEAK_END", at: 13 });
   current = apply(current.state, { type: "TICK", at: 13.6 });
@@ -215,7 +216,7 @@ describe("turn reducer", () => {
       queuedAt: 11,
       waitingForSquelch: true,
     });
-    expect(current.effects[0]).toMatchObject({
+    expect(effect(current.effects, "RESOLVE")).toMatchObject({
       type: "RESOLVE",
       result: { via: "aborted", abortReason: "superseded", spoke: false },
     });
@@ -312,5 +313,226 @@ describe("turn reducer", () => {
       type: "RESOLVE",
       result: { via: "aborted", command: "off_record", heard: "" },
     });
+  });
+});
+
+describe("turn reducer review matrix", () => {
+  it.each(["listening", "closing"] as const)(
+    "discards the active clip before resolving a superseded %s turn",
+    (phase) => {
+      let current = listening();
+      if (phase === "closing") {
+        current = apply(current.state, { type: "TOOL", at: 14, name: "log_answer", params: {} });
+      }
+      const next = apply(current.state, {
+        type: "SEND",
+        at: 14.5,
+        options: { ...options, text: "What is the limit?" },
+      });
+      expect(next.effects.slice(0, 4).map((item) => item.type)).toEqual([
+        "SQUELCH",
+        "MUTE",
+        "CLIP_STOP",
+        "RESOLVE",
+      ]);
+      expect(next.effects[2]).toMatchObject({ type: "CLIP_STOP", upload: false });
+      expect(next.effects[3]).toMatchObject({
+        type: "RESOLVE",
+        result: { via: "aborted", abortReason: "superseded" },
+      });
+      expect(effect(next.effects, "SEND_TAG")).toBeFalsy();
+    },
+  );
+
+  it("waits for and appends a trailing partial after a committed prefix", () => {
+    let current = listening({ ...options, silenceCloseSecs: 2.5, timeoutSecs: 4 });
+    current = apply(current.state, { type: "HUMAN_COMMIT", at: 14, text: "The reason is" });
+    current = apply(current.state, { type: "HUMAN_PARTIAL", at: 15, text: "the supporting note." });
+    current = apply(current.state, { type: "TICK", at: 19.49 });
+    expect(current.state.phase).toBe("listening");
+    current = apply(current.state, { type: "TICK", at: 19.5 });
+    expect(current.state).toMatchObject({
+      phase: "closing",
+      close: {
+        via: "scribe",
+        heard: "The reason is the supporting note.",
+        heardSource: "scribe",
+        answeredAt: 15,
+      },
+    });
+  });
+
+  it("uses the latest committed evidence time for Scribe and agent-ASR answers", () => {
+    for (const source of ["scribe", "agent_asr"] as const) {
+      let current = listening();
+      current = apply(current.state, { type: "HUMAN_COMMIT", at: 14, text: "First clause.", source });
+      current = apply(current.state, { type: "HUMAN_COMMIT", at: 14.7, text: "Second clause.", source });
+      current = apply(current.state, { type: "TOOL", at: 15, name: "log_answer", params: {} });
+      current = finish(current.state, 18);
+      expect(effect(current.effects, "RESOLVE")).toMatchObject({
+        type: "RESOLVE",
+        result: { answeredAt: 14.7, heardSource: source },
+      });
+    }
+  });
+
+  it("updates answeredAt when a late commit is accepted during tool closing", () => {
+    let current = listening();
+    current = apply(current.state, { type: "HUMAN_COMMIT", at: 14, text: "First clause." });
+    current = apply(current.state, { type: "TOOL", at: 14.1, name: "log_answer", params: {} });
+    current = apply(current.state, { type: "HUMAN_COMMIT", at: 14.8, text: "Final clause." });
+    current = finish(current.state, 18);
+    expect(effect(current.effects, "RESOLVE")).toMatchObject({
+      type: "RESOLVE",
+      result: { heard: "First clause. Final clause.", answeredAt: 14.8 },
+    });
+  });
+
+  it("keeps typed text and its timestamp immutable against a late Scribe commit", () => {
+    let current = listening();
+    current = apply(current.state, { type: "TYPED", at: 14, text: "Typed evidence." });
+    current = apply(current.state, { type: "HUMAN_COMMIT", at: 14.5, text: "Late microphone text." });
+    current = finish(current.state, 17);
+    expect(effect(current.effects, "RESOLVE")).toMatchObject({
+      type: "RESOLVE",
+      result: { via: "typed", heard: "Typed evidence.", heardSource: "typed", answeredAt: 14 },
+    });
+  });
+
+  it("promotes a timeout to Scribe when verbatim text arrives during closing", () => {
+    let current = listening({ ...options, timeoutSecs: 1 }, "clip-review");
+    current = apply(current.state, { type: "TICK", at: 14.6 });
+    expect(current.state).toMatchObject({ phase: "closing", close: { via: "timeout", heard: "" } });
+    current = apply(current.state, { type: "HUMAN_COMMIT", at: 15, text: "A delayed final answer." });
+    current = finish(current.state, 18);
+    expect(effect(current.effects, "CLIP_STOP")).toMatchObject({ type: "CLIP_STOP", upload: true });
+    expect(effect(current.effects, "RESOLVE")).toMatchObject({
+      type: "RESOLVE",
+      result: {
+        via: "scribe",
+        heard: "A delayed final answer.",
+        heardSource: "scribe",
+        answeredAt: 15,
+        audioId: "clip-review",
+      },
+    });
+  });
+
+  it("records successful fallback speech start/end and result stamps", () => {
+    let current = start({ ...options, watchdogSecs: 1 });
+    current = apply(current.state, { type: "TICK", at: 11 });
+    current = apply(current.state, { type: "SPEAK_START", at: 11.2, source: "fallback" });
+    current = apply(current.state, { type: "SPEAK_END", at: 12.2 });
+    current = apply(current.state, { type: "TICK", at: 12.8 });
+    expect(current.state).toMatchObject({ phase: "listening", sentAt: 10, spokeAt: 11.2, askedAt: 12.8 });
+    current = apply(current.state, { type: "TYPED", at: 13, text: "Answer." });
+    current = finish(current.state, 16);
+    expect(effect(current.effects, "RESOLVE")).toMatchObject({
+      type: "RESOLVE",
+      result: { spoke: true, spokenBy: "fallback", sentAt: 10, spokeAt: 11.2, askedAt: 12.8, closedAt: 16 },
+    });
+  });
+
+  it("resolves a no-listen line as spoken", () => {
+    let current = start({ tag: "PRAISE", text: "Nicely handled.", listen: false });
+    current = apply(current.state, { type: "SPEAK_START", at: 11 });
+    current = apply(current.state, { type: "SPEAK_END", at: 12 });
+    current = apply(current.state, { type: "TICK", at: 12.6 });
+    expect(current.state).toMatchObject({ phase: "closing", close: { via: "spoken" }, askedAt: 12.6 });
+    current = finish(current.state, 15.1);
+    expect(effect(current.effects, "RESOLVE")).toMatchObject({ type: "RESOLVE", result: { via: "spoken", heard: "" } });
+  });
+
+  it.each([
+    { age: 0.9, spoke: false },
+    { age: 1, spoke: true },
+  ])("reports spoke=$spoke when cancelling after $age seconds of speech", ({ age, spoke }) => {
+    let current = start();
+    current = apply(current.state, { type: "SPEAK_START", at: 11 });
+    current = apply(current.state, { type: "CANCEL", at: 11 + age, reason: "user" });
+    expect(effect(current.effects, "RESOLVE")).toMatchObject({ type: "RESOLVE", result: { via: "aborted", spoke } });
+  });
+
+  it("moves a listening cancellation through closing and discards its clip", () => {
+    let current = listening();
+    current = apply(current.state, { type: "CANCEL", at: 14, reason: "paused" });
+    expect(current.state).toMatchObject({ phase: "closing", close: { via: "aborted", abortReason: "paused" } });
+    current = finish(current.state, 17);
+    expect(current.effects).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: "CLIP_STOP", upload: false }),
+      expect.objectContaining({ type: "RESOLVE", result: expect.objectContaining({ via: "aborted", heard: "" }) }),
+    ]));
+  });
+
+  it("recovers an old uncommitted partial as Scribe text", () => {
+    let current = listening({ ...options, silenceCloseSecs: 2.5, timeoutSecs: 99 });
+    current = apply(current.state, { type: "HUMAN_PARTIAL", at: 14, text: "A recovered partial." });
+    current = apply(current.state, { type: "TICK", at: 18.5 });
+    expect(current.state).toMatchObject({
+      phase: "closing",
+      close: { via: "scribe", heard: "A recovered partial.", answeredAt: 14 },
+    });
+  });
+
+  it("uses eight seconds of silence after agent speech during listening", () => {
+    let current = listening({ ...options, silenceCloseSecs: 2.5, timeoutSecs: 99 });
+    current = apply(current.state, { type: "HUMAN_COMMIT", at: 14, text: "An answer." });
+    current = apply(current.state, { type: "SPEAK_START", at: 14.2 });
+    current = apply(current.state, { type: "SPEAK_END", at: 15 });
+    current = apply(current.state, { type: "TICK", at: 22.99 });
+    expect(current.state.phase).toBe("listening");
+    current = apply(current.state, { type: "TICK", at: 23 });
+    expect(current.state).toMatchObject({ phase: "closing", close: { via: "scribe" } });
+  });
+
+  it("waits for acknowledgement end and its 600 ms falling edge", () => {
+    let current = listening();
+    current = apply(current.state, { type: "TOOL", at: 14, name: "log_answer", params: {} });
+    current = apply(current.state, { type: "SPEAK_START", at: 15 });
+    current = apply(current.state, { type: "SPEAK_END", at: 16 });
+    current = apply(current.state, { type: "TICK", at: 16.59 });
+    expect(current.state.phase).toBe("closing");
+    current = apply(current.state, { type: "TICK", at: 16.6 });
+    expect(current.state.phase).toBe("idle");
+  });
+
+  it.each([
+    { label: "no acknowledgement starts", options: { ...options }, closeAt: 16.5 },
+    { label: "acknowledgement never ends", options: { ...options, ackMaxSecs: 3 }, closeAt: 18 },
+  ])("resolves when $label", ({ label, options: turnOptions, closeAt }) => {
+    void label;
+    let current = listening(turnOptions);
+    current = apply(current.state, { type: "TOOL", at: 14, name: "log_answer", params: {} });
+    if (turnOptions.ackMaxSecs) current = apply(current.state, { type: "SPEAK_START", at: 15 });
+    current = apply(current.state, { type: "TICK", at: closeAt });
+    expect(current.state.phase).toBe("idle");
+    expect(effect(current.effects, "RESOLVE")).toBeTruthy();
+  });
+
+  it("enforces the 20 second closing hard cap even while human commits continue", () => {
+    let current = listening();
+    current = apply(current.state, { type: "TOOL", at: 14, name: "log_answer", params: {} });
+    current = apply(current.state, { type: "HUMAN_COMMIT", at: 33.9, text: "Still speaking." });
+    current = apply(current.state, { type: "TICK", at: 34 });
+    expect(current.state.phase).toBe("idle");
+    expect(effect(current.effects, "RESOLVE")).toBeTruthy();
+  });
+
+  it.each([
+    { via: "scribe", upload: true },
+    { via: "typed", upload: true },
+    { via: "timeout", upload: false },
+  ] as const)("uses clip upload=$upload for $via", ({ via, upload }) => {
+    let current = listening({ ...options, timeoutSecs: 1, silenceCloseSecs: 1 });
+    if (via === "scribe") {
+      current = apply(current.state, { type: "HUMAN_COMMIT", at: 14, text: "Verbatim." });
+      current = apply(current.state, { type: "TICK", at: 15 });
+    } else if (via === "typed") {
+      current = apply(current.state, { type: "TYPED", at: 14, text: "Typed." });
+    } else {
+      current = apply(current.state, { type: "TICK", at: 14.6 });
+    }
+    current = finish(current.state, 18);
+    expect(effect(current.effects, "CLIP_STOP")).toMatchObject({ type: "CLIP_STOP", upload });
   });
 });

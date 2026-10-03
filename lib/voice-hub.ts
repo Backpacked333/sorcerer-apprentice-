@@ -19,6 +19,183 @@ export interface VoiceHubSubscriber {
 export type VoiceHubConnectionStatus = "disconnected" | "connecting" | "connected" | "error";
 export type VoiceHubConnectionAction = "connect" | "disconnect" | "none";
 
+export interface VoiceHubEffectiveConfig {
+  language?: string;
+  deviceId?: string;
+  keyterms?: string[];
+  filterBackgroundAudio: boolean;
+}
+
+export function voiceHubConfigFingerprint(config: VoiceHubEffectiveConfig): string {
+  return JSON.stringify({
+    language: config.language ?? "",
+    deviceId: config.deviceId ?? "",
+    keyterms: config.keyterms ?? [],
+    filterBackgroundAudio: config.filterBackgroundAudio,
+  });
+}
+
+export class VoiceHubConnectionCoordinator {
+  private demanded = false;
+  private configFingerprint = "";
+  private inFlight: { generation: number; configFingerprint: string; demandWindow: number } | undefined;
+  private fatalLatched = false;
+  private fallbackAttempted = false;
+  private tokenAttempted = false;
+  private nextGeneration = 1;
+  private demandWindow = 0;
+
+  update({ demanded, configFingerprint }: { demanded: boolean; configFingerprint: string }): { stopResources: boolean; needsReconcile: boolean } {
+    const demandStopped = this.demanded && !demanded;
+    const demandStarted = !this.demanded && demanded;
+    const configChanged = this.configFingerprint !== "" && this.configFingerprint !== configFingerprint;
+    if (demandStopped || demandStarted) this.demandWindow += 1;
+    this.demanded = demanded;
+    this.configFingerprint = configFingerprint;
+    if (demandStopped) {
+      this.fatalLatched = false;
+      this.fallbackAttempted = false;
+      this.tokenAttempted = false;
+    } else if (demandStarted) {
+      this.fatalLatched = false;
+      this.fallbackAttempted = false;
+      this.tokenAttempted = false;
+    } else if (configChanged) {
+      this.fallbackAttempted = false;
+      this.tokenAttempted = false;
+    }
+    return {
+      stopResources: demandStopped || (demanded && configChanged),
+      needsReconcile: demanded || demandStopped,
+    };
+  }
+
+  beginTokenAttempt(): { generation: number; configFingerprint: string } | undefined {
+    if (!this.demanded || this.fatalLatched || this.inFlight || this.tokenAttempted) return undefined;
+    this.tokenAttempted = true;
+    this.inFlight = { generation: this.nextGeneration++, configFingerprint: this.configFingerprint, demandWindow: this.demandWindow };
+    return { generation: this.inFlight.generation, configFingerprint: this.inFlight.configFingerprint };
+  }
+
+  isCurrent(generation: number): boolean {
+    return Boolean(
+      this.demanded
+      && !this.fatalLatched
+      && this.inFlight?.generation === generation
+      && this.inFlight.configFingerprint === this.configFingerprint
+      && this.inFlight.demandWindow === this.demandWindow,
+    );
+  }
+
+  settle(generation: number): boolean {
+    if (this.inFlight?.generation === generation) this.inFlight = undefined;
+    return this.demanded;
+  }
+
+  latchFatal(): boolean {
+    if (!this.demanded || this.fatalLatched) return false;
+    this.fatalLatched = true;
+    return true;
+  }
+
+  beginFallback(): boolean {
+    if (!this.demanded || !this.fatalLatched || this.fallbackAttempted) return false;
+    this.fallbackAttempted = true;
+    return true;
+  }
+
+  snapshot() {
+    return {
+      demanded: this.demanded,
+      inFlight: Boolean(this.inFlight),
+      fatalLatched: this.fatalLatched,
+      fallbackAttempted: this.fallbackAttempted,
+      configFingerprint: this.configFingerprint,
+    };
+  }
+}
+
+interface VoiceHubRecognizerResource {
+  onend: (() => void) | null;
+  stop(): void;
+}
+
+export function cleanupVoiceHubProvider({
+  disableDemand,
+  recognizer,
+  clearRecognizer,
+  disconnectScribe,
+}: {
+  disableDemand: () => void;
+  recognizer: VoiceHubRecognizerResource | null;
+  clearRecognizer: () => void;
+  disconnectScribe: () => void;
+}): void {
+  disableDemand();
+  if (recognizer) {
+    recognizer.onend = null;
+    clearRecognizer();
+    try { recognizer.stop(); } catch { /* it may already be stopped */ }
+  }
+  disconnectScribe();
+}
+
+export class AgentSpeechTracker {
+  private activeId: string | undefined;
+  private speaking = false;
+  private fallingTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+  private pendingEnd: number | undefined;
+
+  constructor(
+    private readonly timeline: AgentSpeechTimeline,
+    private readonly options: {
+      fallingEdgeMs?: number;
+      schedule?: (callback: () => void, ms: number) => ReturnType<typeof globalThis.setTimeout>;
+      cancelTimer?: (timer: ReturnType<typeof globalThis.setTimeout>) => void;
+    } = {},
+  ) {}
+
+  onMode(mode: "speaking" | "listening", at: number, text: string): { rising: boolean } {
+    const rising = mode === "speaking" && !this.speaking;
+    if (mode === "speaking") {
+      this.cancelFalling();
+      this.speaking = true;
+      if (!this.activeId) this.activeId = this.timeline.start(at, text, "agent");
+      return { rising };
+    }
+    this.speaking = false;
+    if (!this.activeId || this.fallingTimer !== undefined) return { rising: false };
+    this.pendingEnd = at;
+    const schedule = this.options.schedule ?? ((callback, ms) => globalThis.setTimeout(callback, ms));
+    this.fallingTimer = schedule(() => {
+      this.fallingTimer = undefined;
+      const end = this.pendingEnd;
+      this.pendingEnd = undefined;
+      if (end !== undefined && this.activeId) this.timeline.end(end, this.activeId);
+      this.activeId = undefined;
+    }, this.options.fallingEdgeMs ?? 600);
+    return { rising: false };
+  }
+
+  refine(text: string): void {
+    if (this.activeId) this.timeline.updateText(text, this.activeId);
+  }
+
+  close(at: number): void {
+    this.cancelFalling();
+    if (this.activeId) this.timeline.end(at, this.activeId);
+    this.activeId = undefined;
+    this.speaking = false;
+  }
+
+  private cancelFalling(): void {
+    if (this.fallingTimer === undefined) return;
+    (this.options.cancelTimer ?? ((timer) => globalThis.clearTimeout(timer)))(this.fallingTimer);
+    this.fallingTimer = undefined;
+    this.pendingEnd = undefined;
+  }
+}
+
 export function buildVoiceHubScribeOptions({
   token,
   deviceId,
@@ -71,6 +248,7 @@ export class VoiceHubRouter {
   }
 
   setSessionStart(epochMs: number | undefined): void {
+    if (epochMs === undefined || this.sessionStartMs !== epochMs) this.resetSegment();
     this.sessionStartMs = epochMs;
   }
 
@@ -154,6 +332,15 @@ export class VoiceHubRouter {
 
   private relativeTimes(startedAtMs: number, endedAtMs: number): [number | undefined, number | undefined] {
     if (this.sessionStartMs === undefined) return [undefined, undefined];
-    return [(startedAtMs - this.sessionStartMs) / 1_000, (endedAtMs - this.sessionStartMs) / 1_000];
+    const start = Math.max(0, (startedAtMs - this.sessionStartMs) / 1_000);
+    const end = Math.max(start, (endedAtMs - this.sessionStartMs) / 1_000);
+    return [start, end];
+  }
+
+  private resetSegment(): void {
+    this.segmentStartedAtMs = undefined;
+    this.segmentEndedAtMs = undefined;
+    this.previousPartial = "";
+    this.deliveredCommand = null;
   }
 }

@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AgentSpeechTimeline } from "./voice-protocol";
-import { buildVoiceHubScribeOptions, VoiceHubRouter, nextVoiceHubConnectionAction, type VoiceHubSubscriber } from "./voice-hub";
+import {
+  AgentSpeechTracker,
+  buildVoiceHubScribeOptions,
+  cleanupVoiceHubProvider,
+  VoiceHubConnectionCoordinator,
+  voiceHubConfigFingerprint,
+  VoiceHubRouter,
+  nextVoiceHubConnectionAction,
+  type VoiceHubSubscriber,
+} from "./voice-hub";
 
 function subscriber(overrides: Partial<VoiceHubSubscriber> = {}): VoiceHubSubscriber {
   return {
@@ -43,6 +52,47 @@ describe("VoiceHubRouter app clock", () => {
       endedAtMs: 204_000,
       speaker: "human",
     });
+  });
+
+  it("drops partial timing when the application session clock changes", () => {
+    const committed = vi.fn();
+    const hub = new VoiceHubRouter({ timeline: new AgentSpeechTimeline() });
+    hub.subscribe("capture", () => subscriber({ onCommitted: committed }));
+    hub.setSessionStart(100_000);
+    hub.partial("old session partial", 101_000);
+
+    hub.setSessionStart(200_000);
+    hub.commit("new session commit", 202_000);
+
+    expect(committed).toHaveBeenCalledWith("new session commit", 1, 1, {
+      startedAtMs: 201_000,
+      endedAtMs: 201_000,
+      speaker: "human",
+    });
+  });
+
+  it("clears an unclocked pending segment when the session clock is cleared", () => {
+    const committed = vi.fn();
+    const hub = new VoiceHubRouter({ timeline: new AgentSpeechTimeline() });
+    hub.subscribe("capture", () => subscriber({ onCommitted: committed }));
+    hub.partial("stale partial", 1_000);
+
+    hub.setSessionStart(undefined);
+    hub.commit("fresh commit", 5_000);
+
+    expect(committed.mock.calls[0][3]).toMatchObject({ startedAtMs: 4_000, endedAtMs: 4_000 });
+  });
+
+  it("clamps pre-session segment times to an ordered non-negative range", () => {
+    const committed = vi.fn();
+    const hub = new VoiceHubRouter({ timeline: new AgentSpeechTimeline() });
+    hub.subscribe("capture", () => subscriber({ onCommitted: committed }));
+    hub.setSessionStart(100_000);
+
+    hub.partial("early", 98_000);
+    hub.commit("early speech", 99_000);
+
+    expect(committed.mock.calls[0].slice(1, 3)).toEqual([0, 0]);
   });
 });
 
@@ -158,5 +208,125 @@ describe("VoiceHubRouter connection demand", () => {
         noiseSuppression: true,
       },
     });
+  });
+});
+
+describe("VoiceHubConnectionCoordinator", () => {
+  it("keeps one deferred token attempt through ordinary reconcile passes and reconciles after settle", async () => {
+    const coordinator = new VoiceHubConnectionCoordinator();
+    coordinator.update({ demanded: true, configFingerprint: "config-a" });
+    const first = coordinator.beginTokenAttempt();
+    expect(first).toEqual({ generation: 1, configFingerprint: "config-a" });
+    let releaseToken!: () => void;
+    const deferredToken = new Promise<void>((resolve) => { releaseToken = resolve; });
+    let tokenCalls = 1;
+    let connections = 0;
+    let engine = "none";
+    const attempt = (async () => {
+      await deferredToken;
+      if (coordinator.isCurrent(first!.generation)) {
+        connections += 1;
+        engine = "scribe";
+      }
+      return coordinator.settle(first!.generation);
+    })();
+
+    expect(coordinator.update({ demanded: true, configFingerprint: "config-a" }).stopResources).toBe(false);
+    if (coordinator.beginTokenAttempt()) tokenCalls += 1;
+    expect(tokenCalls).toBe(1);
+
+    releaseToken();
+    expect(await attempt).toBe(true);
+    expect({ tokenCalls, connections, engine }).toEqual({ tokenCalls: 1, connections: 1, engine: "scribe" });
+    expect(coordinator.snapshot()).toMatchObject({ demanded: true, inFlight: false, fatalLatched: false });
+  });
+
+  it("allows one token attempt per fatal demand window and resets only after demand turns off", () => {
+    const coordinator = new VoiceHubConnectionCoordinator();
+    coordinator.update({ demanded: true, configFingerprint: "config-a" });
+    const first = coordinator.beginTokenAttempt()!;
+    coordinator.settle(first.generation);
+    expect(coordinator.latchFatal()).toBe(true);
+    expect(coordinator.beginFallback()).toBe(true);
+    expect(coordinator.beginFallback()).toBe(false);
+    expect(coordinator.beginTokenAttempt()).toBeUndefined();
+
+    coordinator.update({ demanded: false, configFingerprint: "config-a" });
+    coordinator.update({ demanded: true, configFingerprint: "config-a" });
+    expect(coordinator.beginTokenAttempt()).toEqual({ generation: 2, configFingerprint: "config-a" });
+  });
+
+  it("rejects a deferred token from a demand window that stopped and restarted", () => {
+    const coordinator = new VoiceHubConnectionCoordinator();
+    coordinator.update({ demanded: true, configFingerprint: "config-a" });
+    const stale = coordinator.beginTokenAttempt()!;
+
+    coordinator.update({ demanded: false, configFingerprint: "config-a" });
+    coordinator.update({ demanded: true, configFingerprint: "config-a" });
+
+    expect(coordinator.isCurrent(stale.generation)).toBe(false);
+    coordinator.settle(stale.generation);
+    expect(coordinator.beginTokenAttempt()).toEqual({ generation: 2, configFingerprint: "config-a" });
+  });
+
+  it("invalidates stale work and requests one controlled reconnect for an effective config change", () => {
+    const coordinator = new VoiceHubConnectionCoordinator();
+    coordinator.update({ demanded: true, configFingerprint: "config-a" });
+    const first = coordinator.beginTokenAttempt()!;
+    expect(coordinator.settle(first.generation)).toBe(true);
+
+    expect(coordinator.update({ demanded: true, configFingerprint: "config-b" }).stopResources).toBe(true);
+    expect(coordinator.update({ demanded: true, configFingerprint: "config-b" }).stopResources).toBe(false);
+    expect(coordinator.beginTokenAttempt()).toEqual({ generation: 2, configFingerprint: "config-b" });
+  });
+
+  it("fingerprints every effective Scribe and WebSpeech option including empty keyterms", () => {
+    const base = { language: "en", deviceId: "mic-1", keyterms: ["Acme"], filterBackgroundAudio: true };
+    expect(voiceHubConfigFingerprint(base)).not.toBe(voiceHubConfigFingerprint({ ...base, language: "de" }));
+    expect(voiceHubConfigFingerprint(base)).not.toBe(voiceHubConfigFingerprint({ ...base, deviceId: "mic-2" }));
+    expect(voiceHubConfigFingerprint(base)).not.toBe(voiceHubConfigFingerprint({ ...base, keyterms: [] }));
+    expect(voiceHubConfigFingerprint(base)).not.toBe(voiceHubConfigFingerprint({ ...base, filterBackgroundAudio: false }));
+    expect(voiceHubConfigFingerprint({ ...base, keyterms: [] })).toBe(voiceHubConfigFingerprint({ ...base, keyterms: [] }));
+  });
+});
+
+describe("voice hub resource lifecycle", () => {
+  it("disables demand before stopping WebSpeech and prevents its captured onend from restarting", () => {
+    const events: string[] = [];
+    let demanded = true;
+    let restarts = 0;
+    const recognizer = {
+      onend: () => { if (demanded) restarts += 1; },
+      stop: () => { events.push("stop"); },
+    };
+    const capturedOnEnd = recognizer.onend;
+
+    cleanupVoiceHubProvider({
+      disableDemand: () => { demanded = false; events.push("demand-off"); },
+      recognizer,
+      clearRecognizer: () => events.push("clear-ref"),
+      disconnectScribe: () => events.push("disconnect-scribe"),
+    });
+    capturedOnEnd();
+
+    expect(events).toEqual(["demand-off", "clear-ref", "stop", "disconnect-scribe"]);
+    expect(recognizer.onend).toBeNull();
+    expect(restarts).toBe(0);
+  });
+});
+
+describe("AgentSpeechTracker", () => {
+  it("debounces and closes gated unsolicited speech without authorization state", () => {
+    vi.useFakeTimers();
+    const timeline = new AgentSpeechTimeline();
+    const tracker = new AgentSpeechTracker(timeline);
+
+    tracker.onMode("speaking", 10, "Unsolicited output");
+    tracker.onMode("listening", 12, "Unsolicited output");
+    vi.advanceTimersByTime(599);
+    expect(timeline.all()[0].end).toBeUndefined();
+    vi.advanceTimersByTime(1);
+    expect(timeline.all()[0].end).toBe(12);
+    vi.useRealTimers();
   });
 });

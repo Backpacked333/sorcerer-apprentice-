@@ -1,0 +1,37 @@
+{
+  "name": "tacit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tacit: the AI Apprentice. Captures what an expert knows while they work, maps it, teaches it.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "agents:create": "tsx scripts/create-agents.ts",
+    "seed:session": "tsx scripts/seed-session.ts"
+  },
+  "dependencies": {
+    "@ai-sdk/gateway": "^4.0.103",
+    "@elevenlabs/elevenlabs-js": "^2.70.0",
+    "@elevenlabs/react": "^1.16.0",
+    "ai": "^7.0.127",
+    "next": "^16.3.8",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "playwright": "^1.63.0",
+    "tailwindcss": "^4.3.3",
+    "tsx": "^4",
+    "typescript": "^5",
+    "vitest": "^5.0.3"
+  }
+}

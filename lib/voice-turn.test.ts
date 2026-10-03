@@ -131,6 +131,20 @@ describe("turn reducer", () => {
     });
   });
 
+  it.each([
+    { prefix: "", partial: "A partial-only answer.", heard: "A partial-only answer." },
+    { prefix: "The complete reason is", partial: "the late approval.", heard: "The complete reason is the late approval." },
+  ])("folds live partial text into the Scribe answer at maxSecs: $heard", ({ prefix, partial, heard }) => {
+    let current = listening({ ...options, timeoutSecs: 99, maxSecs: 5, silenceCloseSecs: 99 });
+    if (prefix) current = apply(current.state, { type: "HUMAN_COMMIT", at: 16, text: prefix });
+    current = apply(current.state, { type: "HUMAN_PARTIAL", at: 18.4, text: partial });
+    current = apply(current.state, { type: "TICK", at: 18.6 });
+    expect(current.state).toMatchObject({
+      phase: "closing",
+      close: { via: "scribe", heard, heardSource: "scribe", answeredAt: 18.4 },
+    });
+  });
+
   it("closes from typed input with the typed source", () => {
     let current = listening();
     current = apply(current.state, { type: "TYPED", at: 14, text: "  A typed explanation.  " });

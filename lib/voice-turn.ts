@@ -511,7 +511,10 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
     const captured = heard(state);
     const silenceAnchor = Math.max(state.lastHumanSpeechAt, state.lastAgentSpeechEnd, askedAt);
     if (state.partial) {
-      if (event.at - state.lastPartialAt + EPSILON >= silenceCloseSecs + 2) {
+      const maxSecs = state.options?.maxSecs ?? 60;
+      const partialRecovered = event.at - state.lastPartialAt + EPSILON >= silenceCloseSecs + 2;
+      const hitMax = event.at - askedAt + EPSILON >= maxSecs;
+      if (partialRecovered || hitMax) {
         const withPartial = {
           ...state,
           scribeText: append(state.scribeText, state.partial),
@@ -520,8 +523,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
         };
         return closeListening(withPartial, event.at, "scribe", { answeredAt: state.lastPartialAt });
       }
-      const maxSecs = state.options?.maxSecs ?? 60;
-      if (event.at - askedAt + EPSILON < maxSecs) return { state, effects: [] };
+      return { state, effects: [] };
     }
     if (captured.heard && event.at - silenceAnchor + EPSILON >= effectiveSilence) {
       return closeListening(state, event.at, "scribe");

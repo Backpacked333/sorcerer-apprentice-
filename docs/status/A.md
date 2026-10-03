@@ -14,7 +14,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Done in the current PR (pending merge)
 
-- WA-5 Capture configuration wiring now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and includes all cadence, grace and chaining knobs. Pure parser coverage is complete; human tuning remains pending.
+- WA-5 Capture configuration parsing/page routing now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and carries all cadence, grace and chaining knobs through the existing config prop. Pure parser coverage is complete; human tuning remains pending. `graceSecs` and `maxChained` are currently runtime no-ops because frozen `CaptureClient` still constructs `new CandidateQueue(90)` and does not adopt `CaptureLoop`; the mechanism drawer also does not display effective values.
 
 ## Verified live by a human (who, when, what they did)
 
@@ -35,15 +35,18 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - Human/key: `ELEVENLABS_API_KEY` is absent locally, so the shared agents cannot be updated and the keyed prompt behavior cannot be heard yet.
 - Human/audio: a person must grant microphone permission and listen/speak through HT-4 before WA-3 can be marked live-verified.
 - Human/key: WA-11's live confirm mutates the shared tutor agent and cannot be run without the missing ElevenLabs key and explicit first-mutation approval.
+- Lane D / [issue #4](https://github.com/Backpacked333/sorcerer-apprentice-/issues/4): the Capture seam split is still open, so A cannot integrate the configured grace/chaining values or expose them through the view model without editing D-owned presentation JSX.
+- Lane B / [issue #19](https://github.com/Backpacked333/sorcerer-apprentice-/issues/19): `.env.example` must add the seven new public tuning names and change its shipped cooldown from `60` to `20`.
 
 ## Next 3 things
 
-1. Integrate the merged P-12 reducer into `components/voice.tsx` with the structural output gate.
-2. With explicit approval and a key, update both shared agents and run `npm run agents:create -- --check`.
-3. Run HT-1 through HT-4 on `/voice-check`, recording the first missing event or each pass.
+1. After D lands issue #4, integrate `CandidateQueue(90, graceSecs)` + `CaptureLoop`/`maxChained` and expose the effective timing values through the Capture view model for the mechanism drawer.
+2. Integrate the merged P-12 reducer into `components/voice.tsx` with the structural output gate.
+3. With explicit approval and a key, update both shared agents, run `npm run agents:create -- --check`, then run HT-1 through HT-6.
 
 ## Risks I see for the demo
 
 - Prompt text is automated-test verified but not yet deployed or judged by a human listener.
 - Keyless fallback remains the only executable path in this environment until the ElevenLabs key is supplied.
 - A keyed connection, first-message speaking edge, microphone gate, and Scribe event order remain human-unverified.
+- The page parses grace/chaining overrides, but they cannot affect runtime cadence until the post-seam Capture integration above lands; the drawer likewise cannot show effective values yet.

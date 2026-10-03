@@ -61,6 +61,165 @@ export function createCancellationGuard(isCancelled: () => boolean) {
   return { run<T>(action: () => T): T | undefined { return isCancelled() ? undefined : action(); } };
 }
 
+export interface ConversationVolumeControl {
+  setVolume(options: { volume: number }): void;
+}
+
+export function applyConversationGate(control: ConversationVolumeControl, open: boolean): boolean {
+  try {
+    control.setVolume({ volume: open ? 1 : 0 });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export interface AudioAttachmentNode {
+  nodeName?: string;
+  volume?: number;
+  querySelectorAll?: (selector: string) => ArrayLike<AudioAttachmentNode>;
+}
+
+export interface AudioAttachmentRoot extends AudioAttachmentNode {
+  appendChild(node: AudioAttachmentNode): AudioAttachmentNode;
+}
+
+interface AudioAttachmentObserver {
+  observe(root: AudioAttachmentRoot, options: { childList: boolean; subtree: boolean }): void;
+  disconnect(): void;
+}
+
+type AudioMutation = { addedNodes: ArrayLike<AudioAttachmentNode> };
+
+function applyAttachedAudioVolume(node: AudioAttachmentNode, volume: number): void {
+  if (node.nodeName?.toUpperCase() === "AUDIO" && typeof node.volume === "number") node.volume = volume;
+  for (const audio of Array.from(node.querySelectorAll?.("audio") ?? [])) {
+    if (typeof audio.volume === "number") audio.volume = volume;
+  }
+}
+
+export function installAudioAttachmentGate({
+  root,
+  readVolume,
+  createObserver,
+}: {
+  root: AudioAttachmentRoot;
+  readVolume: () => number;
+  createObserver?: (callback: (records: ArrayLike<AudioMutation>) => void) => AudioAttachmentObserver;
+}): () => void {
+  const originalAppendChild = root.appendChild;
+  const guardedAppendChild = function (this: AudioAttachmentRoot, node: AudioAttachmentNode) {
+    applyAttachedAudioVolume(node, readVolume());
+    return originalAppendChild.call(this, node);
+  };
+  root.appendChild = guardedAppendChild;
+  for (const existing of Array.from(root.querySelectorAll?.("audio") ?? [])) applyAttachedAudioVolume(existing, readVolume());
+
+  const makeObserver = createObserver ?? (typeof MutationObserver === "undefined"
+    ? undefined
+    : (callback: (records: ArrayLike<AudioMutation>) => void) => {
+      const observer = new MutationObserver((records) => callback(records));
+      return observer as unknown as AudioAttachmentObserver;
+    });
+  const observer = makeObserver?.((records) => {
+    for (const record of Array.from(records)) {
+      for (const node of Array.from(record.addedNodes)) applyAttachedAudioVolume(node, readVolume());
+    }
+  });
+  observer?.observe(root, { childList: true, subtree: true });
+
+  return () => {
+    observer?.disconnect();
+    if (root.appendChild === guardedAppendChild) root.appendChild = originalAppendChild;
+  };
+}
+
+export interface SpeechAuthorizationSnapshot {
+  pending: boolean;
+  active: boolean;
+  falling: boolean;
+  authorized: boolean;
+  heartbeatAllowed: boolean;
+}
+
+export function createSpeechAuthorizationLatch({
+  fallingEdgeMs = 600,
+  schedule = (callback, ms) => globalThis.setTimeout(callback, ms),
+  cancelTimer = (timer) => globalThis.clearTimeout(timer),
+  onChange = () => {},
+  onDefinitiveEnd = () => {},
+}: {
+  fallingEdgeMs?: number;
+  schedule?: (callback: () => void, ms: number) => ReturnType<typeof globalThis.setTimeout>;
+  cancelTimer?: (timer: ReturnType<typeof globalThis.setTimeout>) => void;
+  onChange?: () => void;
+  onDefinitiveEnd?: () => void;
+} = {}) {
+  let pending = false;
+  let active = false;
+  let speaking = false;
+  let fallingTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+  const changed = () => onChange();
+  const cancelFalling = () => {
+    if (fallingTimer === undefined) return;
+    cancelTimer(fallingTimer);
+    fallingTimer = undefined;
+  };
+  const finishAfterFallingEdge = () => {
+    if (fallingTimer !== undefined || (!active && !pending)) return;
+    if (pending) {
+      pending = false;
+      active = true;
+    }
+    fallingTimer = schedule(() => {
+      fallingTimer = undefined;
+      active = false;
+      changed();
+      onDefinitiveEnd();
+    }, fallingEdgeMs);
+    changed();
+  };
+  return {
+    authorize() {
+      cancelFalling();
+      pending = true;
+      active = false;
+      speaking = false;
+      changed();
+    },
+    onMode(mode: "speaking" | "listening") {
+      const rising = mode === "speaking" && !speaking;
+      if (mode === "speaking") {
+        cancelFalling();
+        speaking = true;
+        if (pending) {
+          pending = false;
+          active = true;
+        }
+        changed();
+        return { rising };
+      }
+      const wasSpeaking = speaking;
+      speaking = false;
+      if (active && wasSpeaking) finishAfterFallingEdge();
+      return { rising: false };
+    },
+    finish: finishAfterFallingEdge,
+    cancel() {
+      cancelFalling();
+      pending = false;
+      active = false;
+      speaking = false;
+      changed();
+    },
+    snapshot(): SpeechAuthorizationSnapshot {
+      const falling = fallingTimer !== undefined;
+      const authorized = pending || active || falling;
+      return { pending, active, falling, authorized, heartbeatAllowed: !authorized };
+    },
+  };
+}
+
 export function createConnectionLifecycle({
   onOutcome,
   endSession,
@@ -172,14 +331,15 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const [voiceError, setVoiceError] = useState<string>();
   const [sttError, setSttError] = useState<string>();
   const [gateHoldUntil, setGateHoldUntil] = useState(0);
+  const [, setGateRevision] = useState(0);
   const controls = useConversationControls();
   const conversationStatus = useConversationStatus();
   const conversationMode = useConversationMode();
   const micMutedRef = useRef(true);
   const gateHoldUntilRef = useRef(0);
-  const authorizedSpeechUntilRef = useRef(0);
-  const activeSpeechAuthorizedRef = useRef(false);
-  const wasAgentSpeakingRef = useRef(false);
+  const gateChangedRef = useRef<() => void>(() => {});
+  const authorization = useRef<ReturnType<typeof createSpeechAuthorizationLatch> | undefined>(undefined);
+  if (!authorization.current) authorization.current = createSpeechAuthorizationLatch({ onChange: () => gateChangedRef.current() });
   const lastUserActivityAtRef = useRef(0);
   const firstMessages = useRef(new Map<number, string>());
   const establishedGeneration = useRef<number | undefined>(undefined);
@@ -202,41 +362,43 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const authorizeSpeech = useCallback((text: string) => {
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     const until = Date.now() + (2 + 0.45 * words) * 1000;
-    authorizedSpeechUntilRef.current = until;
+    authorization.current!.authorize();
     extendGateHold(until);
   }, [extendGateHold]);
   const gateIsOpenAt = useCallback((now: number) => gateState({
-    turnActive: false,
+    turnActive: authorization.current!.snapshot().authorized,
     now,
     gateHoldUntil: gateHoldUntilRef.current,
     micMuted: micMutedRef.current,
     squelch: false,
   }), []);
   const reassertGate = useCallback((now = Date.now()) => {
-    try {
-      controls.setVolume({ volume: gateIsOpenAt(now) ? 1 : 0 });
-    } catch {
-      // The stable controls intentionally throw until a conversation exists.
-    }
+    applyConversationGate(controls, gateIsOpenAt(now));
   }, [controls, gateIsOpenAt]);
+  useEffect(() => {
+    gateChangedRef.current = () => {
+      if (!authorization.current!.snapshot().authorized) {
+        gateHoldUntilRef.current = 0;
+        setGateHoldUntil(0);
+      }
+      setGateRevision((revision) => revision + 1);
+      reassertGate();
+    };
+    return () => { gateChangedRef.current = () => {}; };
+  }, [reassertGate]);
   const handleAgentMode = useCallback((data: { mode: "speaking" | "listening" }) => {
     const now = Date.now();
-    const speaking = data.mode === "speaking";
+    const authorizedBefore = authorization.current!.snapshot().authorized;
+    const { rising } = authorization.current!.onMode(data.mode);
+    const authorized = authorizedBefore || authorization.current!.snapshot().authorized;
     emit("agent", "mode", data);
     reassertGate(now);
-    if (speaking && !wasAgentSpeakingRef.current) {
+    if (rising) {
       const open = gateIsOpenAt(now);
-      const authorized = authorizedSpeechUntilRef.current > now;
-      activeSpeechAuthorizedRef.current = authorized;
       if (!open) emit("gate", "gated_utterance");
       else if (!authorized) emit("gate", "audible_unsolicited");
-    } else if (!speaking && wasAgentSpeakingRef.current) {
-      if (activeSpeechAuthorizedRef.current) extendGateHold(now + 1_500);
-      activeSpeechAuthorizedRef.current = false;
-      authorizedSpeechUntilRef.current = 0;
     }
-    wasAgentSpeakingRef.current = speaking;
-  }, [emit, extendGateHold, gateIsOpenAt, reassertGate]);
+  }, [emit, gateIsOpenAt, reassertGate]);
   const noteUserActivity = useCallback(() => {
     if (conversationStatus.status !== "connected") return;
     const now = Date.now();
@@ -270,14 +432,14 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         activateFallback(outcome.reason);
         if (firstMessage) {
           authorizeSpeech(firstMessage);
-          void speakFallbackRef.current(firstMessage).finally(() => extendGateHold(Date.now() + 1_500));
+          void speakFallbackRef.current(firstMessage).finally(() => authorization.current!.finish());
         }
       } else {
         setFallbackConnected(false);
       }
       emit("agent", `connect_${outcome.kind}`, outcome);
     };
-  }, [activateFallback, authorizeSpeech, emit, extendGateHold]);
+  }, [activateFallback, authorizeSpeech, emit]);
 
   useConversation({
     micMuted,
@@ -286,11 +448,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       reassertGate();
     },
     onDisconnect: (details) => {
-      authorizedSpeechUntilRef.current = 0;
-      activeSpeechAuthorizedRef.current = false;
-      wasAgentSpeakingRef.current = false;
+      authorization.current!.cancel();
       gateHoldUntilRef.current = 0;
       setGateHoldUntil(0);
+      applyConversationGate(controls, false);
       emit("agent", "disconnect", details);
     },
     onError: (message, context) => emit("agent", "error", { message, context }),
@@ -320,11 +481,19 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   });
 
   useEffect(() => {
+    if (configuredMode !== "agent") return;
+    return installAudioAttachmentGate({
+      root: document.body as unknown as AudioAttachmentRoot,
+      readVolume: () => gateIsOpenAt(Date.now()) ? 1 : 0,
+    });
+  }, [configuredMode, gateIsOpenAt]);
+
+  useEffect(() => {
     if (conversationStatus.status !== "connected") return;
     reassertGate();
     const timer = window.setInterval(() => {
       const now = Date.now();
-      if (gateHoldUntilRef.current > 0 && now >= gateHoldUntilRef.current) {
+      if (authorization.current!.snapshot().heartbeatAllowed && gateHoldUntilRef.current > 0 && now >= gateHoldUntilRef.current) {
         gateHoldUntilRef.current = 0;
         setGateHoldUntil(0);
       }
@@ -336,8 +505,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   useEffect(() => {
     if (conversationStatus.status !== "connected") return;
     const timer = window.setInterval(() => {
-      const now = Date.now();
-      if (authorizedSpeechUntilRef.current <= now && !activeSpeechAuthorizedRef.current) noteUserActivity();
+      if (authorization.current!.snapshot().heartbeatAllowed) noteUserActivity();
     }, 10_000);
     return () => window.clearInterval(timer);
   }, [conversationStatus.status, noteUserActivity]);
@@ -407,7 +575,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         if (opts?.firstMessage) {
           authorizeSpeech(opts.firstMessage);
           await speakFallback(opts.firstMessage);
-          extendGateHold(Date.now() + 1_500);
+          authorization.current!.finish();
         }
         return;
       }
@@ -450,15 +618,14 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       }
       await attempt.promise;
     },
-    [activateFallback, agentId, authorizeSpeech, configuredMode, controls, conversationStatus.status, extendGateHold, reassertGate, speakFallback],
+    [activateFallback, agentId, authorizeSpeech, configuredMode, controls, conversationStatus.status, reassertGate, speakFallback],
   );
 
   const disconnect = useCallback(() => {
-    authorizedSpeechUntilRef.current = 0;
-    activeSpeechAuthorizedRef.current = false;
-    wasAgentSpeakingRef.current = false;
+    authorization.current!.cancel();
     gateHoldUntilRef.current = 0;
     setGateHoldUntil(0);
+    applyConversationGate(controls, false);
     if (configuredMode === "fallback") {
       window.speechSynthesis?.cancel();
       setFallbackConnected(false);
@@ -481,7 +648,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       authorizeSpeech(line);
       reassertGate();
       if (configuredMode === "fallback" || voiceError || conversationStatus.status !== "connected") {
-        void speakFallback(line).finally(() => extendGateHold(Date.now() + 1_500));
+        void speakFallback(line).finally(() => authorization.current!.finish());
         return;
       }
       setMessages((xs) => [...xs, { role: "user", text: `[${tag}] ${text}`, t: Date.now() }]);
@@ -490,18 +657,20 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       } catch (error) {
         controls.endSession();
         activateFallback(error instanceof Error ? error.message : String(error), establishedGeneration.current);
-        void speakFallback(line).finally(() => extendGateHold(Date.now() + 1_500));
+        void speakFallback(line).finally(() => authorization.current!.finish());
       }
     },
-    [activateFallback, authorizeSpeech, configuredMode, controls, conversationStatus.status, extendGateHold, reassertGate, voiceError, speakFallback],
+    [activateFallback, authorizeSpeech, configuredMode, controls, conversationStatus.status, reassertGate, voiceError, speakFallback],
   );
 
   const setMicMuted = useCallback(
     (m: boolean) => {
       micMutedRef.current = m;
       setMicMutedState(m);
+      if (m) applyConversationGate(controls, false);
+      else reassertGate();
     },
-    [],
+    [controls, reassertGate],
   );
 
   const sendContext = useCallback(
@@ -530,7 +699,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const mode: VoiceApi["mode"] = configuredMode === "agent" && !voiceError ? "agent" : "fallback";
   const degraded = Boolean(voiceError || sttError);
   const lastError = voiceError ?? sttError;
-  const gateOpen = gateState({ turnActive: false, now: Date.now(), gateHoldUntil, micMuted, squelch: false });
+  const gateOpen = gateState({ turnActive: authorization.current.snapshot().authorized, now: Date.now(), gateHoldUntil, micMuted, squelch: false });
 
   useEffect(() => {
     reassertGate();

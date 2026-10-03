@@ -25,10 +25,15 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState("");
   const [connectStartedAt, setConnectStartedAt] = useState<number>();
-  const [soakUntil, setSoakUntil] = useState<number>();
+  const [soak, setSoak] = useState<{ startedAt: number; until: number; eventIndex: number }>();
   const [soakRemaining, setSoakRemaining] = useState(0);
+  const [soakResult, setSoakResult] = useState<ReturnType<typeof evaluateSilenceSoak>>();
+  const eventsRef = useRef(events);
+  const voiceRef = useRef(voice);
+  eventsRef.current = events;
+  voiceRef.current = voice;
   const stt = useTranscriber({
-    enabled: !voice.micMuted,
+    enabled: !voice.micMuted || soak !== undefined,
     onPartial: () => {},
     onCommitted: (text) => setLastCommit(text),
   });
@@ -49,19 +54,21 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
   }, [refreshDevices]);
 
   useEffect(() => {
-    if (!soakUntil) return;
+    if (!soak) return;
     const update = () => {
-      const remaining = Math.max(0, soakUntil - Date.now());
+      const remaining = Math.max(0, soak.until - Date.now());
       setSoakRemaining(remaining);
       if (remaining === 0) {
-        setSoakUntil(undefined);
-        log({ at: Date.now(), src: "gate", type: "silence_soak_complete" });
+        const result = evaluateSilenceSoak({ events: eventsRef.current, startedAt: soak.startedAt, connected: voiceRef.current.connected, gateOpen: voiceRef.current.gateOpen });
+        setSoakResult(result);
+        setSoak(undefined);
+        log({ at: Date.now(), src: "gate", type: "silence_soak_complete", data: { eventIndex: soak.eventIndex, ...result } });
       }
     };
     update();
     const timer = window.setInterval(update, 1_000);
     return () => window.clearInterval(timer);
-  }, [log, soakUntil]);
+  }, [log, soak]);
 
   const requestMic = async () => {
     try {
@@ -94,11 +101,16 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
     setConnectStartedAt(undefined);
   };
   const startSilenceSoak = () => {
+    if (!voice.connected || voice.gateOpen) return;
     voice.setMicMuted(true);
-    const until = Date.now() + 180_000;
-    setSoakUntil(until);
-    log({ at: Date.now(), src: "gate", type: "silence_soak_started", data: { durationSecs: 180 } });
+    const startedAt = Date.now();
+    const eventIndex = events.length;
+    setSoakRemaining(180_000);
+    setSoakResult(undefined);
+    setSoak({ startedAt, until: startedAt + 180_000, eventIndex });
+    log({ at: startedAt, src: "gate", type: "silence_soak_started", data: { durationSecs: 180, eventIndex } });
   };
+  const liveSoakResult = soak ? evaluateSilenceSoak({ events, startedAt: soak.startedAt, connected: voice.connected, gateOpen: voice.gateOpen }) : soakResult;
 
   return (
     <main className="mx-auto max-w-6xl space-y-6 p-6 text-slate-100">
@@ -120,14 +132,16 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
           <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.setMicMuted(!voice.micMuted)}>{voice.micMuted ? "Open mic" : "Close mic"}</button>
           <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.sendContext("[SCREEN] Voice diagnostics context only.")}>Send [SCREEN] context</button>
           <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.say("ASK", sample)}>Send [ASK] sample</button>
-          <button className="rounded bg-indigo-600 px-3 py-2 disabled:opacity-50" disabled={soakUntil !== undefined} onClick={startSilenceSoak}>{soakUntil ? `Silence soak · ${Math.ceil(soakRemaining / 1000)}s` : "Silence soak (3 min)"}</button>
+          <button className="rounded bg-indigo-600 px-3 py-2 disabled:opacity-50" disabled={soak !== undefined || !voice.connected || voice.gateOpen} onClick={startSilenceSoak}>{soak ? `Silence soak · ${Math.ceil(soakRemaining / 1000)}s` : "Silence soak (3 min)"}</button>
           <button className="rounded bg-slate-700 px-3 py-2" onClick={download}>Download log (JSON)</button>
         </div>
         <textarea className="min-h-28 w-full rounded bg-slate-950 p-3 text-sm" value={sample} onChange={(event) => setSample(event.target.value)} />
         <div className="grid gap-2 text-sm md:grid-cols-4"><Row label="Mode" value={voice.mode} /><Row label="Status" value={voice.status} /><Row label="Conversation" value={voice.getId() ?? "none"} /><Row label="Connect elapsed" value={connectStartedAt ? `${Date.now() - connectStartedAt} ms` : "—"} /></div>
         <div className="grid gap-2 text-sm md:grid-cols-5"><Row label="Connect → ready" value={formatMs(metrics.connectMs)} /><Row label="Sent / spoke" value={`${metrics.sends} / ${metrics.speaking}`} /><Row label="Sent → spoke p50/p90" value={`${formatMs(metrics.sentToSpokeP50)} / ${formatMs(metrics.sentToSpokeP90)}`} /><Row label="Partials / commits" value={`${metrics.partials} / ${metrics.commits}`} /><Row label="log_answer tools" value={String(metrics.answers)} /></div>
         <div className="grid gap-2 text-sm md:grid-cols-4"><Row label="Output gate" value={voice.gateOpen ? "OPEN" : "CLOSED"} /><Row label="Gated utterances" value={String(metrics.gatedUtterances)} /><Row label="Audible unsolicited" value={String(metrics.audibleUnsolicited)} /><Row label="Heartbeats" value={String(metrics.heartbeats)} /></div>
-        {soakUntil && <p className="rounded bg-indigo-950 p-3 text-sm text-indigo-200">Silence soak running. Keep this page connected for three minutes: 60 seconds quiet, 60 seconds typing elsewhere, then 60 seconds reading aloud. Expected: gate CLOSED, audible unsolicited 0, heartbeats at least 15.</p>}
+        {!soak && (!voice.connected || voice.gateOpen) && <p className="text-sm text-slate-400">Silence soak requires a connected session with the output gate initially closed.</p>}
+        {soak && <p className="rounded bg-indigo-950 p-3 text-sm text-indigo-200">Silence soak running from event #{soak.eventIndex}. Agent mic stays muted while independent STT remains active. Keep this page connected: 60 seconds quiet, 60 seconds typing elsewhere, then 60 seconds reading aloud.</p>}
+        {liveSoakResult && <div className="grid gap-2 rounded bg-slate-950 p-3 text-sm md:grid-cols-5"><Row label="Automated result" value={soak ? "RUNNING" : liveSoakResult.automatedPass ? "PASS" : "FAIL"} /><Row label="Soak heartbeats Δ" value={String(liveSoakResult.heartbeats)} /><Row label="Gated utterances Δ" value={String(liveSoakResult.gatedUtterances)} /><Row label="Audible unsolicited Δ" value={String(liveSoakResult.audibleUnsolicited)} /><Row label="Audibility" value="HUMAN VERIFICATION REQUIRED" /></div>}
         {lastCommit && <p className="rounded bg-slate-950 p-3 text-sm"><span className="text-slate-500">Last STT commit: </span>{lastCommit}</p>}
         {voice.lastError && <p className="rounded bg-amber-950 p-3 text-amber-200">Degraded: {voice.lastError}</p>}
       </section>
@@ -139,6 +153,20 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
 function Row({ label, value }: { label: string; value: string }) { return <div><span className="text-slate-500">{label}: </span><span>{value}</span></div>; }
 function safeJson(value: unknown) { try { return value === undefined ? "" : JSON.stringify(value); } catch { return "[unserializable]"; } }
 function formatMs(value?: number) { return value === undefined ? "—" : `${Math.round(value)} ms`; }
+export function evaluateSilenceSoak({ events, startedAt, connected, gateOpen }: { events: VoiceDebugEvent[]; startedAt: number; connected: boolean; gateOpen: boolean }) {
+  const during = events.filter((event) => event.at >= startedAt);
+  const metrics = deriveMetrics(during);
+  const disconnected = during.some((event) => event.src === "agent" && (event.type === "disconnect" || event.type === "degraded"));
+  const gateOpened = during.some((event) => event.src === "gate" && event.type === "state" && safeJson(event.data).includes('"open":true'));
+  return {
+    heartbeats: metrics.heartbeats,
+    gatedUtterances: metrics.gatedUtterances,
+    audibleUnsolicited: metrics.audibleUnsolicited,
+    disconnected,
+    gateOpened,
+    automatedPass: connected && !gateOpen && !gateOpened && !disconnected && metrics.audibleUnsolicited === 0 && metrics.heartbeats >= 15,
+  };
+}
 function deriveMetrics(events: VoiceDebugEvent[]) {
   const connectClick = events.find((event) => event.type === "connect_clicked")?.at;
   const connected = events.find((event) => event.src === "agent" && event.type === "connect")?.at;

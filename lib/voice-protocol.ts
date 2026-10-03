@@ -129,7 +129,9 @@ export function classifySegment(segment: SpeechSegment, timeline: AgentSpeechTim
       const leading = leadingEchoLength(heard, spoken);
       const humanText = stripLeadingTokens(segment.text, heard, leading);
       const humanSuffix = tokenDetails(humanText);
-      if (spoken.length > 0 && leading / spoken.length >= 0.6 && humanSuffix.length >= 2) {
+      const completePromptPrefix = spoken.length > 0 && leading === spoken.length;
+      const fuzzyPromptPrefix = spoken.length > 0 && leading / spoken.length >= 0.6;
+      if ((completePromptPrefix && humanSuffix.length > 0) || (fuzzyPromptPrefix && humanSuffix.length >= 2)) {
         return { kind: "mixed", text: humanText, interval };
       }
       const matched = orderedMatchCount(heard, spoken);

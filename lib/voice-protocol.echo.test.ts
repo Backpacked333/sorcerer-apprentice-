@@ -36,6 +36,15 @@ describe("voice protocol echo attribution", () => {
     });
   });
 
+  it.each(["yes", "no"])("preserves a one-word %s after a complete prompt prefix", (answer) => {
+    const timeline = new AgentSpeechTimeline([{ start: 4, end: 6, text: "Why did you choose this?" }]);
+
+    expect(classifySegment({ text: `Why did you choose this ${answer}`, tStart: 5.5, tEnd: 6.5 }, timeline)).toMatchObject({
+      kind: "mixed",
+      text: answer,
+    });
+  });
+
   it("preserves an answer after a near-complete ordered prompt", () => {
     const timeline = new AgentSpeechTimeline([{ start: 4, end: 6, text: "Why did you choose this?" }]);
 

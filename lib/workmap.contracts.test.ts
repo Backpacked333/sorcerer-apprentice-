@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { saveVerdict, type SaveVerdict } from "./matcher";
+import { generateTeachback } from "./teachback";
 import { emptyMap, QuoteSchema, RuleSchema, WorkMapSchema, type Quote, type Rule } from "./workmap";
 
 const quote: Quote = { text: "Freight needs a second approval.", t: 12, source: "live" };
@@ -72,5 +73,14 @@ describe("pre-approved WorkMap contract compatibility", () => {
     const verdict = saveVerdict(map, state, true);
     expect(verdict.blocked).toBe(true);
     expect(verdict.who).toBeUndefined();
+    const teachback = generateTeachback(map).text;
+    expect(teachback).toContain("Who to ask is still unresolved.");
+    expect(teachback).not.toContain("undefined");
+  });
+
+  it("preserves the existing teach-back wording for a named stop", () => {
+    const map = emptyMap("named", "Review invoices", "Expert");
+    map.rules = [rule];
+    expect(generateTeachback(map).text).toContain("You stop and ask the reviewer when purchase order is false.");
   });
 });

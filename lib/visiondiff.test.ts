@@ -58,4 +58,12 @@ describe("visual observations only", () => {
     prev = diffVision(prev, frame).frame;
     expect(diffVision(prev, { ...frame, banner: "posted" }).specs).toEqual([]);
   });
+  it.each(["posted", undefined])("preserves success across a cancelled dialog with status %s, then permits a new success", (status) => {
+    const posted = detail({ status: "posted" }, { banner: "posted" });
+    const first = diffVision(detail(), posted); expect(first.specs.filter((s) => s.kind === "save_clicked")).toHaveLength(1);
+    const dialog = diffVision(first.frame, detail({ status }, { screen: "confirm_dialog" }));
+    const cancel = diffVision(dialog.frame, posted);
+    expect(cancel.specs.filter((s) => s.kind === "save_clicked")).toEqual([]);
+    expect(saves(diffVision(cancel.frame, detail()).frame!, posted)).toHaveLength(1);
+  });
 });

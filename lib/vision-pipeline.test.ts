@@ -89,6 +89,21 @@ it("never promotes a second DOM report to vision while the first is held", async
   h.telemetry({ ...event, at: Date.now() });
   expect(events).toMatchObject([{ source: "dom", kind: "field_changed" }]); expect(events[0].alsoSeenBy).toBeUndefined();
 });
+it.each([false, true])("deduplicates normalized DOM/vision invoice identities (held=%s)", async (held) => {
+  if (held) await tick(500);
+  h.telemetry({ kind: "invoice_opened", invoice: "INV-1001", state: { invoice: "INV-1001" }, at: Date.now() });
+  fetchMock.mockResolvedValue(response(200, frame({ invoice: "INV-1001" }))); await tick(held ? 1500 : 500);
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({ invoice: "1001", state: { invoice: "1001" }, source: held ? "vision" : "dom" });
+  expect(events[0].alsoSeenBy).toBe(held ? "dom" : undefined);
+  await tick(3000); expect(events).toHaveLength(1); expect(pipeline.currentState.current.invoice).toBe("1001");
+});
+it("does not duplicate a save when Cancel reveals a Posted banner after the five-second dedup window", async () => {
+  for (const data of [frame({ invoice: "1001", status: "open" }), frame({ invoice: "1001", status: "posted" }, "invoice_detail", "posted"), frame({ invoice: "1001", status: "posted" }, "confirm_dialog"), frame({ invoice: "1001", status: "posted" }, "invoice_detail", "posted")]) {
+    fetchMock.mockResolvedValue(response(200, data)); await tick(6000);
+  }
+  expect(events.filter((e) => e.kind === "save_clicked")).toHaveLength(1);
+});
 it("keeps keyless shutdown even when consent changes before the response", async () => {
   let resolve!: (value: ReturnType<typeof response>) => void;
   fetchMock.mockReturnValueOnce(new Promise((r) => { resolve = r; }));

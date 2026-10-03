@@ -10,7 +10,7 @@ import { classifyActivity, diffGray, toGray, worthSending, DIFF_H, DIFF_W, type 
 import { blurRegions, type PiiRegion } from "@/lib/redact";
 import { subscribeTelemetry, type TelemetryMessage } from "@/lib/telemetry";
 import type { InvoiceState } from "@/lib/workmap";
-import { diffVision, normalizeVisionState, type VisionFrame } from "@/lib/visiondiff";
+import { diffVision, normalizeInvoiceId, normalizeVisionState, type VisionFrame } from "@/lib/visiondiff";
 
 export type EventSource = "vision" | "dom" | "both";
 
@@ -34,6 +34,10 @@ const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 const DOM_HOLD_MS = 2500;
 /** The brief's cadence: a frame every one to two seconds; a visible change sends sooner. */
 const VISION_CADENCE_SECS = 1.5;
+const normalizeIdentity = <T extends { invoice?: string; state?: InvoiceState }>(e: T): T => ({
+  ...e, invoice: normalizeInvoiceId(e.invoice),
+  state: e.state?.invoice === undefined ? e.state : { ...e.state, invoice: normalizeInvoiceId(e.state.invoice) },
+});
 
 export function paintMasks(canvas: HTMLCanvasElement, masks: PiiRegion[]) {
   const ctx = canvas.getContext("2d");
@@ -103,6 +107,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
   const emit = useCallback(
     (e: Omit<ScreenEvent, "id" | "t"> & { t?: number }) => {
       if (captureExpired.current) return;
+      e = normalizeIdentity(e);
       const key = `${e.kind}:${e.invoice ?? ""}:${e.field ?? ""}:${e.to ?? ""}`;
       const t = e.t ?? now();
       const held = heldDom.current.get(key);
@@ -250,12 +255,12 @@ export function useScreenPipeline(opts: PipelineOptions) {
     return subscribeTelemetry((m: TelemetryMessage) => {
       const t = (m.at - optsRef.current.sessionStart) / 1000;
       if (t < 0 || pausedRef.current || captureExpired.current) return;
-      const event = { source: "dom" as const, kind: m.kind, invoice: m.invoice, field: m.field, from: m.from, to: m.to, state: m.state, boundary: m.boundary, mode: m.mode, blocked: m.blocked, t };
+      const event = normalizeIdentity({ source: "dom" as const, kind: m.kind, invoice: m.invoice, field: m.field, from: m.from, to: m.to, state: m.state, boundary: m.boundary, mode: m.mode, blocked: m.blocked, t });
       const visionCanSee = ["invoice_opened", "invoice_closed", "field_changed", "route_changed", "status_changed", "save_clicked"].includes(m.kind) && m.field !== "notes" && m.field !== "assetNumber";
       // save_blocked is the sandbox's own verdict; it is never a vision event
       if (optsRef.current.source === "both" && visionAlive.current && visionCanSee) {
         // give the vision model a moment to see it first; the ERP only confirms
-        const key = `${m.kind}:${m.invoice ?? ""}:${m.field ?? ""}:${m.to ?? ""}`;
+        const key = `${event.kind}:${event.invoice ?? ""}:${event.field ?? ""}:${event.to ?? ""}`;
         const timer = window.setTimeout(() => {
           heldDom.current.delete(key);
           emit(event);

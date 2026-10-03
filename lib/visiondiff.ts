@@ -10,10 +10,11 @@ export interface VisionFrame {
   saved?: boolean;
 }
 export type EmitSpec = Omit<ScreenEvent, "id" | "t">;
+export const normalizeInvoiceId = (invoice?: string) => invoice?.trim().replace(/^inv(oice)?[\s#:.-]*/i, "").trim() || undefined;
 export const normalizeVisionState = (state: InvoiceState): InvoiceState => {
   const clean: InvoiceState = Object.fromEntries(Object.entries(state).filter(([, v]) => v != null));
   if (clean.invoice !== undefined) {
-    clean.invoice = clean.invoice.trim().replace(/^inv(oice)?[\s#:.-]*/i, "").trim();
+    clean.invoice = normalizeInvoiceId(clean.invoice);
     if (!clean.invoice) delete clean.invoice;
   }
   if (clean.status) clean.status = clean.status.trim().toLowerCase().replace(/\s+/g, "_").replace(/^on_hold$/, "hold");
@@ -34,7 +35,7 @@ export function diffVision(prev: VisionFrame | null, next: VisionFrame) {
   const add = (event: Omit<EmitSpec, "source">) => specs.push({ source: "vision", uiActivity: next.uiActivity, ...event });
   const success = (s?: string) => s === "posted" || s === "saved";
   let saved = same && Boolean(prev?.saved);
-  if ((success(before.status) && visible.status && !success(visible.status)) || (next.screen === "confirm_dialog" && prev?.screen !== "confirm_dialog" && next.banner !== "posted")) saved = false;
+  if (success(before.status) && visible.status && !success(visible.status)) saved = false;
   const posted = next.banner === "posted" && prev?.banner !== "posted";
   const confirmed = prev?.screen === "confirm_dialog" && next.screen === "invoice_detail" && Boolean(before.status) && !success(before.status) && success(visible.status);
   if (same && !saved && next.banner !== "blocked" && (posted || confirmed)) {

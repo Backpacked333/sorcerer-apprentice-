@@ -4,7 +4,7 @@ import { z } from "zod";
 import { fromWire, VisionWire, VISION_PROMPT } from "@/lib/vision-schema";
 
 export const maxDuration = 30;
-const RequestBody = z.object({ seq: z.number().int().nonnegative(), image: z.string() });
+const RequestBody = z.object({ seq: z.number().int().nonnegative(), image: z.string().max(4 * 1024 * 1024) });
 
 export async function POST(req: Request) {
   if (!process.env.AI_GATEWAY_API_KEY) return NextResponse.json({ error: "AI_GATEWAY_API_KEY not set; use NEXT_PUBLIC_EVENT_SOURCE=dom", mock: true }, { status: 503 });
@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: "invalid vision request" }, { status: 400 });
   const body = parsed.data;
   const image = body.image.replace(/^data:image\/jpe?g;base64,/i, "");
-  if (!image || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(image))
+  if (!image || image.length % 4 !== 0 || /[^A-Za-z0-9+/]/.test(image.replace(/={1,2}$/, "")))
     return NextResponse.json({ error: "invalid vision request" }, { status: 400 });
   const started = Date.now();
   const model = process.env.VISION_MODEL ?? "anthropic/claude-haiku-4.5";

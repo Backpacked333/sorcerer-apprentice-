@@ -57,6 +57,27 @@ describe("vision route (provider mocked)", () => {
     expect(generate.mock.calls[0][0].messages[0].content[1].data).toBe("/9j/");
   });
 
+  it("rejects oversized images without exhausting the regex stack or calling a provider", async () => {
+    const response = await route.POST(request({ seq: 8, image: "A".repeat(10_000_000) }));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid vision request" });
+    expect(generate).not.toHaveBeenCalled();
+  });
+
+  it("validates a large in-budget base64 payload without exhausting the stack", async () => {
+    const response = await route.POST(request({ seq: 8, image: "A".repeat(4 * 1024 * 1024) }));
+    expect(response.status).toBe(200);
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["A", "AA=", "AA===", "A=AA", "====", "AA?=", "AAAA\n", "AAA\n"])("rejects malformed base64 %j", async (image) => {
+    expect((await route.POST(request({ seq: 8, image }))).status).toBe(400);
+    expect(generate).not.toHaveBeenCalled();
+  });
+  it.each(["QQ==", "QUI="])("accepts valid padding %j with a mocked provider", async (image) => {
+    expect((await route.POST(request({ seq: 8, image }))).status).toBe(200);
+  });
+
   it.each([
     [new Error("private-provider-response"), 502, "vision unavailable"],
     [new DOMException("private-provider-response", "TimeoutError"), 504, "vision timeout"],

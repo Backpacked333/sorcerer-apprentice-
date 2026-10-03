@@ -106,6 +106,9 @@ const stripLeadingTokens = (text: string, tokens: Token[], count: number): strin
   return text.slice(tokens[count].start).trim();
 };
 
+const overlapsHalfOpen = (segment: SpeechSegment, start: number, end: number): boolean =>
+  segment.tEnd === undefined ? segment.tStart >= start && segment.tStart < end : segment.tStart < end && segment.tEnd > start;
+
 export function classifySegment(segment: SpeechSegment, timeline: AgentSpeechTimeline | readonly AgentSpeechInterval[]): ClassifiedSegment {
   const intervals = timeline instanceof AgentSpeechTimeline ? timeline.all() : timeline;
   const heard = tokenDetails(segment.text);
@@ -113,24 +116,23 @@ export function classifySegment(segment: SpeechSegment, timeline: AgentSpeechTim
   for (let index = intervals.length - 1; index >= 0; index -= 1) {
     const interval = intervals[index];
     const end = interval.end ?? Number.POSITIVE_INFINITY;
-    const inside = segment.tStart >= interval.start - 0.2 && segment.tStart <= end + 0.8;
+    const inside = overlapsHalfOpen(segment, interval.start - 0.2, end + 0.8);
     if (interval.kind === "clip") {
-      if (segment.tStart >= interval.start && segment.tStart <= end) return { kind: "agent", text: "", interval };
+      if (overlapsHalfOpen(segment, interval.start, end)) return { kind: "agent", text: "", interval };
       continue;
     }
 
     const spoken = tokenDetails(interval.text);
     const overlap = containment(heard, spoken);
-    if (inside && overlap >= 0.6) return { kind: "agent", text: "", interval };
-
     if (inside) {
       const leading = leadingEchoLength(heard, spoken);
-      if (leading > 0) {
+      if (spoken.length > 0 && leading === spoken.length) {
         const humanText = stripLeadingTokens(segment.text, heard, leading);
         return tokenDetails(humanText).length >= 2
           ? { kind: "mixed", text: humanText, interval }
           : { kind: "agent", text: "", interval };
       }
+      if (overlap >= 0.6) return { kind: "agent", text: "", interval };
     }
 
     const late = interval.end !== undefined && segment.tStart > interval.end + 0.8 && segment.tStart <= interval.end + 4;
@@ -148,16 +150,17 @@ export function detectCommand(text: string): VoiceCommand | null {
   const normalized = text.toLocaleLowerCase().replaceAll("’", "'").replace(/[^\p{L}\p{N}']+/gu, " ").trim();
   if (!normalized) return null;
 
-  if (
-    /\b(?:off the record|scratch that|strike that|don't keep that|do not keep that|forget (?:that|what i (?:just )?said))\b/.test(normalized) ||
-    /\b(?:streich das|vergiss das)\b/.test(normalized)
-  ) {
+  const commandPrefix = "(?:(?:actually|please|wait|no) )?";
+  const offRecord = new RegExp(
+    `^${commandPrefix}(?:off the record|(?:scratch|strike) that(?: last (?:point|answer|explanation|part))?|(?:don't|do not) keep that|forget (?:that|what i (?:just )?said))$`,
+  );
+  if (offRecord.test(normalized)) {
     return "off_record";
   }
 
   const count = words(normalized).length;
   if (count <= 5 && /^(?:pause(?: listening| recording| capture)?|tacit pause|stop listening)$/.test(normalized)) return "pause";
-  if (count <= 4 && /^(?:not now|not right now|later|ask me later|skip (?:that|it)|nicht jetzt|später)$/.test(normalized)) return "not_now";
+  if (count <= 4 && /^(?:not now|not right now|later|ask me later|skip (?:that|it))$/.test(normalized)) return "not_now";
   return null;
 }
 
@@ -196,12 +199,18 @@ export interface AskContext {
   phrase?: "natural" | "exact";
 }
 
-const quoted = (value: string) => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
+/** Reversible escaping for dynamic tag fields; prevents them from creating new ` | key=value` segments. */
+const serializeDynamic = (value: string) =>
+  value.replaceAll("\\", "\\\\").replaceAll("\r", "\\r").replaceAll("\n", "\\n").replaceAll("|", "\\|");
+const quoted = (value: string) => serializeDynamic(value).replaceAll('"', '\\"');
+const quotedVerbatim = (value: string) => value.replaceAll("\\", "\\\\").replaceAll('"', '\\"');
 const firstWords = (value: string, limit: number) => value.trim().split(/\s+/u).filter(Boolean).slice(0, limit).join(" ");
 
 const labelPairs = (labels: AskContext["labels"]): string[] => {
   if (!labels) return [];
-  return Array.isArray(labels) ? labels.map(({ code, label }) => `${code}=${label}`) : Object.entries(labels).map(([code, label]) => `${code}=${label}`);
+  return Array.isArray(labels)
+    ? labels.map(({ code, label }) => `${serializeDynamic(code)}=${serializeDynamic(label)}`)
+    : Object.entries(labels).map(([code, label]) => `${serializeDynamic(code)}=${serializeDynamic(label)}`);
 };
 
 export function buildAsk(candidate: AskCandidate, context: AskContext = {}): string {
@@ -210,10 +219,10 @@ export function buildAsk(candidate: AskCandidate, context: AskContext = {}): str
   const events = (context.events ?? []).slice(-3).map((event) => (typeof event === "string" ? event : describeEvent(event)));
   const labels = labelPairs(context.labels);
   return [
-    question,
-    `stepRef=${candidate.stepRef}`,
-    `kind=${candidate.kind}`,
-    `on screen: ${events.join("; ")}`,
+    serializeDynamic(question),
+    `stepRef=${serializeDynamic(candidate.stepRef)}`,
+    `kind=${serializeDynamic(candidate.kind)}`,
+    `on screen: ${events.map(serializeDynamic).join("; ")}`,
     `labels: ${labels.join("; ")}`,
     `said: "${quoted(firstWords(context.lastExpertSentence ?? "", 20))}"`,
     `retro=${retro ? 1 : 0}`,
@@ -233,12 +242,12 @@ export interface TutorPayloadOptions {
 }
 
 export function buildTutorPayload(options: TutorPayloadOptions): string {
-  const segments = [options.message];
+  const segments = [serializeDynamic(options.message)];
   if (options.quote !== undefined) segments.push(`expert's words: "${quoted(options.quote)}"`);
-  if (options.stepId !== undefined) segments.push(`stepId=${options.stepId}`);
-  if (options.ruleId !== undefined) segments.push(`ruleId=${options.ruleId}`);
-  if (options.ruleTitle !== undefined) segments.push(`rule: ${options.ruleTitle}`);
-  if (options.who !== undefined) segments.push(`who=${options.who}`);
+  if (options.stepId !== undefined) segments.push(`stepId=${serializeDynamic(options.stepId)}`);
+  if (options.ruleId !== undefined) segments.push(`ruleId=${serializeDynamic(options.ruleId)}`);
+  if (options.ruleTitle !== undefined) segments.push(`rule: ${serializeDynamic(options.ruleTitle)}`);
+  if (options.who !== undefined) segments.push(`who=${serializeDynamic(options.who)}`);
   if (options.clip !== undefined) segments.push(`clip=${options.clip ? "yes" : "no"}`);
   return segments.join(" | ");
 }
@@ -252,7 +261,11 @@ export function chunk(text: string, maxChars: number): string[] {
   while (remaining.length > maxChars) {
     const candidate = remaining.slice(0, maxChars + 1);
     const boundary = Math.max(candidate.lastIndexOf("\n"), candidate.lastIndexOf(" "));
-    const take = boundary > 0 && boundary <= maxChars ? boundary : maxChars;
+    let take = boundary > 0 && boundary <= maxChars ? boundary : maxChars;
+    const before = remaining.charCodeAt(take - 1);
+    const after = remaining.charCodeAt(take);
+    if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) take -= 1;
+    if (take === 0) take = remaining.codePointAt(0)! > 0xffff ? 2 : 1;
     output.push(remaining.slice(0, take).trim());
     remaining = remaining.slice(take).trimStart();
   }
@@ -299,7 +312,15 @@ interface DeferredQuestion {
 
 type CaptureSession = SessionLog & { deferred?: DeferredQuestion[] };
 
-const withoutControlTags = (text: string) => text.replace(/\[[A-Z][A-Z_]*\]\s*/g, "").trim();
+const controlPrefix = /^\s*\[[A-Z][A-Z_]*(?:\s+[^\]]*)?\]/;
+const withoutControlTags = (text: string) => text.replace(/\[[A-Z][A-Z_]*(?:\s+[^\]]*)?\]\s*/g, "").trim();
+
+const excerptWords = (text: string, limit: number): string => {
+  const matches = [...text.matchAll(/\S+/gu)];
+  if (matches.length === 0) return "";
+  const last = matches[Math.min(limit, matches.length) - 1];
+  return text.slice(matches[0].index, (last.index ?? 0) + last[0].length);
+};
 
 export function buildCaptureSummary(session: CaptureSession, maxChars = 1200): string {
   if (!Number.isFinite(maxChars) || maxChars < 1) throw new RangeError("maxChars must be a positive number");
@@ -317,8 +338,8 @@ export function buildCaptureSummary(session: CaptureSession, maxChars = 1200): s
   for (const window of session.windows) {
     if (window.outcome === "off_record") continue;
     const invoice = window.stepRef?.split(":", 1)[0] || "unassigned";
-    const answer = window.answerText ? withoutControlTags(firstWords(window.answerText, 12)) : "";
-    add(invoice, `asked (${window.kind}): ${withoutControlTags(window.question)} — ${answer ? `answered: "${quoted(answer)}"` : "unanswered"}`);
+    const answer = window.answerText && !controlPrefix.test(window.answerText) ? excerptWords(window.answerText, 12) : "";
+    add(invoice, `asked (${window.kind}): ${withoutControlTags(window.question)} — ${answer ? `answered: "${quotedVerbatim(answer)}"` : "unanswered"}`);
   }
   for (const deferred of session.deferred ?? []) {
     const invoice = deferred.stepRef.split(":", 1)[0] || "unassigned";

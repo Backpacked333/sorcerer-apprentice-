@@ -14,7 +14,13 @@ describe("detectCommand", () => {
     expect(detectCommand(text)).toBe(command);
   });
 
-  it.each(["I pause the invoice before review", "we do that later in the month", "the pause recording control is useful"])(
+  it.each([
+    "I pause the invoice before review",
+    "we do that later in the month",
+    "the pause recording control is useful",
+    "The instruction says do not keep that field blank",
+    "streich das",
+  ])(
     "does not treat ordinary speech as a command: %s",
     (text) => expect(detectCommand(text)).toBeNull(),
   );

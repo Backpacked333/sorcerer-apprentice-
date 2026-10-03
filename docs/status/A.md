@@ -4,7 +4,8 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Done and merged (WP ids)
 
-- This PR: WA-1/WA-9 prompt v2 and prompt/tool protocol regression tests prepared; merge pending.
+- WA-1/WA-9 prompt v2 and prompt/tool protocol regression tests merged in PR #2.
+- WA-1 provisioning script is idempotent, read-only-checkable, Expressive Mode explicit, and preserves an existing knowledge base; merge pending.
 
 ## Verified live by a human (who, when, what they did)
 
@@ -13,6 +14,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 ## Not verified yet (and the script to verify)
 
 - Prompt tone, phrasing and structural silence: run HT-1 then HT-2 from `docs/lanes/A-voice-and-timing.md` with headphones, followed by the speaker echo check in HT-4.
+- Live provisioning: after explicit approval and a key, run `npm run agents:create` twice and confirm identical IDs, then `npm run agents:create -- --check` and confirm prompt hashes/tool counts/settings.
 
 ## Blocked on (lane, handshake id, what exactly)
 

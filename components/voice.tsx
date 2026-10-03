@@ -7,6 +7,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CommitStrategy, ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe } from "@elevenlabs/react";
+import { gateState } from "@/lib/voice-turn";
 
 export const TOOL_NAMES = ["log_answer", "mark_off_record", "confirm_teachback", "end_task", "flag_for_expert", "show_replay", "record_prediction", "record_mastery", "end_session"] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -128,6 +129,8 @@ export interface VoiceApi {
   say: (tag: string, text: string, spoken?: string) => void;
   setMicMuted: (muted: boolean) => void;
   sendContext: (text: string) => void;
+  gateOpen: boolean;
+  noteUserActivity: () => void;
 }
 
 const VoiceContext = createContext<VoiceApi | null>(null);
@@ -168,9 +171,16 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const [fallbackConnected, setFallbackConnected] = useState(false);
   const [voiceError, setVoiceError] = useState<string>();
   const [sttError, setSttError] = useState<string>();
+  const [gateHoldUntil, setGateHoldUntil] = useState(0);
   const controls = useConversationControls();
   const conversationStatus = useConversationStatus();
   const conversationMode = useConversationMode();
+  const micMutedRef = useRef(true);
+  const gateHoldUntilRef = useRef(0);
+  const authorizedSpeechUntilRef = useRef(0);
+  const activeSpeechAuthorizedRef = useRef(false);
+  const wasAgentSpeakingRef = useRef(false);
+  const lastUserActivityAtRef = useRef(0);
   const firstMessages = useRef(new Map<number, string>());
   const establishedGeneration = useRef<number | undefined>(undefined);
   const outcomeHandler = useRef<(outcome: ConnectionOutcome) => void>(() => {});
@@ -184,6 +194,61 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const emit = useCallback((src: VoiceDebugEvent["src"], type: string, data?: unknown) => {
     onDebugEvent?.({ at: Date.now(), src, type, ...(data === undefined ? {} : { data }) });
   }, [onDebugEvent]);
+  const extendGateHold = useCallback((until: number) => {
+    if (until <= gateHoldUntilRef.current) return;
+    gateHoldUntilRef.current = until;
+    setGateHoldUntil(until);
+  }, []);
+  const authorizeSpeech = useCallback((text: string) => {
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+    const until = Date.now() + (2 + 0.45 * words) * 1000;
+    authorizedSpeechUntilRef.current = until;
+    extendGateHold(until);
+  }, [extendGateHold]);
+  const gateIsOpenAt = useCallback((now: number) => gateState({
+    turnActive: false,
+    now,
+    gateHoldUntil: gateHoldUntilRef.current,
+    micMuted: micMutedRef.current,
+    squelch: false,
+  }), []);
+  const reassertGate = useCallback((now = Date.now()) => {
+    try {
+      controls.setVolume({ volume: gateIsOpenAt(now) ? 1 : 0 });
+    } catch {
+      // The stable controls intentionally throw until a conversation exists.
+    }
+  }, [controls, gateIsOpenAt]);
+  const handleAgentMode = useCallback((data: { mode: "speaking" | "listening" }) => {
+    const now = Date.now();
+    const speaking = data.mode === "speaking";
+    emit("agent", "mode", data);
+    reassertGate(now);
+    if (speaking && !wasAgentSpeakingRef.current) {
+      const open = gateIsOpenAt(now);
+      const authorized = authorizedSpeechUntilRef.current > now;
+      activeSpeechAuthorizedRef.current = authorized;
+      if (!open) emit("gate", "gated_utterance");
+      else if (!authorized) emit("gate", "audible_unsolicited");
+    } else if (!speaking && wasAgentSpeakingRef.current) {
+      if (activeSpeechAuthorizedRef.current) extendGateHold(now + 1_500);
+      activeSpeechAuthorizedRef.current = false;
+      authorizedSpeechUntilRef.current = 0;
+    }
+    wasAgentSpeakingRef.current = speaking;
+  }, [emit, extendGateHold, gateIsOpenAt, reassertGate]);
+  const noteUserActivity = useCallback(() => {
+    if (conversationStatus.status !== "connected") return;
+    const now = Date.now();
+    if (now - lastUserActivityAtRef.current < 1_000) return;
+    try {
+      controls.sendUserActivity();
+      lastUserActivityAtRef.current = now;
+      emit("gate", "heartbeat");
+    } catch {
+      // A disconnect can race a heartbeat; the next connected interval resumes it.
+    }
+  }, [controls, conversationStatus.status, emit]);
   const activateFallback = useCallback((reason: string, generation?: number) => {
     if (generation !== undefined && establishedGeneration.current !== generation) return;
     establishedGeneration.current = undefined;
@@ -203,26 +268,42 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         setVoiceError(undefined);
       } else if (outcome.kind === "degraded") {
         activateFallback(outcome.reason);
-        if (firstMessage) void speakFallbackRef.current(firstMessage);
+        if (firstMessage) {
+          authorizeSpeech(firstMessage);
+          void speakFallbackRef.current(firstMessage).finally(() => extendGateHold(Date.now() + 1_500));
+        }
       } else {
         setFallbackConnected(false);
       }
       emit("agent", `connect_${outcome.kind}`, outcome);
     };
-  }, [activateFallback, emit]);
+  }, [activateFallback, authorizeSpeech, emit, extendGateHold]);
 
   useConversation({
     micMuted,
-    onConnect: (data) => emit("agent", "connect", data),
-    onDisconnect: (details) => emit("agent", "disconnect", details),
+    onConnect: (data) => {
+      emit("agent", "connect", data);
+      reassertGate();
+    },
+    onDisconnect: (details) => {
+      authorizedSpeechUntilRef.current = 0;
+      activeSpeechAuthorizedRef.current = false;
+      wasAgentSpeakingRef.current = false;
+      gateHoldUntilRef.current = 0;
+      setGateHoldUntil(0);
+      emit("agent", "disconnect", details);
+    },
     onError: (message, context) => emit("agent", "error", { message, context }),
     onStatusChange: (data) => emit("agent", "status", data),
-    onModeChange: (data) => emit("agent", "mode", data),
+    onModeChange: handleAgentMode,
     onMessage: (m) => {
       setMessages((xs) => [...xs, { role: m.role === "agent" ? "agent" : "user", text: m.message, t: Date.now() }]);
       emit("agent", "message", m);
     },
-    onDebug: (data) => emit("agent", "debug", data),
+    onDebug: (data) => {
+      emit("agent", "debug", data);
+      if (typeof data === "object" && data !== null && "type" in data && data.type === "audio_element_ready") reassertGate();
+    },
     onIncomingEvent: (data) => emit("agent", "incoming", data),
     onOutgoingEvent: (data) => emit("agent", "outgoing", data),
     onAgentToolRequest: (data) => emit("agent", "tool_request", data),
@@ -237,6 +318,29 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       }
     },
   });
+
+  useEffect(() => {
+    if (conversationStatus.status !== "connected") return;
+    reassertGate();
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      if (gateHoldUntilRef.current > 0 && now >= gateHoldUntilRef.current) {
+        gateHoldUntilRef.current = 0;
+        setGateHoldUntil(0);
+      }
+      reassertGate(now);
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [conversationStatus.status, reassertGate]);
+
+  useEffect(() => {
+    if (conversationStatus.status !== "connected") return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      if (authorizedSpeechUntilRef.current <= now && !activeSpeechAuthorizedRef.current) noteUserActivity();
+    }, 10_000);
+    return () => window.clearInterval(timer);
+  }, [conversationStatus.status, noteUserActivity]);
 
   // register every client tool once; handlers are looked up at call time so pages can swap them freely
   const handle = (name: ToolName) => async (params: Record<string, unknown>) => {
@@ -300,7 +404,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       if (configuredMode === "fallback") {
         setFallbackConnected(true);
         setVoiceError(undefined);
-        if (opts?.firstMessage) await speakFallback(opts.firstMessage);
+        if (opts?.firstMessage) {
+          authorizeSpeech(opts.firstMessage);
+          await speakFallback(opts.firstMessage);
+          extendGateHold(Date.now() + 1_500);
+        }
         return;
       }
       const active = lifecycle.current!.activeAttempt();
@@ -313,6 +421,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       const attempt = lifecycle.current!.start(Boolean(opts?.firstMessage));
       if (attempt.isNew) {
         if (opts?.firstMessage !== undefined) firstMessages.current.set(attempt.generation, opts.firstMessage);
+        if (opts?.firstMessage) authorizeSpeech(opts.firstMessage);
         const fail = (reason: string) => {
           if (!lifecycle.current!.fail(attempt.generation, reason)) {
             controls.endSession();
@@ -324,7 +433,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
           controls.startSession({
             ...buildAgentSessionOptions(agentId!, opts),
             ...(inputDeviceId ? { inputDeviceId } : {}),
-            onConnect: () => lifecycle.current!.connected(attempt.generation),
+            onConnect: () => {
+              if (opts?.firstMessage) {
+                authorizeSpeech(opts.firstMessage);
+                reassertGate();
+              }
+              lifecycle.current!.connected(attempt.generation);
+            },
             onModeChange: ({ mode }) => lifecycle.current!.mode(attempt.generation, mode),
             onError: (message) => fail(message),
             onDisconnect: (details) => fail(`Agent disconnected (${details.reason}).`),
@@ -335,10 +450,15 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       }
       await attempt.promise;
     },
-    [activateFallback, agentId, configuredMode, controls, conversationStatus.status, speakFallback],
+    [activateFallback, agentId, authorizeSpeech, configuredMode, controls, conversationStatus.status, extendGateHold, reassertGate, speakFallback],
   );
 
   const disconnect = useCallback(() => {
+    authorizedSpeechUntilRef.current = 0;
+    activeSpeechAuthorizedRef.current = false;
+    wasAgentSpeakingRef.current = false;
+    gateHoldUntilRef.current = 0;
+    setGateHoldUntil(0);
     if (configuredMode === "fallback") {
       window.speechSynthesis?.cancel();
       setFallbackConnected(false);
@@ -357,8 +477,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const say = useCallback<VoiceApi["say"]>(
     (tag, text, spoken) => {
+      const line = spoken ?? text;
+      authorizeSpeech(line);
+      reassertGate();
       if (configuredMode === "fallback" || voiceError || conversationStatus.status !== "connected") {
-        void speakFallback(spoken ?? text);
+        void speakFallback(line).finally(() => extendGateHold(Date.now() + 1_500));
         return;
       }
       setMessages((xs) => [...xs, { role: "user", text: `[${tag}] ${text}`, t: Date.now() }]);
@@ -367,14 +490,15 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       } catch (error) {
         controls.endSession();
         activateFallback(error instanceof Error ? error.message : String(error), establishedGeneration.current);
-        void speakFallback(spoken ?? text);
+        void speakFallback(line).finally(() => extendGateHold(Date.now() + 1_500));
       }
     },
-    [activateFallback, configuredMode, controls, conversationStatus.status, voiceError, speakFallback],
+    [activateFallback, authorizeSpeech, configuredMode, controls, conversationStatus.status, extendGateHold, reassertGate, voiceError, speakFallback],
   );
 
   const setMicMuted = useCallback(
     (m: boolean) => {
+      micMutedRef.current = m;
       setMicMutedState(m);
     },
     [],
@@ -406,6 +530,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const mode: VoiceApi["mode"] = configuredMode === "agent" && !voiceError ? "agent" : "fallback";
   const degraded = Boolean(voiceError || sttError);
   const lastError = voiceError ?? sttError;
+  const gateOpen = gateState({ turnActive: false, now: Date.now(), gateHoldUntil, micMuted, squelch: false });
+
+  useEffect(() => {
+    reassertGate();
+    emit("gate", "state", { open: gateOpen });
+  }, [emit, gateOpen, reassertGate]);
 
   const api = useMemo<VoiceApi>(
     () => ({
@@ -423,8 +553,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       say,
       setMicMuted,
       sendContext,
+      gateOpen,
+      noteUserActivity,
     }),
-    [mode, fallbackConnected, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext],
+    [mode, fallbackConnected, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity],
   );
 
   return <VoiceHealthContext.Provider value={setSttError}><VoiceDebugContext.Provider value={onDebugEvent}><VoiceContext.Provider value={api}>{children}</VoiceContext.Provider></VoiceDebugContext.Provider></VoiceHealthContext.Provider>;

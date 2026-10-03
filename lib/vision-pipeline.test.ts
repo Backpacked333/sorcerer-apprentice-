@@ -19,14 +19,14 @@ vi.mock("./redact", () => ({ blurRegions: () => 0 }));
 const fetchMock = vi.fn(), encode = vi.fn(() => "data:image/jpeg;base64,/9j/"), trackStop = vi.fn();
 const events: ScreenEvent[] = [];
 let pipeline: ReturnType<typeof useScreenPipeline>;
-const options = { sessionStart: 0, source: "both" as const, onEvent: (e: ScreenEvent) => events.push(e) };
+const options = { sessionStart: 0, source: "both" as "both" | "dom", onEvent: (e: ScreenEvent) => events.push(e) };
 const render = () => { h.index = 0; pipeline = useScreenPipeline(options); h.effects.splice(0).forEach((f) => f()); };
 const tick = async (ms = 1500) => { await vi.advanceTimersByTimeAsync(ms); render(); };
 const response = (status = 200, data = {}) => ({ status, ok: status === 200, json: async () => data });
 const frame = (state = {}, screen = "invoice_detail", banner = "none") => ({ state, screen, banner, confidence: 1, uiActivity: "reading", piiRegions: [], latencyMs: 10 });
 
 beforeEach(async () => {
-  vi.useFakeTimers(); vi.setSystemTime(0); h.index = 0; h.slots = []; h.effects = []; events.length = 0;
+  vi.useFakeTimers(); vi.setSystemTime(0); h.index = 0; h.slots = []; h.effects = []; events.length = 0; options.source = "both";
   fetchMock.mockReset().mockResolvedValue(response(200, frame())); encode.mockClear(); trackStop.mockClear();
   vi.stubGlobal("window", globalThis); vi.stubGlobal("fetch", fetchMock);
   const ctx = { drawImage() {}, getImageData: () => ({ data: new Uint8ClampedArray(64 * 36 * 4) }) };
@@ -66,6 +66,22 @@ it("keeps unmatched held events and ERP control verdicts DOM-sourced", async () 
   await tick(3000);
   expect(events).toHaveLength(2); expect(events.every((e) => e.source === "dom" && !e.alsoSeenBy)).toBe(true);
 });
+it("keeps same-invoice ERP fields in combined state, but not across invoice switches or lists", async () => {
+  h.telemetry({ kind: "invoice_opened", invoice: "INV-1001", state: { invoice: "INV-1001", amount: 7200, category: "equipment" }, at: Date.now() });
+  fetchMock.mockResolvedValue(response(200, frame({ invoice: "1001", costCenter: "020" }))); await tick(500);
+  expect(pipeline.currentState.current).toMatchObject({ invoice: "1001", amount: 7200, category: "equipment", costCenter: "020" });
+  expect(events.at(-1)?.state).toMatchObject({ amount: 7200, category: "equipment" });
+  h.telemetry({ kind: "save_blocked", invoice: "1001", state: { invoice: "1001", costCenter: "030" }, at: Date.now() });
+  fetchMock.mockResolvedValue(response(200, frame({ invoice: "1001" }))); await tick();
+  expect(pipeline.currentState.current.costCenter).toBe("030");
+  fetchMock.mockResolvedValue(response(200, frame({}, "invoice_list", "posted"))); await tick();
+  expect(events.find((e) => e.kind === "save_clicked")?.state).toMatchObject({ invoice: "1001", amount: 7200, category: "equipment" });
+  expect(pipeline.currentState.current).toEqual({});
+  fetchMock.mockResolvedValue(response(200, frame({ invoice: "1002", costCenter: "040" }))); await tick();
+  expect(pipeline.currentState.current).toEqual({ invoice: "1002", costCenter: "040" });
+  fetchMock.mockResolvedValue(response(200, frame({ invoice: "1002" }, "invoice_list"))); await tick();
+  expect(pipeline.currentState.current).toEqual({});
+});
 it("never promotes a second DOM report to vision while the first is held", async () => {
   await tick(500);
   const event: TelemetryMessage = { kind: "field_changed", invoice: "1001", field: "costCenter", to: "020", at: Date.now() };
@@ -94,11 +110,21 @@ it("aborts a hung request after nine seconds and can retry", async () => {
   expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true);
   await tick(500); expect(pipeline.framesSeen).toBe(1);
 });
-it("stops the capture track at fifteen minutes", async () => {
+it.each(["both", "dom"] as const)("stops capture and telemetry at fifteen minutes (%s)", async (source) => {
+  options.source = source; render();
   fetchMock.mockResolvedValue(response(503, { mock: true }));
   await tick(15 * 60 * 1000 - 1); expect(trackStop).not.toHaveBeenCalled(); await tick(1);
   expect(trackStop).toHaveBeenCalled(); expect(pipeline.sharing).toBe(false);
   const encoded = encode.mock.calls.length;
+  const emitted = events.length;
   h.telemetry({ kind: "save_blocked", invoice: "1001", at: Date.now() }); await tick(5000);
-  expect(encode).toHaveBeenCalledTimes(encoded); expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(events).toHaveLength(emitted); expect(encode).toHaveBeenCalledTimes(encoded);
+  expect(fetchMock).toHaveBeenCalledTimes(source === "both" ? 1 : 0);
+  await pipeline.start(); render();
+  h.telemetry({ kind: "save_blocked", invoice: "1002", at: Date.now() }); expect(events).toHaveLength(emitted + 1);
+});
+it("clears pending held telemetry when the capture expires", async () => {
+  await tick(15 * 60 * 1000 - 1000);
+  h.telemetry({ kind: "field_changed", invoice: "1001", field: "costCenter", to: "020", at: Date.now() });
+  await tick(5000); expect(events).toEqual([]);
 });

@@ -10,7 +10,7 @@ import { classifyActivity, diffGray, toGray, worthSending, DIFF_H, DIFF_W, type 
 import { blurRegions, type PiiRegion } from "@/lib/redact";
 import { subscribeTelemetry, type TelemetryMessage } from "@/lib/telemetry";
 import type { InvoiceState } from "@/lib/workmap";
-import { diffVision, type VisionFrame } from "@/lib/visiondiff";
+import { diffVision, normalizeVisionState, type VisionFrame } from "@/lib/visiondiff";
 
 export type EventSource = "vision" | "dom" | "both";
 
@@ -57,6 +57,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
   const visionDisabled = useRef(false);
   const visionFrame = useRef<VisionFrame | null>(null);
   const request = useRef<AbortController | null>(null);
+  const captureExpired = useRef(false);
   /** designated sensitive regions, normalized; painted out before any frame leaves the browser */
   const [masks, setMasks] = useState<PiiRegion[]>([]);
   const masksRef = useRef<PiiRegion[]>([]);
@@ -101,6 +102,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
 
   const emit = useCallback(
     (e: Omit<ScreenEvent, "id" | "t"> & { t?: number }) => {
+      if (captureExpired.current) return;
       const key = `${e.kind}:${e.invoice ?? ""}:${e.field ?? ""}:${e.to ?? ""}`;
       const t = e.t ?? now();
       const held = heldDom.current.get(key);
@@ -135,8 +137,16 @@ export function useScreenPipeline(opts: PipelineOptions) {
       const result = diffVision(visionFrame.current, next);
       if (result.frame === visionFrame.current) return;
       visionFrame.current = result.frame;
-      for (const spec of result.specs) emit({ ...spec, t });
-      state.current = result.state;
+      const current = normalizeVisionState(state.current);
+      const combined = result.state.invoice && current.invoice === result.state.invoice
+        ? { ...current, ...normalizeVisionState(next.state) } : result.state;
+      state.current = combined;
+      for (const spec of result.specs) {
+        const eventState = next.screen === "invoice_list"
+          ? { ...(current.invoice === spec.invoice ? current : {}), ...spec.state } : combined;
+        emit({ ...spec, state: spec.state ? eventState : undefined, t });
+      }
+      state.current = combined;
     },
     [emit, now],
   );
@@ -205,7 +215,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
     const ctx = c.getContext("2d", { willReadFrequently: true });
     const id = window.setInterval(() => {
       const v = videoRef.current;
-      if (!v || !v.videoWidth || !ctx) return;
+      if (!v || !v.videoWidth || !ctx || captureExpired.current) return;
       ctx.drawImage(v, 0, 0, DIFF_W, DIFF_H);
       const gray = toGray(ctx.getImageData(0, 0, DIFF_W, DIFF_H).data, DIFF_W, DIFF_H, DIFF_W, DIFF_H);
       let diff: DiffResult | null = null;
@@ -239,7 +249,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
     if (src === "vision") return;
     return subscribeTelemetry((m: TelemetryMessage) => {
       const t = (m.at - optsRef.current.sessionStart) / 1000;
-      if (t < 0 || pausedRef.current) return;
+      if (t < 0 || pausedRef.current || captureExpired.current) return;
       const event = { source: "dom" as const, kind: m.kind, invoice: m.invoice, field: m.field, from: m.from, to: m.to, state: m.state, boundary: m.boundary, mode: m.mode, blocked: m.blocked, t };
       const visionCanSee = ["invoice_opened", "invoice_closed", "field_changed", "route_changed", "status_changed", "save_clicked"].includes(m.kind) && m.field !== "notes" && m.field !== "assetNumber";
       // save_blocked is the sandbox's own verdict; it is never a vision event
@@ -261,6 +271,8 @@ export function useScreenPipeline(opts: PipelineOptions) {
     epoch.current += 1;
     visionAlive.current = false;
     request.current?.abort();
+    for (const h of heldDom.current.values()) window.clearTimeout(h.timer);
+    heldDom.current.clear();
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     setSharing(false);
@@ -270,6 +282,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
     stop();
     const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 4 }, audio: false });
     streamRef.current = stream;
+    captureExpired.current = false;
     visionDisabled.current = false;
     visionAlive.current = false;
     visionFrame.current = null;
@@ -284,7 +297,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
 
   useEffect(() => {
     if (!sharing) return;
-    const cap = window.setTimeout(stop, 15 * 60 * 1000);
+    const cap = window.setTimeout(() => { captureExpired.current = true; stop(); }, 15 * 60 * 1000);
     return () => window.clearTimeout(cap);
   }, [sharing, stop]);
   useEffect(() => stop, [stop]);

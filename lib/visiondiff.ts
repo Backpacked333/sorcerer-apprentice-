@@ -10,7 +10,7 @@ export interface VisionFrame {
   saved?: boolean;
 }
 export type EmitSpec = Omit<ScreenEvent, "id" | "t">;
-const normalize = (state: InvoiceState): InvoiceState => {
+export const normalizeVisionState = (state: InvoiceState): InvoiceState => {
   const clean: InvoiceState = Object.fromEntries(Object.entries(state).filter(([, v]) => v != null));
   if (clean.invoice !== undefined) {
     clean.invoice = clean.invoice.trim().replace(/^inv(oice)?[\s#:.-]*/i, "").trim();
@@ -22,12 +22,12 @@ const normalize = (state: InvoiceState): InvoiceState => {
 
 /** Only compare visual observations; ERP state is never evidence for a vision event. */
 export function diffVision(prev: VisionFrame | null, next: VisionFrame) {
-  const before = normalize(prev?.state ?? {});
+  const before = normalizeVisionState(prev?.state ?? {});
   const specs: EmitSpec[] = [];
   if (next.screen === "other" || (next.confidence ?? 1) < 0.4)
     return { specs, state: before, frame: prev };
   const list = next.screen === "invoice_list";
-  const visible = list ? {} : normalize(next.state);
+  const visible = list ? {} : normalizeVisionState(next.state);
   const invoice = visible.invoice ?? before.invoice;
   const same = Boolean(before.invoice && invoice === before.invoice);
   const state = list ? {} : { ...(same ? before : {}), ...visible };
@@ -38,7 +38,7 @@ export function diffVision(prev: VisionFrame | null, next: VisionFrame) {
   const posted = next.banner === "posted" && prev?.banner !== "posted";
   const confirmed = prev?.screen === "confirm_dialog" && next.screen === "invoice_detail" && Boolean(before.status) && !success(before.status) && success(visible.status);
   if (same && !saved && next.banner !== "blocked" && (posted || confirmed)) {
-    add({ kind: "save_clicked", invoice, state, boundary: true });
+    add({ kind: "save_clicked", invoice, state: list ? before : state, boundary: true });
     saved = true;
   }
   if (before.invoice && (list || !same)) add({ kind: "invoice_closed", invoice: before.invoice, boundary: true });

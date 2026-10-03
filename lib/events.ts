@@ -58,9 +58,11 @@ export interface QuestionWindow {
   question: string;
   stepRef?: string; // invoice + field, e.g. "4471:costCenter"
   openedAt: number;
-  askedAt?: number; // agent started speaking
+  spokeAt?: number; // agent started speaking
+  askedAt?: number; // question finished; listening mic opened
   answeredAt?: number;
   closedAt?: number;
+  closedBy?: "tool" | "scribe_fallback" | "timeout" | "user";
   outcome?: "answered" | "timeout" | "aborted" | "off_record";
   answerText?: string;
   answerAudioId?: string;

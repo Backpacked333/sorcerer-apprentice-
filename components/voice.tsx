@@ -144,6 +144,7 @@ export interface SpeechAuthorizationSnapshot {
   pending: boolean;
   active: boolean;
   falling: boolean;
+  timeoutSquelched: boolean;
   authorized: boolean;
   heartbeatAllowed: boolean;
 }
@@ -168,6 +169,7 @@ export function createSpeechAuthorizationLatch({
   let pending = false;
   let active = false;
   let speaking = false;
+  let timeoutSquelched = false;
   let fallingTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
   let pendingTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
   const changed = () => onChange();
@@ -199,6 +201,7 @@ export function createSpeechAuthorizationLatch({
   return {
     authorize() {
       cancelFalling();
+      timeoutSquelched = false;
       pending = true;
       active = false;
       speaking = false;
@@ -207,6 +210,7 @@ export function createSpeechAuthorizationLatch({
         pendingTimer = undefined;
         if (!pending) return;
         pending = false;
+        timeoutSquelched = true;
         changed();
         onPendingTimeout();
       }, speechStartWatchdogMs);
@@ -237,12 +241,13 @@ export function createSpeechAuthorizationLatch({
       pending = false;
       active = false;
       speaking = false;
+      timeoutSquelched = false;
       changed();
     },
     snapshot(): SpeechAuthorizationSnapshot {
       const falling = fallingTimer !== undefined;
       const authorized = pending || active || falling;
-      return { pending, active, falling, authorized, heartbeatAllowed: !authorized };
+      return { pending, active, falling, timeoutSquelched, authorized, heartbeatAllowed: !authorized };
     },
   };
 }
@@ -402,7 +407,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     now,
     gateHoldUntil: gateHoldUntilRef.current,
     micMuted: micMutedRef.current,
-    squelch: false,
+    squelch: authorization.current!.snapshot().timeoutSquelched,
   }), []);
   const reassertGate = useCallback((now = Date.now()) => {
     applyConversationGate(controls, gateIsOpenAt(now));
@@ -741,7 +746,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const mode: VoiceApi["mode"] = configuredMode === "agent" && !voiceError ? "agent" : "fallback";
   const degraded = Boolean(voiceError || sttError);
   const lastError = voiceError ?? sttError;
-  const gateOpen = gateState({ turnActive: authorization.current.snapshot().authorized, now: Date.now(), gateHoldUntil, micMuted, squelch: false });
+  const gateOpen = gateState({
+    turnActive: authorization.current.snapshot().authorized,
+    now: Date.now(),
+    gateHoldUntil,
+    micMuted,
+    squelch: authorization.current.snapshot().timeoutSquelched,
+  });
 
   useEffect(() => {
     reassertGate();

@@ -11,11 +11,12 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - WA-3 pure voice protocol is implemented with echo attribution, bounded commands, confirmation, safe tag builders, capture summaries, chunking and keyterms; merged in PR #12.
 - WA-11 knowledge sync now uploads SOP + debrief notes + tutor prompt, patches only the knowledge-base leaf, verifies agent configuration, rolls back on drift, removes only the superseded same-session document, and times out safely; live confirm remains pending.
 - WA-5 pure cadence engines merged in PR #17: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 outcome mapping, and the pure Capture loop.
-- WA-2 real-client structural gate now guards only ElevenLabs remote-stream audio before LiveKit `play()`, reasserts on SDK lifecycle events, uses an 8 s watchdog plus flicker-safe speech authorization latch, sends idle heartbeats, and exposes snapshot-based soak diagnostics; merge pending.
+- WA-2 real-client structural gate now guards only ElevenLabs remote-stream audio before LiveKit `play()`, reasserts on SDK lifecycle events, persistently squelches late speech after the 8 s authorization watchdog, uses a flicker-safe speech authorization latch, sends idle heartbeats, and exposes snapshot-based soak diagnostics; merge pending.
 
 ## Done in the current PR (pending merge)
 
 - WA-5 Capture configuration parsing/page routing now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and carries all cadence, grace and chaining knobs through the existing config prop. Pure parser coverage is complete; human tuning remains pending. `graceSecs` and `maxChained` are currently runtime no-ops because frozen `CaptureClient` still constructs `new CandidateQueue(90)` and does not adopt `CaptureLoop`; the mechanism drawer also does not display effective values.
+- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the final rebase, `npm run typecheck` passed and `npm test` passed 190 tests across 15 files; audible behavior remains human-only below.
 
 ## Verified live by a human (who, when, what they did)
 

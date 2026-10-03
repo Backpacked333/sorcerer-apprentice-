@@ -8,6 +8,7 @@ import {
   type RemoteStreamAudio,
 } from "@/components/voice";
 import { evaluateSilenceSoak } from "@/app/voice-check/VoiceCheck";
+import { gateState } from "@/lib/voice-turn";
 
 function remoteAudio(volume = 1): RemoteStreamAudio {
   return {
@@ -108,6 +109,50 @@ describe("speech authorization latch", () => {
     vi.advanceTimersByTime(10_000);
     expect(latch.snapshot()).toMatchObject({ pending: false, active: true, authorized: true, heartbeatAllowed: false });
     expect(timedOut).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it("keeps a legacy-open mic squelched after timeout until authorization or disconnect", () => {
+    vi.useFakeTimers();
+    const volumes: number[] = [];
+    const control = { setVolume: ({ volume }: { volume: number }) => volumes.push(volume) };
+    let reassert = () => {};
+    const latch = createSpeechAuthorizationLatch({ onChange: () => reassert() });
+    const outputOpen = () => gateState({
+      turnActive: latch.snapshot().authorized,
+      now: Date.now(),
+      gateHoldUntil: 0,
+      micMuted: false,
+      squelch: latch.snapshot().timeoutSquelched,
+    });
+    reassert = () => { applyConversationGate(control, outputOpen()); };
+
+    latch.authorize();
+    expect(volumes.at(-1)).toBe(1);
+    vi.advanceTimersByTime(8_000);
+    expect(volumes.at(-1)).toBe(0);
+    expect(latch.snapshot().heartbeatAllowed).toBe(true);
+
+    vi.advanceTimersByTime(500);
+    reassert();
+    expect(volumes.at(-1)).toBe(0);
+
+    const lateSpeech = latch.onMode("speaking");
+    expect(lateSpeech.rising).toBe(true);
+    expect(outputOpen()).toBe(false);
+    expect(volumes.at(-1)).toBe(0);
+
+    latch.onMode("listening");
+    vi.advanceTimersByTime(600);
+    expect(volumes.at(-1)).toBe(0);
+    latch.authorize();
+    expect(latch.snapshot().timeoutSquelched).toBe(false);
+    expect(volumes.at(-1)).toBe(1);
+
+    vi.advanceTimersByTime(8_000);
+    expect(volumes.at(-1)).toBe(0);
+    latch.cancel();
+    expect(latch.snapshot().timeoutSquelched).toBe(false);
     vi.useRealTimers();
   });
 

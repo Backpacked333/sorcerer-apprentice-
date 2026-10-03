@@ -17,7 +17,7 @@ None. No live-provider, deployed, voice or screen-sharing verification claimed.
 
 ## Not verified yet (and the script to verify)
 
-- Automated: typecheck, full Vitest suite, production build and diff whitespace check passed on this branch before the final main update; rerun before push. No lint script is configured.
+- Automated after rebasing onto main `2197f04`: typecheck, all 188 tests (15 files, including 9 new presentation cases), production build and diff whitespace check passed. No lint script is configured.
 - Browser/keyless smoke not run in this session; UI testing needs approval.
 - UI check: open home at desktop and narrow widths; follow Work Maps/Capture/Practice/ERP links; tab to controls; open governor details; inspect a map's decision, literal reason, guardrail source and missing-frame state; verify the selected step is apparent; enable reduced motion.
 - Human check: share a real ERP surface, answer a natural-pause question, use Pause/Scratch that, and confirm those controls still behave correctly. The dot is only a governor-state presentation, not proof of microphone/capture activity.

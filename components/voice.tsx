@@ -35,7 +35,7 @@ export interface VoiceConnectOptions {
 
 export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOptions = {}) {
   const agentOverrides = {
-    ...(opts.firstMessage !== undefined ? { firstMessage: opts.firstMessage } : {}),
+    ...(opts.firstMessage ? { firstMessage: opts.firstMessage } : {}),
     ...(opts.prompt ? { prompt: { prompt: opts.prompt } } : {}),
     ...(opts.language ? { language: opts.language as "en" } : {}),
   };
@@ -55,6 +55,10 @@ export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOpti
 export type ConnectionOutcome =
   | { kind: "connected" | "cancelled"; generation: number }
   | { kind: "degraded"; generation: number; reason: string };
+
+export function createCancellationGuard(isCancelled: () => boolean) {
+  return { run<T>(action: () => T): T | undefined { return isCancelled() ? undefined : action(); } };
+}
 
 export function createConnectionLifecycle({
   onOutcome,
@@ -105,7 +109,7 @@ export function createConnectionLifecycle({
   };
   const fail = (generation: number, reason: string) => settle(generation, { kind: "degraded", generation, reason }, true);
   const cancel = (generation: number) => settle(generation, { kind: "cancelled", generation }, true);
-  return { start, connected, mode, fail, cancel, activeGeneration: () => attempt?.generation };
+  return { start, connected, mode, fail, cancel, activeGeneration: () => attempt?.generation, activeAttempt: () => attempt ? { generation: attempt.generation, promise: attempt.promise } : undefined };
 }
 
 export interface VoiceApi {
@@ -299,6 +303,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         if (opts?.firstMessage) await speakFallback(opts.firstMessage);
         return;
       }
+      const active = lifecycle.current!.activeAttempt();
+      if (active) {
+        await active.promise;
+        return;
+      }
       if (conversationStatus.status === "connected") return;
       setVoiceError(undefined);
       const attempt = lifecycle.current!.start(Boolean(opts?.firstMessage));
@@ -461,12 +470,15 @@ export function useTranscriber(opts: TranscriberOptions) {
     },
     onDisconnect: () => {
       setConnected(false);
-      if (optsRef.current.enabled) reportHealth("Scribe disconnected; using browser transcription if available.");
+      setEngine("none");
+      if (optsRef.current.enabled) reportHealth("Transcription offline: Scribe disconnected.");
       debug?.({ at: Date.now(), src: "scribe", type: "disconnect" });
     },
     onError: (error) => {
       const reason = error instanceof Error ? error.message : String(error);
-      reportHealth(`Scribe error: ${reason}`);
+      setConnected(false);
+      setEngine("none");
+      reportHealth(`Transcription offline: ${reason}`);
       debug?.({ at: Date.now(), src: "scribe", type: "error", data: reason });
     },
   });
@@ -477,6 +489,7 @@ export function useTranscriber(opts: TranscriberOptions) {
       return;
     }
     let cancelled = false;
+    const guard = createCancellationGuard(() => cancelled);
     (async () => {
       let scribeReason = "Scribe token unavailable";
       try {
@@ -495,13 +508,15 @@ export function useTranscriber(opts: TranscriberOptions) {
         scribeReason = error instanceof Error ? error.message : String(error);
         /* fall through to the browser recognizer */
       }
+      if (cancelled) return;
       const Ctor = (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike; SpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition ?? (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition;
       if (!Ctor) {
         setEngine("none");
         reportHealth(`Speech transcription unavailable: ${scribeReason}`);
         return;
       }
-      const r = new Ctor();
+      const r = guard.run(() => new Ctor());
+      if (!r) return;
       r.continuous = true;
       r.interimResults = true;
       r.lang = opts.language ?? "en-US";
@@ -529,9 +544,10 @@ export function useTranscriber(opts: TranscriberOptions) {
         }
       };
       r.onerror = () => reportHealth("Browser transcription error.");
-      recognizer.current = r;
       try {
-        r.start();
+        const started = guard.run(() => { r.start(); return true; });
+        if (!started) return;
+        recognizer.current = r;
         setEngine("webspeech");
         setConnected(true);
         reportHealth(`Scribe unavailable; browser transcription active (${scribeReason}).`);

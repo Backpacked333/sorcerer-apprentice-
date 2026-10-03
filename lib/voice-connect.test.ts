@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildAgentSessionOptions, createConnectionLifecycle, type ConnectionOutcome } from "@/components/voice";
+import { buildAgentSessionOptions, createCancellationGuard, createConnectionLifecycle, type ConnectionOutcome } from "@/components/voice";
 
 describe("voice connection options", () => {
   it("always supplies safe dynamic-variable defaults and lets session values override them", () => {
@@ -10,9 +10,9 @@ describe("voice connection options", () => {
       dynamicVariables: { expert_name: "Ada", newhire_name: "the new hire", task: "reviewing claims" },
     });
   });
-  it("keeps an explicitly empty first message while omitting other blank overrides", () => {
+  it("omits empty overrides", () => {
     const options = buildAgentSessionOptions("agent_123", { firstMessage: "", prompt: "", language: "" });
-    expect(options).toMatchObject({ overrides: { agent: { firstMessage: "" } } });
+    expect(options).not.toHaveProperty("overrides");
   });
   it("includes only non-empty overrides", () => {
     const options = buildAgentSessionOptions("agent_123", { firstMessage: "Ready when you are.", prompt: "Use this session context.", language: "en" });
@@ -58,6 +58,20 @@ describe("connection lifecycle", () => {
     lifecycle.mode(attempt.generation, "listening");
     await expect(attempt.promise).resolves.toEqual({ kind: "connected", generation: attempt.generation });
   });
+  it("shares the active promise while a first message is still playing", async () => {
+    const { lifecycle } = setup();
+    const first = lifecycle.start(true);
+    lifecycle.connected(first.generation);
+    const active = lifecycle.activeAttempt();
+    expect(active?.promise).toBe(first.promise);
+    let resolved = false;
+    active?.promise.then(() => { resolved = true; });
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(resolved).toBe(false);
+    lifecycle.mode(first.generation, "speaking");
+    lifecycle.mode(first.generation, "listening");
+    await expect(active?.promise).resolves.toMatchObject({ kind: "connected" });
+  });
   it("reports an error as degradation and ignores stale generations", async () => {
     const { lifecycle, outcomes, ended } = setup();
     const first = lifecycle.start(false);
@@ -68,5 +82,19 @@ describe("connection lifecycle", () => {
     expect(outcomes.at(-1)?.kind).toBe("degraded");
     expect(ended()).toBe(1);
     lifecycle.cancel(second.generation);
+  });
+});
+
+describe("transcriber cancellation guard", () => {
+  it("does not construct or start fallback recognition after disable", () => {
+    let cancelled = false;
+    let constructed = 0;
+    let started = 0;
+    const guard = createCancellationGuard(() => cancelled);
+    expect(guard.run(() => { constructed += 1; return "recognizer"; })).toBe("recognizer");
+    cancelled = true;
+    expect(guard.run(() => { constructed += 1; })).toBeUndefined();
+    expect(guard.run(() => { started += 1; })).toBeUndefined();
+    expect({ constructed, started }).toEqual({ constructed: 1, started: 0 });
   });
 });

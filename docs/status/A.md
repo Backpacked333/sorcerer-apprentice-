@@ -15,12 +15,13 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Done in the current PR (pending merge)
 
+- `/api/scribe-token` now contains provider/auth failures as a non-cacheable `200 { token: null, reason }`, so browser transcription degrades truthfully instead of surfacing an HTTP 500; success, missing-key and invalid-key paths have regression coverage.
 - WA-5 Capture configuration parsing/page routing now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and carries all cadence, grace and chaining knobs through the existing config prop. Pure parser coverage is complete; human tuning remains pending. `graceSecs` and `maxChained` are currently runtime no-ops because frozen `CaptureClient` still constructs `new CandidateQueue(90)` and does not adopt `CaptureLoop`; the mechanism drawer also does not display effective values.
-- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the final rebase, `npm run typecheck` passed and `npm test` passed 190 tests across 15 files; audible behavior remains human-only below.
+- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the token-route regression was added, `npm run typecheck` passed and `npm test` passed 193 tests across 16 files; audible behavior remains human-only below.
 
 ## Verified live by a human (who, when, what they did)
 
-- None yet.
+- Lane A human, 2026-10-03: quick post-WA-2 gate check heard no unsolicited audio during the partial check. This is not the full three-minute HT-2 pass. Scribe degraded to browser transcription during the same check and is recorded separately below.
 
 ## Not verified yet (and the script to verify)
 
@@ -31,12 +32,13 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - WA-3 real audio attribution remains unverified: HT-4 must cover speakers, headphones, barge-in, late echo and clip playback; deterministic protocol tests cannot judge microphone echo or interruption feel.
 - WA-11 live tutor attachment remains unverified: after a key and explicit shared-agent approval, confirm one map and verify the document appears within 10 seconds without changing the prompt hash, LLM, or tool ids.
 - WA-5 audible cadence remains unverified: run HT-6 variants A (brisk), B (talkative) and C (noisy) with a human listener; deterministic replay cannot judge interruption, echo, phrasing or feel.
+- Scribe keyed health: the token endpoint reached ElevenLabs, but the configured key was rejected with provider status 401 and browser transcription activated. The contained fallback is verified; real Scribe remains unverified until a valid key is supplied.
 
 ## Blocked on (lane, handshake id, what exactly)
 
-- Human/key: `ELEVENLABS_API_KEY` is absent locally, so the shared agents cannot be updated and the keyed prompt behavior cannot be heard yet.
+- Human/key: `ELEVENLABS_API_KEY` is present, but ElevenLabs rejects it as invalid (401). A valid replacement is required for Scribe and shared-agent verification.
 - Human/audio: a person must grant microphone permission and listen/speak through HT-4 before WA-3 can be marked live-verified.
-- Human/key: WA-11's live confirm mutates the shared tutor agent and cannot be run without the missing ElevenLabs key and explicit first-mutation approval.
+- Human/key: WA-11's live confirm mutates the shared tutor agent and cannot be run without a valid ElevenLabs key and explicit first-mutation approval.
 - Lane D / [issue #4](https://github.com/Backpacked333/sorcerer-apprentice-/issues/4): the Capture seam split is still open, so A cannot integrate the configured grace/chaining values or expose them through the view model without editing D-owned presentation JSX.
 - Lane B / [issue #19](https://github.com/Backpacked333/sorcerer-apprentice-/issues/19): `.env.example` must add the seven new public tuning names and change its shipped cooldown from `60` to `20`.
 
@@ -49,6 +51,6 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 ## Risks I see for the demo
 
 - Prompt text is automated-test verified but not yet deployed or judged by a human listener.
-- Keyless fallback remains the only executable path in this environment until the ElevenLabs key is supplied.
+- Browser transcription fallback remains the only healthy STT path in this environment until the invalid ElevenLabs key is replaced.
 - A keyed connection, first-message speaking edge, microphone gate, and Scribe event order remain human-unverified.
 - The page parses grace/chaining overrides, but they cannot affect runtime cadence until the post-seam Capture integration above lands; the drawer likewise cannot show effective values yet.

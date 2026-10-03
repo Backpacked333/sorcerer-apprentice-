@@ -305,7 +305,7 @@ export function narrationMatch(text: string, c: Candidate, at?: number): Narrati
   const target = invoice ? "invoice" : alias ? "value" : fieldTarget ? "field" : DEICTIC.test(t) ? "deictic" : null;
   const cue = t.match(REASON_CUES)?.[0];
   const timely = at === undefined || (at >= c.createdAt && at - c.createdAt <= 15);
-  const ambiguousOffscreen = c.leftAt !== undefined && (target === "field" || target === "deictic");
+  const ambiguousOffscreen = c.leftAt !== undefined && !invoice;
   const fills = c.kind === "why" && !conflictingInvoice && !ambiguousOffscreen && t.trim().split(/\s+/).length >= 6 && target !== null && Boolean(cue) && timely;
   return { fills, target, ...(cue ? { cue } : {}) };
 }

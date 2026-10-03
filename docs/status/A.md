@@ -14,7 +14,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 ## Done in the current PR (pending merge)
 
 - WA-5 pure cadence engines: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 window outcome mapping, and the pure Capture loop.
-- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise, and the legacy-default cadence defect. `npm run typecheck` and the full test suite are required again after the final rebase.
+- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the final rebase, `npm run typecheck` passed and `npm test` passed 168 tests across 13 files; audible behavior remains human-only below.
 
 ## Verified live by a human (who, when, what they did)
 

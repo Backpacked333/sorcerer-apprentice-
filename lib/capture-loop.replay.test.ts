@@ -150,7 +150,7 @@ describe("capture cadence replay", () => {
   });
 
   it("asks three windows after a talkative narrated reason and retains the evidence timestamp", () => {
-    const governor = new Governor({ ...DEMO_GOVERNOR, cooldownSecs: 12 });
+    const governor = new Governor(DEMO_GOVERNOR);
     const queue = new CandidateQueue(90, 18);
     const loop = new CaptureLoop(governor, queue, { graceSecs: 18 });
     queue.add(buildCandidates(edit("9001", 10), newContext(), 10));
@@ -164,15 +164,19 @@ describe("capture cadence replay", () => {
     loop.closed({ candidate: first.candidate, outcome: "answered", heard: "It depends on the situation.", now: 29 });
 
     queue.add(buildCandidates(edit("9002", 32, "route_changed"), newContext(), 32));
-    const second = loop.next(signals(42, "9002"));
+    const secondSignals = signals(50, "9002");
+    const second = loop.next(secondSignals);
     if (second.type !== "open") throw new Error("expected second window");
-    hearQuestion(loop, second.candidate, 42);
-    loop.closed({ candidate: second.candidate, outcome: "answered", heard: "I route it for a neutral reason.", now: 53 });
+    expect(Object.values(governor.evaluate(secondSignals).lights).every(Boolean)).toBe(true);
+    hearQuestion(loop, second.candidate, 50);
+    loop.closed({ candidate: second.candidate, outcome: "answered", heard: "I route it for a neutral reason.", now: 61 });
 
-    const third = loop.next(signals(54.3, "9002"));
+    const thirdSignals = signals(62.3, "9002");
+    const third = loop.next(thirdSignals);
     if (third.type !== "open") throw new Error("expected chained third window");
-    hearQuestion(loop, third.candidate, 54.3);
-    loop.closed({ candidate: third.candidate, outcome: "answered", heard: "There is no fixed boundary.", now: 65.3 });
+    expect(governor.evaluate(thirdSignals).lights).toMatchObject({ silence: true, still: true, notTyping: true, notReading: true });
+    hearQuestion(loop, third.candidate, 62.3);
+    loop.closed({ candidate: third.candidate, outcome: "answered", heard: "There is no fixed boundary.", now: 73.3 });
 
     expect(queue.windowsAsked).toBeGreaterThanOrEqual(3);
     expect(queue.guardrailAsked).toBe(true);
@@ -180,12 +184,12 @@ describe("capture cadence replay", () => {
   });
 
   it("ignores one-word noise partials and still reaches the demo cadence", () => {
-    const governor = new Governor({ ...DEMO_GOVERNOR, cooldownSecs: 12 });
+    const governor = new Governor(DEMO_GOVERNOR);
     const queue = new CandidateQueue(90, 18);
     const loop = new CaptureLoop(governor, queue, { graceSecs: 18 });
     let previousPartial = "";
     let lastHumanSpeechAt = Number.NEGATIVE_INFINITY;
-    for (let at = 2; at <= 18; at += 2) {
+    for (let at = 2; at <= 64; at += 2) {
       const partial = "uh";
       if (countsAsSpeech(previousPartial, partial)) lastHumanSpeechAt = at;
       previousPartial = partial;
@@ -193,19 +197,25 @@ describe("capture cadence replay", () => {
     expect(lastHumanSpeechAt).toBe(Number.NEGATIVE_INFINITY);
 
     queue.add(buildCandidates(edit("9001", 10), newContext(), 10));
-    const first = loop.next(signals(18, "9001", { lastSpeechAt: lastHumanSpeechAt }));
+    const firstSignals = signals(18, "9001", { lastSpeechAt: lastHumanSpeechAt });
+    const first = loop.next(firstSignals);
     if (first.type !== "open") throw new Error("expected first noise-tolerant window");
+    expect(Object.values(governor.evaluate(firstSignals).lights).every(Boolean)).toBe(true);
     hearQuestion(loop, first.candidate, 18);
     loop.closed({ candidate: first.candidate, outcome: "answered", heard: "A neutral reason for this choice.", now: 29 });
-    const chain = loop.next(signals(30.3, "9001", { lastSpeechAt: lastHumanSpeechAt }));
+    const chainSignals = signals(30.3, "9001", { lastSpeechAt: lastHumanSpeechAt });
+    const chain = loop.next(chainSignals);
     if (chain.type !== "open") throw new Error("expected noise-tolerant chain");
+    expect(governor.evaluate(chainSignals).lights).toMatchObject({ silence: true, still: true, notTyping: true, notReading: true });
     hearQuestion(loop, chain.candidate, 30.3);
     loop.closed({ candidate: chain.candidate, outcome: "answered", heard: "It depends on the situation.", now: 41.3 });
     queue.add(buildCandidates(edit("9002", 44, "route_changed"), newContext(), 44));
-    const third = loop.next(signals(54, "9002", { lastSpeechAt: lastHumanSpeechAt }));
+    const thirdSignals = signals(62, "9002", { lastSpeechAt: lastHumanSpeechAt });
+    const third = loop.next(thirdSignals);
     if (third.type !== "open") throw new Error("expected third noise-tolerant window");
-    hearQuestion(loop, third.candidate, 54);
-    loop.closed({ candidate: third.candidate, outcome: "answered", heard: "A neutral routing reason.", now: 65 });
+    expect(Object.values(governor.evaluate(thirdSignals).lights).every(Boolean)).toBe(true);
+    hearQuestion(loop, third.candidate, 62);
+    loop.closed({ candidate: third.candidate, outcome: "answered", heard: "A neutral routing reason.", now: 73 });
     expect(queue.windowsAsked).toBeGreaterThanOrEqual(3);
     expect(queue.guardrailAsked).toBe(true);
   });

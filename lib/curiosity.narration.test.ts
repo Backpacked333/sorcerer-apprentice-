@@ -56,8 +56,12 @@ describe("targeted narration", () => {
 
     expect(narrationMatch("Invoice 9002 uses research equipment because that is the policy", grace, 13).fills).toBe(false);
     expect(narrationMatch("Invoice 9002 uses research equipment because that is the policy", current, 13).fills).toBe(true);
+    expect(narrationMatch("9002 uses research equipment because that is the policy", grace, 13).fills).toBe(false);
+    expect(narrationMatch("Research equipment uses 2000 because that is the policy", grace, 13).fills).toBe(false);
+    expect(narrationMatch("9001 uses research equipment because that is the policy", grace, 13).fills).toBe(true);
     expect(narrationMatch("This invoice uses the cost center because policy requires review", grace, 13).fills).toBe(false);
     expect(narrationMatch("This invoice uses the cost center because policy requires review", current, 13).fills).toBe(true);
+    expect(queue.fillNarration("9002 uses research equipment because that is the policy", 13, "9002").map((candidate) => candidate.invoice)).toEqual(["9002"]);
   });
 });
 

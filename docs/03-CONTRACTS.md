@@ -139,7 +139,7 @@ interface VoiceApi {
   connected: boolean; status: string; isSpeaking: boolean; micMuted: boolean;
   messages: { role: "user"|"agent"; text: string; t: number }[];
   degraded: boolean; lastError?: string;    // true/reason when voice or STT is on a labeled fallback
-  connect(opts?: { firstMessage?: string; prompt?: string; language?: string; dynamicVariables?: Record<string,string> }): Promise<void>;
+  connect(opts?: { firstMessage?: string; prompt?: string; language?: string; dynamicVariables?: Record<string,string>; sessionStartMs?: number; keyterms?: string[] }): Promise<void>;
   disconnect(): void;
   getId(): string | undefined;              // safe before/after a live agent session
   say(tag: string, text: string, spoken?: string): void;   // agent mode: sends "[TAG] text" as a user message; fallback: speaks `spoken ?? text`
@@ -159,7 +159,8 @@ type VoiceDebugEvent = { at: number; src: "agent"|"scribe"|"turn"|"gate"|"tool";
 interface VoiceProviderProps { agentId?: string; tools: MutableRefObject<ToolHandlers>; onDebugEvent?: (event: VoiceDebugEvent) => void }
 <VoiceProvider agentId={id} tools={ref} onDebugEvent={callback}>…</VoiceProvider>
 useVoice(): VoiceApi
-useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?), language? })
+type TranscriptMeta = { startedAtMs: number; endedAtMs: number; speaker: "human"|"agent" };
+useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?, meta?), onAgentEcho?(text, startSecs?, endSecs?, meta?), onCommand?(command, text, meta), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
 type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
 
@@ -179,7 +180,7 @@ interface TurnResult {
 }
 ```
 
-**What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. Remote ElevenLabs stream audio receives the current gate volume synchronously before LiveKit invokes `play()` and remains inaudible outside an authorized first-message, `say()`, legacy-mic or `turn()` window; ordinary clips/replays are not intercepted. A user-activity heartbeat prevents idle timeout turns, and an authorized response that does not start within 8 seconds is persistently gated closed and reported until another response is explicitly authorized or the voice disconnects. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; anything transcribed while `isSpeaking` is never attributed to the human; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
+**What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. Remote ElevenLabs stream audio receives the current gate volume synchronously before LiveKit invokes `play()` and remains inaudible outside an authorized first-message, `say()`, legacy-mic or `turn()` window; ordinary clips/replays are not intercepted. A user-activity heartbeat prevents idle timeout turns, and an authorized response that does not start within 8 seconds is persistently gated closed and reported until another response is explicitly authorized or the voice disconnects. `VoiceInner` owns one shared Scribe connection while an enabled transcriber subscriber or voice session exists; `?stt=off` prevents microphone acquisition. One demand window mints at most one token; fatal Scribe errors latch a labeled WebSpeech fallback until demand stops, and a language/device/keyterm/background-filter change performs one controlled reconnect. Expected-close state is connection-generation scoped, so a suppressed old SDK CLOSE cannot mask a later replacement failure. Transcript times use the application clock once `sessionStartMs` is known. Agent/fallback echo is routed only to `onAgentEcho`; human barge-in and the human suffix of a mixed segment remain human. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
 
 ### 3.1 Tag protocol (page → agent, via `say`)
 
@@ -357,7 +358,7 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 | P-10 | `GET /api/health` → `{ ok, keys: { elevenlabs, gateway }, agents: { interviewer, tutor }, store: "fs"\|"…" , commit }` | B | D (preflight screen) |
 | P-11 | `EventKind` gains **`"save_intent"`**: posted by the ERP when the save-confirm opens, carrying the *proposed* `state`. A sandbox verdict like `save_blocked`: delivered in every source mode, never a vision event, never a compiled step. | B (type, pipeline) · D (`InvoiceForm` posts it) | C (matcher intervenes on it) |
 | P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
-| P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`) and resolves only when the session is connected | A | C passes names in Map and Teach |
+| P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`), `sessionStartMs?: number`, and `keyterms?: string[]`; it resolves only when the agent session is connected | A | C passes names in Map and Teach; A/C pass the app clock and session vocabulary |
 | P-14 | `TelemetryMessage` gains `queue: Queue` and `sandboxSession?: string`; a `"hello"` message from a subscriber makes an open `InvoiceForm` re-announce `invoice_opened` | B · D | A, C |
 | P-15 | `SessionLog.deferred?: { kind: string; question: string; stepRef: string }[]` — live candidates that were deferred, stale or never asked | B (type) · A (writes) | C (`buildSlots` asks them first) |
 | P-16 | `Rule.stopAndAsk` gains `quote?: Quote`; `stopAndAsk.who` becomes optional (set only when the expert named someone); `SaveVerdict` gains `missing?: string` (human-readable failed condition) | C | D (held-save panel), A (tutor line) |

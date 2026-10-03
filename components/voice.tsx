@@ -5,9 +5,21 @@
  *  - agent: an ElevenAgents conversation (mic muted until the governor opens a window) plus Scribe v2 Realtime
  *  - fallback: the browser's speechSynthesis and webkitSpeechRecognition, so the whole flow runs with no keys
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CommitStrategy, ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe } from "@elevenlabs/react";
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe, type ScribeCallbacks } from "@elevenlabs/react";
 import { gateState } from "@/lib/voice-turn";
+import { AgentSpeechTimeline, type VoiceCommand } from "@/lib/voice-protocol";
+import {
+  AgentSpeechTracker,
+  buildVoiceHubScribeOptions,
+  cleanupVoiceHubProvider,
+  VoiceHubConnectionCoordinator,
+  voiceHubConfigFingerprint,
+  VoiceHubRouter,
+  type VoiceHubEffectiveConfig,
+  type VoiceHubSubscriber,
+  type VoiceTranscriptMeta,
+} from "@/lib/voice-hub";
 
 export const TOOL_NAMES = ["log_answer", "mark_off_record", "confirm_teachback", "end_task", "flag_for_expert", "show_replay", "record_prediction", "record_mastery", "end_session"] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -32,6 +44,8 @@ export interface VoiceConnectOptions {
   prompt?: string;
   language?: string;
   dynamicVariables?: Record<string, string>;
+  sessionStartMs?: number;
+  keyterms?: string[];
 }
 
 export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOptions = {}) {
@@ -326,7 +340,16 @@ export interface VoiceApi {
 
 const VoiceContext = createContext<VoiceApi | null>(null);
 const VoiceDebugContext = createContext<((event: VoiceDebugEvent) => void) | undefined>(undefined);
-const VoiceHealthContext = createContext<(reason?: string) => void>(() => {});
+
+interface TranscriberHubValue {
+  engine: "scribe" | "webspeech" | "none";
+  connected: boolean;
+  partial: string;
+  subscribe: (id: string, read: () => VoiceHubSubscriber) => () => void;
+  refresh: () => void;
+}
+
+const TranscriberHubContext = createContext<TranscriberHubValue | null>(null);
 
 export function useVoice(): VoiceApi {
   const v = useContext(VoiceContext);
@@ -362,6 +385,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const [fallbackConnected, setFallbackConnected] = useState(false);
   const [voiceError, setVoiceError] = useState<string>();
   const [sttError, setSttError] = useState<string>();
+  const [sessionRequested, setSessionRequested] = useState(false);
+  const [, setTranscriberRevision] = useState(0);
+  const [, setReconcileRevision] = useState(0);
+  const [transcriberState, setTranscriberState] = useState<{ engine: "scribe" | "webspeech" | "none"; connected: boolean; partial: string }>({ engine: "none", connected: false, partial: "" });
   const [gateHoldUntil, setGateHoldUntil] = useState(0);
   const [, setGateRevision] = useState(0);
   const controls = useConversationControls();
@@ -371,11 +398,32 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const gateHoldUntilRef = useRef(0);
   const gateChangedRef = useRef<() => void>(() => {});
   const authorizationTimeoutRef = useRef<() => void>(() => {});
+  const definitiveSpeechEndRef = useRef<() => void>(() => {});
   const noteUserActivityRef = useRef<() => void>(() => {});
+  const humanActivityRef = useRef<() => void>(() => {});
+  const timelineRef = useRef<AgentSpeechTimeline | undefined>(undefined);
+  if (!timelineRef.current) timelineRef.current = new AgentSpeechTimeline();
+  const speechTrackerRef = useRef<AgentSpeechTracker | undefined>(undefined);
+  if (!speechTrackerRef.current) speechTrackerRef.current = new AgentSpeechTracker(timelineRef.current);
+  const hubRef = useRef<VoiceHubRouter | undefined>(undefined);
+  if (!hubRef.current) hubRef.current = new VoiceHubRouter({ timeline: timelineRef.current, onHumanActivity: () => humanActivityRef.current() });
+  const expectedSpeechTextRef = useRef("");
+  const scribeKeytermsRef = useRef<string[] | undefined>(undefined);
+  const recognizer = useRef<SpeechRecognitionLike | null>(null);
+  const transcriberDemandRef = useRef(false);
+  const coordinatorRef = useRef<VoiceHubConnectionCoordinator | undefined>(undefined);
+  if (!coordinatorRef.current) coordinatorRef.current = new VoiceHubConnectionCoordinator();
+  const mountedRef = useRef(true);
+  const effectiveConfigFingerprintRef = useRef("");
+  const emitRef = useRef<(src: VoiceDebugEvent["src"], type: string, data?: unknown) => void>(() => {});
+  const fatalScribeRef = useRef<(reason: string) => void>(() => {});
+  const scribeDisconnectRef = useRef<() => void>(() => {});
+  const reconcileRef = useRef<() => void>(() => {});
   const authorization = useRef<ReturnType<typeof createSpeechAuthorizationLatch> | undefined>(undefined);
   if (!authorization.current) authorization.current = createSpeechAuthorizationLatch({
     onChange: () => gateChangedRef.current(),
     onPendingTimeout: () => authorizationTimeoutRef.current(),
+    onDefinitiveEnd: () => definitiveSpeechEndRef.current(),
   });
   const lastUserActivityAtRef = useRef(0);
   const firstMessages = useRef(new Map<number, string>());
@@ -391,6 +439,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const emit = useCallback((src: VoiceDebugEvent["src"], type: string, data?: unknown) => {
     onDebugEvent?.({ at: Date.now(), src, type, ...(data === undefined ? {} : { data }) });
   }, [onDebugEvent]);
+  emitRef.current = emit;
   const extendGateHold = useCallback((until: number) => {
     if (until <= gateHoldUntilRef.current) return;
     gateHoldUntilRef.current = until;
@@ -399,6 +448,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const authorizeSpeech = useCallback((text: string) => {
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     const until = Date.now() + (2 + 0.45 * words) * 1000;
+    expectedSpeechTextRef.current = text;
     authorization.current!.authorize();
     extendGateHold(until);
   }, [extendGateHold]);
@@ -427,6 +477,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     const now = Date.now();
     const authorizedBefore = authorization.current!.snapshot().authorized;
     const { rising } = authorization.current!.onMode(data.mode);
+    speechTrackerRef.current!.onMode(data.mode, now / 1_000, expectedSpeechTextRef.current);
     const authorized = authorizedBefore || authorization.current!.snapshot().authorized;
     emit("agent", "mode", data);
     reassertGate(now);
@@ -450,13 +501,19 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, [controls, conversationStatus.status, emit]);
   useEffect(() => {
     noteUserActivityRef.current = noteUserActivity;
+    humanActivityRef.current = noteUserActivity;
     authorizationTimeoutRef.current = () => {
       emit("gate", "authorization_timeout", { watchdogMs: 8_000 });
       noteUserActivityRef.current();
     };
+    definitiveSpeechEndRef.current = () => {
+      expectedSpeechTextRef.current = "";
+    };
     return () => {
       noteUserActivityRef.current = () => {};
+      humanActivityRef.current = () => {};
       authorizationTimeoutRef.current = () => {};
+      definitiveSpeechEndRef.current = () => {};
     };
   }, [emit, noteUserActivity]);
   const activateFallback = useCallback((reason: string, generation?: number) => {
@@ -496,6 +553,8 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       reassertGate();
     },
     onDisconnect: (details) => {
+      speechTrackerRef.current!.close(Date.now() / 1_000);
+      definitiveSpeechEndRef.current();
       authorization.current!.cancel();
       gateHoldUntilRef.current = 0;
       setGateHoldUntil(0);
@@ -506,6 +565,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     onStatusChange: (data) => emit("agent", "status", data),
     onModeChange: handleAgentMode,
     onMessage: (m) => {
+      if (m.role === "agent") {
+        expectedSpeechTextRef.current = m.message;
+        speechTrackerRef.current!.refine(m.message);
+      }
       setMessages((xs) => [...xs, { role: m.role === "agent" ? "agent" : "user", text: m.message, t: Date.now() }]);
       emit("agent", "message", m);
     },
@@ -527,6 +590,228 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       }
     },
   });
+
+  const subscribeTranscriber = useCallback((id: string, read: () => VoiceHubSubscriber) => {
+    const unsubscribe = hubRef.current!.subscribe(id, read);
+    setTranscriberRevision((revision) => revision + 1);
+    return () => {
+      unsubscribe();
+      setTranscriberRevision((revision) => revision + 1);
+    };
+  }, []);
+  const refreshTranscribers = useCallback(() => setTranscriberRevision((revision) => revision + 1), []);
+  const sttForcedOff = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("stt") === "off";
+  const transcriberDemanded = hubRef.current.shouldConnect({ sessionActive: sessionRequested, forcedOff: sttForcedOff });
+  transcriberDemandRef.current = transcriberDemanded;
+  const deviceId = typeof window !== "undefined" ? localStorage.getItem("tacit.micDeviceId") || undefined : undefined;
+  const effectiveConfigFingerprint = voiceHubConfigFingerprint({
+    language: hubRef.current.preferredLanguage(),
+    deviceId,
+    keyterms: scribeKeytermsRef.current ?? [],
+    filterBackgroundAudio: process.env.NEXT_PUBLIC_SCRIBE_FILTER_BG !== "0",
+  });
+  const effectiveConfig = useMemo<VoiceHubEffectiveConfig>(() => ({
+    language: hubRef.current!.preferredLanguage(),
+    deviceId,
+    keyterms: [...(scribeKeytermsRef.current ?? [])],
+    filterBackgroundAudio: process.env.NEXT_PUBLIC_SCRIBE_FILTER_BG !== "0",
+  }), [deviceId, effectiveConfigFingerprint]);
+  effectiveConfigFingerprintRef.current = effectiveConfigFingerprint;
+  const reconcile = useCallback(() => setReconcileRevision((revision) => revision + 1), []);
+  reconcileRef.current = reconcile;
+
+  const scribeCallbacks = useMemo<ScribeCallbacks>(() => {
+    const fatal = (reason: string) => fatalScribeRef.current(reason);
+    return {
+      onPartialTranscript: ({ text }) => {
+        if (!mountedRef.current) return;
+        const routed = hubRef.current!.partial(text, Date.now());
+        emitRef.current("scribe", "partial", { text, attribution: routed.human ? "human" : "agent" });
+        if (routed.changed) setTranscriberState((state) => ({ ...state, partial: routed.text }));
+      },
+      onCommittedTranscript: ({ text }) => {
+        if (!mountedRef.current) return;
+        const routed = hubRef.current!.commit(text, Date.now());
+        setTranscriberState((state) => ({ ...state, partial: "" }));
+        emitRef.current("scribe", "commit", { text, speaker: routed.speaker, humanText: routed.text, command: routed.command });
+      },
+      onSessionStarted: () => {
+        if (!mountedRef.current) return;
+        setTranscriberState({ engine: "scribe", connected: true, partial: "" });
+        setSttError(undefined);
+        emitRef.current("scribe", "connect");
+      },
+      onDisconnect: () => {
+        const controlled = coordinatorRef.current!.consumeControlledClose();
+        if (!mountedRef.current) return;
+        setTranscriberState({ engine: "none", connected: false, partial: "" });
+        emitRef.current("scribe", "disconnect");
+        if (!controlled && transcriberDemandRef.current) fatal("Scribe disconnected.");
+        reconcileRef.current();
+      },
+      onError: (error) => fatal(error instanceof Error ? error.message : "Scribe connection error"),
+      onAuthError: ({ error }) => fatal(error),
+      onQuotaExceededError: ({ error }) => fatal(error),
+      onCommitThrottledError: ({ error }) => fatal(error),
+      onTranscriberError: ({ error }) => fatal(error),
+      onUnacceptedTermsError: ({ error }) => fatal(error),
+      onRateLimitedError: ({ error }) => fatal(error),
+      onInputError: ({ error }) => fatal(error),
+      onQueueOverflowError: ({ error }) => fatal(error),
+      onResourceExhaustedError: ({ error }) => fatal(error),
+      onSessionTimeLimitExceededError: ({ error }) => fatal(error),
+      onChunkSizeExceededError: ({ error }) => fatal(error),
+      onInsufficientAudioActivityError: ({ error }) => fatal(error),
+    };
+  }, []);
+  // Declared before useScribe so provider-unmount cleanup disables demand before the SDK's own effect closes its connection.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      cleanupVoiceHubProvider({
+        disableDemand: () => {
+          mountedRef.current = false;
+          transcriberDemandRef.current = false;
+          coordinatorRef.current!.update({ demanded: false, configFingerprint: effectiveConfigFingerprintRef.current });
+        },
+        recognizer: recognizer.current,
+        clearRecognizer: () => { recognizer.current = null; },
+        disconnectScribe: () => scribeDisconnectRef.current(),
+      });
+    };
+  }, []);
+  const scribe = useScribe(scribeCallbacks);
+  const scribeStatus = scribe.status;
+  const scribeConnect = scribe.connect;
+  const scribeDisconnect = scribe.disconnect;
+  scribeDisconnectRef.current = scribeDisconnect;
+
+  const stopBrowserRecognizer = useCallback(() => {
+    const current = recognizer.current;
+    if (!current) return;
+    current.onend = null;
+    recognizer.current = null;
+    try { current.stop(); } catch { /* it may already be stopped */ }
+  }, []);
+
+  fatalScribeRef.current = (reason) => {
+    if (!coordinatorRef.current!.latchFatal()) return;
+    setTranscriberState({ engine: "none", connected: false, partial: "" });
+    setSttError(`Transcription offline: ${reason}`);
+    emitRef.current("scribe", "fatal", reason);
+    scribeDisconnectRef.current();
+    reconcileRef.current();
+  };
+
+  useEffect(() => {
+    const transition = coordinatorRef.current!.update({ demanded: transcriberDemanded, configFingerprint: effectiveConfigFingerprint });
+    transcriberDemandRef.current = transcriberDemanded;
+    if (transition.stopResources) {
+      stopBrowserRecognizer();
+      if (scribeStatus !== "disconnected") {
+        if (scribeStatus !== "error") coordinatorRef.current!.expectControlledClose();
+        scribeDisconnect();
+      }
+      setTranscriberState({ engine: "none", connected: false, partial: "" });
+    }
+    if (!transcriberDemanded) setSttError(undefined);
+    if (transition.needsReconcile) reconcile();
+  }, [effectiveConfigFingerprint, reconcile, scribeDisconnect, scribeStatus, stopBrowserRecognizer, transcriberDemanded]);
+
+  useEffect(() => {
+    if (!transcriberDemanded) return;
+    let observedDeviceId = deviceId;
+    const timer = window.setInterval(() => {
+      const currentDeviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
+      if (currentDeviceId === observedDeviceId) return;
+      observedDeviceId = currentDeviceId;
+      setTranscriberRevision((revision) => revision + 1);
+    }, 500);
+    return () => window.clearInterval(timer);
+  }, [deviceId, transcriberDemanded]);
+
+  useEffect(() => {
+    if (!transcriberDemanded) return;
+    const coordinator = coordinatorRef.current!;
+    if (coordinator.snapshot().fatalLatched) {
+      if (!coordinator.beginFallback()) return;
+      const Ctor = (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike; SpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition
+        ?? (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition;
+      if (!Ctor) {
+        setTranscriberState({ engine: "none", connected: false, partial: "" });
+        return;
+      }
+      const browser = new Ctor();
+      browser.continuous = true;
+      browser.interimResults = true;
+      browser.lang = effectiveConfig.language === "de" ? "de-DE" : effectiveConfig.language === "en" ? "en-US" : effectiveConfig.language ?? "en-US";
+      browser.onresult = (event) => {
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+          const result = event.results[index];
+          const text = result[0].transcript.trim();
+          if (!text) continue;
+          if (result.isFinal) {
+            const routed = hubRef.current!.commit(text, Date.now());
+            setTranscriberState((state) => ({ ...state, partial: "" }));
+            emitRef.current("scribe", "commit", { text, engine: "webspeech", speaker: routed.speaker, humanText: routed.text, command: routed.command });
+          } else {
+            const routed = hubRef.current!.partial(text, Date.now());
+            if (routed.changed) setTranscriberState((state) => ({ ...state, partial: routed.text }));
+            emitRef.current("scribe", "partial", { text, engine: "webspeech", attribution: routed.human ? "human" : "agent" });
+          }
+        }
+      };
+      browser.onend = () => {
+        if (!transcriberDemandRef.current || recognizer.current !== browser) return;
+        try { browser.start(); } catch { /* already started */ }
+      };
+      browser.onerror = () => setSttError("Browser transcription error.");
+      try {
+        browser.start();
+        recognizer.current = browser;
+        setTranscriberState({ engine: "webspeech", connected: true, partial: "" });
+      } catch {
+        setTranscriberState({ engine: "none", connected: false, partial: "" });
+      }
+      return;
+    }
+    if (transcriberState.engine !== "none" || (scribeStatus !== "disconnected" && scribeStatus !== "error")) return;
+    if (scribeStatus === "error") {
+      fatalScribeRef.current("Scribe connection error");
+      return;
+    }
+    const attempt = coordinator.beginTokenAttempt();
+    if (!attempt) return;
+    const attemptConfig = { ...effectiveConfig, keyterms: [...(effectiveConfig.keyterms ?? [])] };
+    void (async () => {
+      let scribeReason = "Scribe token unavailable";
+      let shouldFallback = false;
+      try {
+        const response = await fetch("/api/scribe-token", { cache: "no-store" });
+        const body = response.ok ? await response.json() as { token?: string | null; reason?: string } : { token: null, reason: `token endpoint returned ${response.status}` };
+        scribeReason = body.reason ?? scribeReason;
+        if (!coordinator.isCurrent(attempt.generation)) return;
+        if (body.token) {
+          await scribeConnect(buildVoiceHubScribeOptions({
+            token: body.token,
+            ...attemptConfig,
+          }));
+          coordinator.replacementInstalled(attempt.generation);
+          return;
+        }
+        shouldFallback = true;
+      } catch (error) {
+        scribeReason = error instanceof Error ? error.message : String(error);
+        shouldFallback = true;
+      } finally {
+        if (shouldFallback && coordinator.isCurrent(attempt.generation) && coordinator.latchFatal()) {
+          setSttError(`Scribe unavailable; browser transcription requested (${scribeReason}).`);
+          emitRef.current("scribe", "fallback", scribeReason);
+        }
+        if (coordinator.settle(attempt.generation) && mountedRef.current) reconcileRef.current();
+      }
+    })();
+  }, [effectiveConfig, effectiveConfigFingerprint, scribeConnect, scribeStatus, transcriberDemanded, transcriberState.engine]);
 
   useEffect(() => {
     if (configuredMode !== "agent" || typeof HTMLMediaElement === "undefined") return;
@@ -578,13 +863,27 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const speakFallback = useCallback((text: string) => new Promise<void>((resolve) => {
     setMessages((xs) => [...xs, { role: "agent", text, t: Date.now() }]);
+    let intervalId: string | undefined;
+    let started = false;
+    let finished = false;
+    const start = () => {
+      if (started || finished) return;
+      started = true;
+      intervalId = timelineRef.current!.start(Date.now() / 1_000, text, "fallback");
+      setFallbackSpeaking(true);
+    };
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (intervalId) timelineRef.current!.end(Date.now() / 1_000, intervalId);
+      setFallbackSpeaking(false);
+      resolve();
+    };
     // text-only fallback when the browser cannot speak: pretend to talk for as long as the words would take
     const simulate = () => {
-      setFallbackSpeaking(true);
-      window.setTimeout(() => {
-        setFallbackSpeaking(false);
-        resolve();
-      }, Math.min(12000, 600 + text.split(/\s+/).length * 330));
+      if (finished) return;
+      start();
+      window.setTimeout(finish, Math.min(12000, 600 + text.split(/\s+/).length * 330));
     };
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return simulate();
     window.speechSynthesis.cancel();
@@ -592,22 +891,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     const voice = window.speechSynthesis.getVoices().find((v) => /en-(GB|US)/i.test(v.lang) && /female|samantha|karen|google uk english female|serena/i.test(v.name)) ?? window.speechSynthesis.getVoices().find((v) => /^en/i.test(v.lang));
     if (voice) u.voice = voice;
     u.rate = 0.98;
-    let started = false;
-    u.onstart = () => {
-      started = true;
-      setFallbackSpeaking(true);
-    };
-    u.onend = () => {
-      setFallbackSpeaking(false);
-      resolve();
-    };
-    u.onerror = () => {
-      setFallbackSpeaking(false);
-      resolve();
-    };
+    u.onstart = start;
+    u.onend = finish;
+    u.onerror = finish;
     window.speechSynthesis.speak(u);
     window.setTimeout(() => {
-      if (!started) {
+      if (!started && !finished) {
         window.speechSynthesis.cancel();
         simulate();
       }
@@ -617,6 +906,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const connect = useCallback<VoiceApi["connect"]>(
     async (opts) => {
+      hubRef.current!.setSessionStart(opts?.sessionStartMs);
+      scribeKeytermsRef.current = opts?.keyterms;
+      setTranscriberRevision((revision) => revision + 1);
+      setSessionRequested(true);
       if (configuredMode === "fallback") {
         setFallbackConnected(true);
         setVoiceError(undefined);
@@ -670,6 +963,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   );
 
   const disconnect = useCallback(() => {
+    setSessionRequested(false);
+    hubRef.current!.setSessionStart(undefined);
+    scribeKeytermsRef.current = undefined;
+    setTranscriberRevision((revision) => revision + 1);
+    speechTrackerRef.current!.close(Date.now() / 1_000);
+    definitiveSpeechEndRef.current();
     authorization.current!.cancel();
     gateHoldUntilRef.current = 0;
     setGateHoldUntil(0);
@@ -780,8 +1079,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     }),
     [mode, fallbackConnected, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity],
   );
+  const transcriberHub = useMemo<TranscriberHubValue>(() => ({
+    ...transcriberState,
+    subscribe: subscribeTranscriber,
+    refresh: refreshTranscribers,
+  }), [refreshTranscribers, subscribeTranscriber, transcriberState]);
 
-  return <VoiceHealthContext.Provider value={setSttError}><VoiceDebugContext.Provider value={onDebugEvent}><VoiceContext.Provider value={api}>{children}</VoiceContext.Provider></VoiceDebugContext.Provider></VoiceHealthContext.Provider>;
+  return <TranscriberHubContext.Provider value={transcriberHub}><VoiceDebugContext.Provider value={onDebugEvent}><VoiceContext.Provider value={api}>{children}</VoiceContext.Provider></VoiceDebugContext.Provider></TranscriberHubContext.Provider>;
 }
 
 // ---------- Transcription: Scribe v2 Realtime, or the browser's recognizer when there is no key ----------
@@ -789,147 +1093,26 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 export interface TranscriberOptions {
   enabled: boolean;
   onPartial: (text: string) => void;
-  onCommitted: (text: string, startSecs?: number, endSecs?: number) => void;
+  onCommitted: (text: string, startSecs?: number, endSecs?: number, meta?: VoiceTranscriptMeta) => void;
+  onAgentEcho?: (text: string, startSecs?: number, endSecs?: number, meta?: VoiceTranscriptMeta) => void;
+  onCommand?: (command: VoiceCommand, text: string, meta: VoiceTranscriptMeta) => void;
   language?: string;
 }
 
 export function useTranscriber(opts: TranscriberOptions) {
-  const debug = useContext(VoiceDebugContext);
-  const reportHealth = useContext(VoiceHealthContext);
-  const [engine, setEngine] = useState<"scribe" | "webspeech" | "none">("none");
-  const [connected, setConnected] = useState(false);
+  const hub = useContext(TranscriberHubContext);
+  if (!hub) throw new Error("useTranscriber must be used inside VoiceProvider");
+  const { subscribe, refresh } = hub;
+  const id = useId();
   const optsRef = useRef(opts);
   optsRef.current = opts;
-  const recognizer = useRef<SpeechRecognitionLike | null>(null);
-
-  const scribe = useScribe({
-    modelId: "scribe_v2_realtime",
-    commitStrategy: CommitStrategy.VAD,
-    vadSilenceThresholdSecs: 1.0,
-    includeTimestamps: true,
-    languageCode: opts.language,
-    onPartialTranscript: (d) => {
-      debug?.({ at: Date.now(), src: "scribe", type: "partial", data: d });
-      optsRef.current.onPartial(d.text);
-    },
-    onCommittedTranscriptWithTimestamps: (d) => {
-      debug?.({ at: Date.now(), src: "scribe", type: "commit", data: d });
-      const words = d.words?.filter((w) => w.type !== "spacing") ?? [];
-      optsRef.current.onCommitted(d.text, words[0]?.start, words[words.length - 1]?.end);
-    },
-    onConnect: () => {
-      setConnected(true);
-      reportHealth(undefined);
-      debug?.({ at: Date.now(), src: "scribe", type: "connect" });
-    },
-    onDisconnect: () => {
-      setConnected(false);
-      setEngine("none");
-      if (optsRef.current.enabled) reportHealth("Transcription offline: Scribe disconnected.");
-      debug?.({ at: Date.now(), src: "scribe", type: "disconnect" });
-    },
-    onError: (error) => {
-      const reason = error instanceof Error ? error.message : String(error);
-      setConnected(false);
-      setEngine("none");
-      reportHealth(`Transcription offline: ${reason}`);
-      debug?.({ at: Date.now(), src: "scribe", type: "error", data: reason });
-    },
-  });
 
   useEffect(() => {
-    if (!opts.enabled) {
-      reportHealth(undefined);
-      return;
-    }
-    let cancelled = false;
-    const guard = createCancellationGuard(() => cancelled);
-    (async () => {
-      let scribeReason = "Scribe token unavailable";
-      try {
-        const res = await fetch("/api/scribe-token");
-        const body = res.ok ? await res.json() as { token?: string | null; reason?: string } : { token: null, reason: `token endpoint returned ${res.status}` };
-        const { token } = body;
-        scribeReason = body.reason ?? scribeReason;
-        if (token) {
-          if (cancelled) return;
-          const deviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
-          await scribe.connect({ token, microphone: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: true, noiseSuppression: true } });
-          setEngine("scribe");
-          return;
-        }
-      } catch (error) {
-        scribeReason = error instanceof Error ? error.message : String(error);
-        /* fall through to the browser recognizer */
-      }
-      if (cancelled) return;
-      const Ctor = (window as unknown as { webkitSpeechRecognition?: new () => SpeechRecognitionLike; SpeechRecognition?: new () => SpeechRecognitionLike }).webkitSpeechRecognition ?? (window as unknown as { SpeechRecognition?: new () => SpeechRecognitionLike }).SpeechRecognition;
-      if (!Ctor) {
-        setEngine("none");
-        reportHealth(`Speech transcription unavailable: ${scribeReason}`);
-        return;
-      }
-      const r = guard.run(() => new Ctor());
-      if (!r) return;
-      r.continuous = true;
-      r.interimResults = true;
-      r.lang = opts.language ?? "en-US";
-      r.onresult = (ev) => {
-        for (let i = ev.resultIndex; i < ev.results.length; i++) {
-          const res = ev.results[i];
-          const text = res[0].transcript.trim();
-          if (!text) continue;
-          if (res.isFinal) {
-            debug?.({ at: Date.now(), src: "scribe", type: "commit", data: { text, engine: "webspeech" } });
-            optsRef.current.onCommitted(text);
-          } else {
-            debug?.({ at: Date.now(), src: "scribe", type: "partial", data: { text, engine: "webspeech" } });
-            optsRef.current.onPartial(text);
-          }
-        }
-      };
-      r.onend = () => {
-        if (!cancelled && recognizer.current === r) {
-          try {
-            r.start();
-          } catch {
-            /* already started */
-          }
-        }
-      };
-      r.onerror = () => reportHealth("Browser transcription error.");
-      try {
-        const started = guard.run(() => { r.start(); return true; });
-        if (!started) return;
-        recognizer.current = r;
-        setEngine("webspeech");
-        setConnected(true);
-        reportHealth(`Scribe unavailable; browser transcription active (${scribeReason}).`);
-      } catch {
-        setEngine("none");
-        reportHealth(`Speech transcription unavailable: ${scribeReason}`);
-      }
-    })();
-    return () => {
-      cancelled = true;
-      if (recognizer.current) {
-        const r = recognizer.current;
-        recognizer.current = null;
-        r.onend = null;
-        try {
-          r.stop();
-        } catch {
-          /* ignore */
-        }
-      }
-      scribe.disconnect();
-      setConnected(false);
-      reportHealth(undefined);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opts.enabled]);
+    return subscribe(id, () => optsRef.current);
+  }, [id, subscribe]);
+  useEffect(() => refresh(), [refresh, opts.enabled, opts.language]);
 
-  return { engine, connected: engine === "scribe" ? scribe.isConnected : connected, partial: scribe.partialTranscript };
+  return { engine: hub.engine, connected: hub.connected, partial: hub.partial };
 }
 
 interface SpeechRecognitionLike {

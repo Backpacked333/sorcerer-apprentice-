@@ -82,7 +82,7 @@ it("round-trips isolated ERP workspaces and never treats corrupt ERP as missing"
   expect(await store.getErpState("visitor")).toBeUndefined();
   await store.saveErpState([], "visitor");
   expect(await store.getErpState("visitor")).toEqual([]);
-  for (const raw of ["{", "null", "{}"]) {
+  for (const raw of ["{", "null", "{}", "[null]", "[[]]", "[1]"]) {
     await fs.writeFile(path.join(root, "ws", "local", "erp.json"), raw);
     await expect(store.getErpState()).rejects.toThrow();
   }
@@ -113,6 +113,40 @@ it("serializes guard updates, expires/rearms per teach session and clears only t
     await expect(store.getGuard()).rejects.toThrow();
     await expect(arm("first")).rejects.toThrow();
   }
+});
+
+it("persists recency across equal timestamps, numeric IDs and rearming", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(1000);
+  const first = await store.saveGuard({ mapSessionId: "map1", teachSessionId: "first" });
+  await fs.writeFile(path.join(root, "ws", "local", "guards.json"), JSON.stringify({ first }));
+  expect(await store.getGuard()).toEqual(first);
+  const second = await store.saveGuard({ mapSessionId: "map2", teachSessionId: "second" });
+  expect(second.armedAt).toBe(first.armedAt);
+  expect(await store.getGuard()).toEqual(second);
+  await store.saveGuard({ mapSessionId: "map3", teachSessionId: "9" });
+  const numeric = await store.saveGuard({ mapSessionId: "map4", teachSessionId: "2" });
+  expect(await store.getGuard()).toEqual(numeric);
+  const rearmed = await store.saveGuard({ mapSessionId: "map5", teachSessionId: "first" });
+  vi.resetModules();
+  expect(await (await import("./store")).getGuard()).toEqual(rearmed);
+  await store.saveGuard({ mapSessionId: "expired", teachSessionId: "zero", ttlMs: 0 });
+  expect(await store.getGuard()).toEqual(rearmed);
+});
+
+it("snapshots validated guard input before yielding", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(1000);
+  const input = { mapSessionId: "map", teachSessionId: "teach", ttlMs: 50 };
+  const saving = store.saveGuard(input);
+  Object.assign(input, { mapSessionId: "../bad", teachSessionId: "../bad", ttlMs: 0 });
+  expect(await saving).toEqual({ mapSessionId: "map", teachSessionId: "teach", armedAt: 1000, expiresAt: 1050 });
+  expect((await store.getGuard("teach"))?.mapSessionId).toBe("map");
+});
+
+it.each([[undefined, "local"], ["local", undefined]])("orders implicit/explicit workspace writes (%s, %s)", async (first, second) => {
+  await Promise.all([store.saveGuard({ mapSessionId: "map", teachSessionId: "teach" }, first), store.clearGuard(undefined, second)]);
+  expect(await store.getGuard()).toBeUndefined();
+  await Promise.all([store.saveErpState(seedInvoices(), first), store.saveErpState([], second)]);
+  expect(await store.getErpState()).toEqual([]);
 });
 
 it("keeps the old file on write failure, cleans temp files, and recovers its write queue", async () => {

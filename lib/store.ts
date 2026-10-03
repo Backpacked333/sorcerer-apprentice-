@@ -131,23 +131,25 @@ export async function listFrameIds(sessionId: string): Promise<string[]> {
 }
 
 async function workspaceFile(name: string, ws?: string): Promise<string> {
-  return path.join(dir("ws"), validId(ws ?? await currentWorkspace()), name);
+  const root = dir("ws"), workspace = await (ws ?? currentWorkspace());
+  return path.join(root, validId(workspace), name);
 }
 export async function getErpState(ws?: string): Promise<Invoice[] | undefined> {
   const state = await readJson<Invoice[]>(await workspaceFile("erp.json", ws));
-  if (state !== undefined && !Array.isArray(state)) throw new Error("Invalid ERP state");
+  if (state !== undefined && (!Array.isArray(state) || state.some((invoice) => !invoice || typeof invoice !== "object" || Array.isArray(invoice)))) throw new Error("Invalid ERP state");
   return state;
 }
 export async function saveErpState(invoices: Invoice[], ws?: string): Promise<void> { await writeJson(await workspaceFile("erp.json", ws), invoices); }
 
 export interface GuardRecord { mapSessionId: string; teachSessionId: string; armedAt: number; expiresAt: number }
-type Guards = Record<string, GuardRecord>;
+type Guards = Record<string, GuardRecord & { sequence?: number }>;
 async function readGuards(file: string): Promise<Guards> {
   const guards = await readJson<Guards>(file);
   if (guards === undefined) return {};
   if (!guards || typeof guards !== "object" || Array.isArray(guards)) throw new Error("Invalid guards");
   for (const [id, g] of Object.entries(guards)) {
     if (!g || g.teachSessionId !== id || !Number.isFinite(g.armedAt) || !Number.isFinite(g.expiresAt) || g.expiresAt < g.armedAt) throw new Error("Invalid guard");
+    if (g.sequence !== undefined && (!Number.isSafeInteger(g.sequence) || g.sequence < 1)) throw new Error("Invalid guard sequence");
     validId(id); validId(g.mapSessionId);
   }
   return guards;
@@ -155,17 +157,22 @@ async function readGuards(file: string): Promise<Guards> {
 export async function getGuard(teachSessionId?: string, ws?: string): Promise<GuardRecord | undefined> {
   if (teachSessionId !== undefined) validId(teachSessionId);
   const guards = await readGuards(await workspaceFile("guards.json", ws));
-  return Object.values(guards).filter((g) => g.expiresAt > Date.now() && (teachSessionId === undefined || g.teachSessionId === teachSessionId)).sort((a, b) => b.armedAt - a.armedAt)[0];
+  const guard = Object.values(guards).filter((g) => g.expiresAt > Date.now() && (teachSessionId === undefined || g.teachSessionId === teachSessionId))
+    .sort((a, b) => b.armedAt - a.armedAt || (b.sequence ?? 0) - (a.sequence ?? 0))[0];
+  return guard && { mapSessionId: guard.mapSessionId, teachSessionId: guard.teachSessionId, armedAt: guard.armedAt, expiresAt: guard.expiresAt };
 }
 export async function saveGuard(g: { mapSessionId: string; teachSessionId: string; ttlMs?: number }, ws?: string): Promise<GuardRecord> {
-  validId(g.mapSessionId); validId(g.teachSessionId);
+  const mapSessionId = validId(g.mapSessionId), teachSessionId = validId(g.teachSessionId);
   const ttl = g.ttlMs ?? 30 * 60 * 1000;
   if (!Number.isFinite(ttl) || ttl < 0) throw new Error("Invalid guard TTL");
   const file = await workspaceFile("guards.json", ws);
   return serialized(file, async () => {
     const guards = await readGuards(file), armedAt = Date.now();
-    const record = { mapSessionId: g.mapSessionId, teachSessionId: g.teachSessionId, armedAt, expiresAt: armedAt + ttl };
-    await atomicWrite(file, JSON.stringify({ ...guards, [g.teachSessionId]: record }));
+    // Persist tie order without changing wall-clock timestamps or TTLs.
+    const sequence = Object.values(guards).reduce((max, guard) => Math.max(max, guard.sequence ?? 0), 0) + 1;
+    if (!Number.isSafeInteger(sequence)) throw new Error("Guard sequence exhausted");
+    const record = { mapSessionId, teachSessionId, armedAt, expiresAt: armedAt + ttl };
+    await atomicWrite(file, JSON.stringify({ ...guards, [teachSessionId]: { ...record, sequence } }));
     return record;
   });
 }

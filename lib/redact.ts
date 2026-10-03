@@ -1,6 +1,6 @@
 /**
  * Trust layer: text redaction before anything is stored.
- * A TypeScript regex pass (honest and visible). Swap in a Presidio sidecar via REDACT_URL if you want NER.
+ * A conservative regex pass plus personal names explicitly supplied by the caller, not NER.
  */
 
 export interface Redaction {
@@ -11,34 +11,40 @@ export interface Redaction {
 const PATTERNS: { kind: string; re: RegExp }[] = [
   { kind: "iban", re: /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,4})?\b/g },
   { kind: "email", re: /\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g },
-  { kind: "phone", re: /(?:\+\d{1,3}[\s-]?)?(?:\(?\d{2,5}\)?[\s-]?)\d{3,4}[\s-]?\d{3,5}\b/g },
   { kind: "vat_id", re: /\b(?:DE|CZ|AT|FR|NL)\s?\d{8,11}\b/g },
   { kind: "tax_number", re: /\b\d{2,3}\/\d{3}\/\d{4,5}\b/g },
-  { kind: "card", re: /\b(?:\d[ -]?){13,19}\b/g },
+  { kind: "card", re: /(?<![\w+])\d(?:[ -]?\d){12,18}\b/g },
+  { kind: "phone", re: /(?<![\w+])(?:\+\d{1,3}[ -]?(?:\(\d{1,5}\)[ -]?)?|\(\d{2,5}\)[ -]?|0\d{1,4}[ -]?|(?=\d{3}-\d{3}-\d{4}\b))\d(?:[\d ()-]*\d)?\b/g },
 ];
 
-/** Names the vision model flagged as personal (not supplier companies) get masked too. */
+/** Supply actual personal names, not company names or role/escalation labels. */
 export function redactText(text: string, personalNames: string[] = []): Redaction {
   const entities: Redaction["entities"] = [];
   let out = text;
   for (const { kind, re } of PATTERNS) {
     out = out.replace(re, (m) => {
-      // skip plain amounts like 7 850 or invoice numbers of 4 digits
-      if (kind === "phone" && /^\d{4,5}$/.test(m.replace(/\s/g, ""))) return m;
-      if (kind === "card" && m.replace(/\D/g, "").length < 13) return m;
+      const digits = m.replace(/\D/g, "");
+      if (kind === "phone" && (digits.length < 8 || digits.length > 15 || /^\d{4}(?: \d{4})+$/.test(m))) return m;
+      if (kind === "card" && !validCard(digits)) return m;
       entities.push({ kind, original: m });
       return `[${kind}]`;
     });
   }
-  for (const name of personalNames) {
-    if (!name || name.length < 3) continue;
-    const re = new RegExp(`\\b${escapeRe(name)}\\b`, "gi");
-    if (re.test(out)) {
-      entities.push({ kind: "person", original: name });
-      out = out.replace(re, "[person]");
-    }
+  for (const name of personalNames.map((name) => name.trim()).filter(Boolean).sort((a, b) => b.length - a.length)) {
+    const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRe(name)}(?![\\p{L}\\p{N}_])`, "giu");
+    out = out.replace(re, (original) => { entities.push({ kind: "person", original }); return "[person]"; });
   }
   return { text: out, entities };
+}
+
+function validCard(digits: string): boolean {
+  let sum = 0;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let digit = Number(digits[i]);
+    if ((digits.length - 1 - i) % 2) { digit *= 2; if (digit > 9) digit -= 9; }
+    sum += digit;
+  }
+  return !/^0+$/.test(digits) && sum % 10 === 0;
 }
 
 function escapeRe(s: string): string {

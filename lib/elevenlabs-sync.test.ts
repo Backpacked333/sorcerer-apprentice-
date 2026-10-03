@@ -8,7 +8,7 @@ function mapFixture() {
   map.notes.push({
     topic: "Edge case",
     question: "What happens when the request is incomplete?",
-    quote: { text: "I pause and ask the team lead.", t: 12, source: "debrief" },
+    quote: { text: 'I pause and ask the "team lead".', t: 12, source: "debrief" },
   });
   return map;
 }
@@ -68,7 +68,7 @@ describe("syncTutorKnowledgeWithClient", () => {
     expect(upload.text).toContain("## Debrief notes");
     expect(upload.text).toContain("Edge case");
     expect(upload.text).toContain("What happens when the request is incomplete?");
-    expect(upload.text).toContain('> "I pause and ask the team lead."');
+    expect(upload.text).toContain('> "I pause and ask the "team lead"."');
     expect(upload.text).toContain("You process review requests");
     expect(f.update).toHaveBeenCalledTimes(1);
     expect(f.update.mock.calls[0].slice(0, 2)).toEqual([

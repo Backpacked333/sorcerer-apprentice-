@@ -71,7 +71,7 @@ function notesMarkdown(map: WorkMap): string {
       "",
       `### ${note.topic}`,
       `Question: ${note.question}`,
-      `> \"${note.quote.text.replaceAll('"', '\\"')}\"`,
+      `> \"${note.quote.text}\"`,
     ]),
   ].join("\n");
 }

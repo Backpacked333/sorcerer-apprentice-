@@ -87,8 +87,16 @@ describe("context helpers", () => {
 
   it("never splits a Unicode code point and reconstructs compact text", () => {
     const pieces = chunk("a😀b", 2);
-    expect(pieces).toEqual(["a", "😀", "b"]);
+    expect(pieces).toEqual(["a😀", "b"]);
     expect(pieces.join("")).toBe("a😀b");
+  });
+
+  it("interprets maxChars as Unicode code points", () => {
+    const pieces = chunk("😀x", 1);
+    expect(pieces).toEqual(["😀", "x"]);
+    expect(pieces.every((piece) => Array.from(piece).length <= 1)).toBe(true);
+    expect(pieces.join("")).toBe("😀x");
+    expect(chunk("😀😀x", 2)).toEqual(["😀😀", "x"]);
   });
 
   it("builds unique bounded keyterms from visible state and labels", () => {

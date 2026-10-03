@@ -36,12 +36,30 @@ describe("voice protocol echo attribution", () => {
     });
   });
 
+  it("preserves an answer after a near-complete ordered prompt", () => {
+    const timeline = new AgentSpeechTimeline([{ start: 4, end: 6, text: "Why did you choose this?" }]);
+
+    expect(classifySegment({ text: "Why did you choose because policy", tStart: 5.5, tEnd: 6.5 }, timeline)).toMatchObject({
+      kind: "mixed",
+      text: "because policy",
+    });
+  });
+
   it("keeps a headphone barge-in as human speech", () => {
     const timeline = new AgentSpeechTimeline([{ start: 20, end: 23, text: "When would you stop and ask someone?" }]);
 
     expect(classifySegment({ text: "I would check with my team lead", tStart: 21, tEnd: 22 }, timeline)).toMatchObject({
       kind: "human",
       text: "I would check with my team lead",
+    });
+  });
+
+  it("does not mistake shared ordered words in a headphone barge-in for echo", () => {
+    const timeline = new AgentSpeechTimeline([{ start: 20, end: 23, text: "When would you stop and ask someone?" }]);
+
+    expect(classifySegment({ text: "I would ask someone", tStart: 21, tEnd: 22 }, timeline)).toMatchObject({
+      kind: "human",
+      text: "I would ask someone",
     });
   });
 
@@ -61,5 +79,17 @@ describe("voice protocol echo attribution", () => {
     expect(classifySegment({ text: "Ends at playback", tStart: 29, tEnd: 30 }, timeline).kind).toBe("human");
     expect(classifySegment({ text: "Starts after playback", tStart: 34, tEnd: 35 }, timeline).kind).toBe("human");
     expect(classifySegment({ text: "Human speech after playback", tStart: 34.1, tEnd: 35 }, timeline).kind).toBe("human");
+  });
+
+  it("allocates unique generated ids after explicit constructor ids", () => {
+    const timeline = new AgentSpeechTimeline([{ id: "speech_1", start: 1, end: 2, text: "first" }]);
+    const generated = timeline.start(3, "second");
+    timeline.end(4, generated);
+
+    expect(generated).toBe("speech_2");
+    expect(timeline.all()).toEqual([
+      { id: "speech_1", start: 1, end: 2, text: "first", kind: "agent" },
+      { id: "speech_2", start: 3, end: 4, text: "second", kind: "agent" },
+    ]);
   });
 });

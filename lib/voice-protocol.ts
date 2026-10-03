@@ -34,7 +34,11 @@ export class AgentSpeechTimeline {
   }
 
   add(interval: AgentSpeechInterval): string {
-    const id = interval.id ?? `speech_${this.nextId++}`;
+    let id = interval.id;
+    if (!id) {
+      do id = `speech_${this.nextId++}`;
+      while (this.entries.some((candidate) => candidate.id === id));
+    }
     this.entries.push({ ...interval, id, kind: interval.kind ?? "agent" });
     this.entries.sort((a, b) => a.start - b.start);
     return id;
@@ -79,19 +83,17 @@ const tokenDetails = (text: string): Token[] => {
   return tokens;
 };
 
-const containment = (heard: Token[], spoken: Token[]): number => {
-  if (heard.length === 0 || spoken.length === 0) return 0;
-  const remaining = new Map<string, number>();
-  for (const token of spoken) remaining.set(token.normalized, (remaining.get(token.normalized) ?? 0) + 1);
-  let found = 0;
-  for (const token of heard) {
-    const count = remaining.get(token.normalized) ?? 0;
-    if (count > 0) {
-      found += 1;
-      remaining.set(token.normalized, count - 1);
+const orderedMatchCount = (left: Token[], right: Token[]): number => {
+  const row = new Array<number>(right.length + 1).fill(0);
+  for (const leftToken of left) {
+    let diagonal = 0;
+    for (let index = 1; index <= right.length; index += 1) {
+      const above = row[index];
+      row[index] = leftToken.normalized === right[index - 1].normalized ? diagonal + 1 : Math.max(row[index], row[index - 1]);
+      diagonal = above;
     }
   }
-  return found / heard.length;
+  return row[right.length];
 };
 
 const leadingEchoLength = (heard: Token[], spoken: Token[]): number => {
@@ -123,20 +125,26 @@ export function classifySegment(segment: SpeechSegment, timeline: AgentSpeechTim
     }
 
     const spoken = tokenDetails(interval.text);
-    const overlap = containment(heard, spoken);
     if (inside) {
       const leading = leadingEchoLength(heard, spoken);
-      if (spoken.length > 0 && leading === spoken.length) {
-        const humanText = stripLeadingTokens(segment.text, heard, leading);
-        return tokenDetails(humanText).length >= 2
-          ? { kind: "mixed", text: humanText, interval }
-          : { kind: "agent", text: "", interval };
+      const humanText = stripLeadingTokens(segment.text, heard, leading);
+      const humanSuffix = tokenDetails(humanText);
+      if (spoken.length > 0 && leading / spoken.length >= 0.6 && humanSuffix.length >= 2) {
+        return { kind: "mixed", text: humanText, interval };
       }
-      if (overlap >= 0.6) return { kind: "agent", text: "", interval };
+      const matched = orderedMatchCount(heard, spoken);
+      const heardCoverage = heard.length > 0 ? matched / heard.length : 0;
+      const promptCoverage = spoken.length > 0 ? matched / spoken.length : 0;
+      if (heardCoverage >= 0.6 && promptCoverage >= 0.6) return { kind: "agent", text: "", interval };
     }
 
     const late = interval.end !== undefined && segment.tStart > interval.end + 0.8 && segment.tStart <= interval.end + 4;
-    if (late && overlap >= 0.8) return { kind: "agent", text: "", interval };
+    if (late) {
+      const matched = orderedMatchCount(heard, spoken);
+      const heardCoverage = heard.length > 0 ? matched / heard.length : 0;
+      const promptCoverage = spoken.length > 0 ? matched / spoken.length : 0;
+      if (heardCoverage >= 0.8 && promptCoverage >= 0.8) return { kind: "agent", text: "", interval };
+    }
   }
 
   return { kind: "human", text: segment.text.trim() };
@@ -253,21 +261,21 @@ export function buildTutorPayload(options: TutorPayloadOptions): string {
 }
 
 export function chunk(text: string, maxChars: number): string[] {
-  if (!Number.isFinite(maxChars) || maxChars < 1) throw new RangeError("maxChars must be a positive number");
+  const limit = Math.floor(maxChars);
+  if (!Number.isFinite(maxChars) || limit < 1) throw new RangeError("maxChars must be a positive number");
   const clean = text.trim();
   if (!clean) return [];
   const output: string[] = [];
   let remaining = clean;
-  while (remaining.length > maxChars) {
-    const candidate = remaining.slice(0, maxChars + 1);
-    const boundary = Math.max(candidate.lastIndexOf("\n"), candidate.lastIndexOf(" "));
-    let take = boundary > 0 && boundary <= maxChars ? boundary : maxChars;
-    const before = remaining.charCodeAt(take - 1);
-    const after = remaining.charCodeAt(take);
-    if (before >= 0xd800 && before <= 0xdbff && after >= 0xdc00 && after <= 0xdfff) take -= 1;
-    if (take === 0) take = remaining.codePointAt(0)! > 0xffff ? 2 : 1;
-    output.push(remaining.slice(0, take).trim());
-    remaining = remaining.slice(take).trimStart();
+  while (Array.from(remaining).length > limit) {
+    const points = Array.from(remaining);
+    let boundary = -1;
+    for (let index = 1; index <= limit; index += 1) {
+      if (/\s/u.test(points[index] ?? "")) boundary = index;
+    }
+    const take = boundary > 0 ? boundary : limit;
+    output.push(points.slice(0, take).join("").trim());
+    remaining = points.slice(take).join("").trimStart();
   }
   if (remaining) output.push(remaining);
   return output;

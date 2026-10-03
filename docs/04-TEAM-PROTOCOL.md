@@ -45,6 +45,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
 | `lib/workmap.ts` | **C** | THE contract: additive only |
+| `lib/workmap.contracts.test.ts` | **C** | legacy/new map compatibility for pre-approved contract additions |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
 | `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |
 | `app/api/compile/`, `app/api/teachback/`, `app/api/sessions/[id]/{map,slot,confirm}/` | **C** | |

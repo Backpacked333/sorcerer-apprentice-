@@ -7,7 +7,8 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - WA-1/WA-9 prompt v2 and prompt/tool protocol regression tests merged in PR #2.
 - WA-1 provisioning script is idempotent, read-only-checkable, Expressive Mode explicit, and preserves an existing knowledge base; merged in PR #3.
 - WA-1 awaited connection contract, generation-safe failure fallback, SDK/Scribe debug tap, and keyed/keyless `/voice-check` diagnostics merged in PR #7.
-- WA-2/WA-3 pure output-gate and turn lifecycle reducer is implemented with full state/effect regression coverage; merge pending.
+- WA-2/WA-3 pure output-gate and turn lifecycle reducer merged in PR #9 with full state/effect regression coverage.
+- WA-3 pure voice protocol is implemented with echo attribution, bounded commands, confirmation, safe tag builders, capture summaries, chunking and keyterms; automated verification passes, merge pending.
 
 ## Verified live by a human (who, when, what they did)
 
@@ -19,10 +20,12 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - Live provisioning: after explicit approval and a key, run `npm run agents:create` twice and confirm identical IDs, then `npm run agents:create -- --check` and confirm prompt hashes/tool counts/settings.
 - Awaited connect and `/voice-check`: run HT-1 with a real agent key and microphone; verify connect id, event order, exact Scribe commit, and audible response timing. Headless checks cannot verify audio or permissions.
 - Turn lifecycle audio behavior: after `voice.tsx` integration, run HT-2, HT-3 and HT-4; the pure reducer cannot verify interruption feel, echo on speakers, or actual mic closure.
+- WA-3 real audio attribution remains unverified: HT-4 must cover speakers, headphones, barge-in, late echo and clip playback; deterministic protocol tests cannot judge microphone echo or interruption feel.
 
 ## Blocked on (lane, handshake id, what exactly)
 
 - Human/key: `ELEVENLABS_API_KEY` is absent locally, so the shared agents cannot be updated and the keyed prompt behavior cannot be heard yet.
+- Human/audio: a person must grant microphone permission and listen/speak through HT-4 before WA-3 can be marked live-verified.
 
 ## Next 3 things
 

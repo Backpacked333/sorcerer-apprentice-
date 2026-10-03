@@ -11,13 +11,14 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - WA-3 pure voice protocol is implemented with echo attribution, bounded commands, confirmation, safe tag builders, capture summaries, chunking and keyterms; merged in PR #12.
 - WA-11 knowledge sync now uploads SOP + debrief notes + tutor prompt, patches only the knowledge-base leaf, verifies agent configuration, rolls back on drift, removes only the superseded same-session document, and times out safely; live confirm remains pending.
 - WA-5 pure cadence engines merged in PR #17: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 outcome mapping, and the pure Capture loop.
-- WA-2 real-client structural gate now guards only ElevenLabs remote-stream audio before LiveKit `play()`, reasserts on SDK lifecycle events, persistently squelches late speech after the 8 s authorization watchdog, uses a flicker-safe speech authorization latch, sends idle heartbeats, and exposes snapshot-based soak diagnostics; merge pending.
+- WA-2 real-client structural gate now guards only ElevenLabs remote-stream audio before LiveKit `play()`, reasserts on SDK lifecycle events, persistently squelches late speech after the 8 s authorization watchdog, uses a flicker-safe speech authorization latch, sends idle heartbeats, and exposes snapshot-based soak diagnostics; merged in PR #22.
 
 ## Done in the current PR (pending merge)
 
 - `/api/scribe-token` now contains provider/auth failures as a non-cacheable `200 { token: null, reason }`, so browser transcription degrades truthfully instead of surfacing an HTTP 500; success, missing-key and invalid-key paths have regression coverage.
 - WA-5 Capture configuration parsing/page routing now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and carries all cadence, grace and chaining knobs through the existing config prop. Pure parser coverage is complete; human tuning remains pending. `graceSecs` and `maxChained` are currently runtime no-ops because frozen `CaptureClient` still constructs `new CandidateQueue(90)` and does not adopt `CaptureLoop`; the mechanism drawer also does not display effective values.
-- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the token-route regression was added, `npm run typecheck` passed and `npm test` passed 193 tests across 16 files; audible behavior remains human-only below.
+- WA-3 shared transcription hub owns the sole `useScribe`/browser-recognition connection, connects for enabled subscribers or an active voice session, supports `?stt=off`, uses application-clock segment bounds, and routes echo, mixed speech, commands, and human activity through the merged voice protocol. `useTranscriber` keeps its existing API and adds optional metadata, echo, and command callbacks. `VoiceApi.turn`, cancellation, and clip recording remain for the next sequential PR.
+- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. On rebased `f4aca2a`, `npm run typecheck` passed and `npm test` passed 204 tests across 17 files. Headless `/voice-check?keyless=1` requested one Scribe token and stayed gate-closed; `&stt=off` requested none. Both pages and `/` rendered without framework overlays or browser errors. Audible behavior remains human-only below.
 
 ## Verified live by a human (who, when, what they did)
 
@@ -44,9 +45,9 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Next 3 things
 
-1. After D lands issue #4, integrate `CandidateQueue(90, graceSecs)` + `CaptureLoop`/`maxChained` and expose the effective timing values through the Capture view model for the mechanism drawer.
-2. Have a human run the keyed three-minute HT-2 soak and record automated counters plus the audible pass/fail.
-3. With explicit approval and a key, update both shared agents, run `npm run agents:create -- --check`, then run HT-1 through HT-6.
+1. Integrate the merged turn reducer as `VoiceApi.turn`/`cancelTurn`/`submitTyped`, including clip lifecycle, without creating a second Scribe connection.
+2. Extend `/voice-check` for turn exits and hub counters, then run keyed HT-3/HT-4 with a human listener on headphones and speakers.
+3. After D lands issue #4, integrate `CandidateQueue(90, graceSecs)` + `CaptureLoop`/`maxChained` and expose the effective timing values through the Capture view model.
 
 ## Risks I see for the demo
 

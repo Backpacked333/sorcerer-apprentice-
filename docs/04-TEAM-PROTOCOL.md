@@ -37,19 +37,24 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/governor.ts`, `lib/curiosity.ts`, `lib/capture-loop.ts`, `lib/capture-config.ts`, `lib/capture-config.test.ts`, `lib/scribe-token.test.ts`, `lib/voice-turn.ts`, `lib/voice-turn.test.ts`, `lib/voice-connect.test.ts`, `lib/voice-output-gate.test.ts`, `lib/voice-protocol.ts`, `lib/voice-protocol*.test.ts` | **A** | voice timing and configuration, capture-loop decisions, token fallback, turn state machine, connection/output-gate lifecycle, curiosity and protocol regression tests |
 | `lib/governor.demo.test.ts`, `lib/curiosity.classify.test.ts`, `lib/curiosity.queue.test.ts`, `lib/curiosity.narration.test.ts`, `lib/capture-loop.replay.test.ts` | **A** | WA-5 cadence, attribution, queue and replay regressions |
 | `lib/elevenlabs-sync.ts`, `lib/elevenlabs-sync.test.ts` | **A** | tutor knowledge-base sync and keyless regression tests |
-| `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
+| `components/CaptureClient.tsx` (logic) | **A + B** | A owns capture/voice behavior; B may change persistence sync sections under the cross-lane deployment authorization |
+| `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
 | `lib/redact.ts` | **B** | privacy |
-| `lib/store.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
+| `lib/store.ts`, `lib/request.ts`, `lib/store.durable.test.ts`, `lib/session-route.test.ts`, `lib/uploads.test.ts`, `lib/session-sync.test.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
+| `supabase/migrations/**`, `proxy.ts`, `lib/storage*.ts`, `lib/workspace*.ts`, `lib/session-sync*.ts`, `lib/media*.ts` | **B** | durable workspace storage and transport; cross-lane deployment override authorized by Roy |
+| `lib/model-contracts.ts`, `lib/confirmation.ts`, `lib/product.test.ts` | **C** | finite provider schemas and confirmed-map safety gates |
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
 | `lib/workmap.ts` | **C** | THE contract: additive only |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
-| `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |
+| `lib/erp.ts` | **B + C** | B owns persistence integration; C owns sandbox rules and behavior (cross-lane storage authorization) |
+| `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |
 | `app/api/compile/`, `app/api/teachback/`, `app/api/sessions/[id]/{map,slot,confirm}/` | **C** | |
-| `components/MapClient.tsx`, `components/TeachClient.tsx` (logic), `components/views/{map,teach}.vm.ts`, `app/map/`, `app/teach/` | **C** | after the seam split (§3) |
+| `components/MapClient.tsx`, `components/views/{map,teach}.vm.ts`, `app/map/`, `app/teach/` | **C** | after the seam split (§3) |
+| `components/TeachClient.tsx` (logic) | **B + C** | C owns tutor behavior; B may change persistence sync sections under the cross-lane deployment authorization |
 | `lib/engines.test.ts` | **C** | frozen for others: new tests go in new files (§5.5) |
 | `app/globals.css`, `app/layout.tsx`, `app/page.tsx`, `app/icon.svg`, `public/` | **D** | design system |
 | `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX |

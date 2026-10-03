@@ -230,15 +230,17 @@ All routes are Next.js route handlers; `params` is a Promise in Next 16 (`const 
 | Method · Path | Owner | Body → Response | Notes |
 |---|---|---|---|
 | `GET /api/sessions` | B | → `{ sessions: {id,mode,task,expertName,startedAt,endedAt}[] }` | newest first |
-| `POST /api/sessions` | B | `{ mode?, task?, expertName?, sourceMapSessionId? }` → `{ session: SessionLog }` | ids: `s_…` capture, `t_…` teach |
+| `POST /api/sessions` | B | `{ mode?, task?, expertName?, sourceMapSessionId? }` → `{ session: SessionLog }` | ids: `s_…` capture, `t_…` teach; teach requires an owned confirmed map and records its revision |
 | `GET /api/sessions/:id` | B | → `{ session, map \| null }` | |
-| `PUT /api/sessions/:id` | B | `SessionLog` → `{ ok, events, frames }` | browser owns the log during a session; whole-log sync, last write wins |
-| `POST /api/sessions/:id/clips` | B | multipart `audioId`, `file` (webm) → `{ ok, audioId }` | the expert's answer audio |
-| `GET /api/sessions/:id/clips?audioId=` | B | → `audio/webm` | replay audio |
+| `PUT /api/sessions/:id` | B | `SessionLog` → `{ ok, events, frames }` | existing workspace-owned session only; whole-log sync is serialized per browser session; frame metadata contains private same-origin URLs, never base64 |
+| `POST /api/sessions/:id/clips` | B | multipart `audioId`, `file` (webm) → `{ ok, audioId }` | ≤3 MiB WebM expert answer audio; private workspace storage; 20 uploads/minute/workspace |
+| `GET /api/sessions/:id/clips?audioId=` | B | → `audio/webm` | replay only when the current workspace session references the clip |
+| `POST /api/sessions/:id/frames?frameId=` | B | binary JPEG/PNG → `{ ok, frameId, url }` | ≤750 KiB; private workspace storage; 120 uploads/minute/workspace |
+| `GET /api/sessions/:id/frames?frameId=` | B | → `image/jpeg` or `image/png` | private frame only when referenced by the current workspace session |
 | `GET /api/sessions/:id/map` | C | → `{ map }` · 404 until compiled | |
-| `PUT /api/sessions/:id/map` | C | `WorkMap` → `{ map }` | expert edits/deletes before confirming; Zod-validated |
-| `POST /api/sessions/:id/slot` | C | `{ slotId, text, t?, audioId? }` → `{ map, understanding }` | a debrief answer fills one slot |
-| `POST /api/sessions/:id/confirm` | C | `{ confirmed, correction?, t? }` → `{ map, teachback, understanding, open, knowledge }` | yes locks + syncs tutor KB; correction patches |
+| `PUT /api/sessions/:id/map` | C | `WorkMap` → `{ map }` | revision-bound edit; every accepted edit clears `confirmedAt` |
+| `POST /api/sessions/:id/slot` | C | `{ slotId, text, revision, t?, audioId? }` → `{ map, understanding }` | a debrief answer fills one slot; stale revision returns 409 |
+| `POST /api/sessions/:id/confirm` | C | `{ confirmed, correction?, revision, t? }` → `{ map, teachback, understanding, open, knowledge }` | current teach-back required; yes confirms, correction invalidates; no shared tutor KB mutation |
 | `POST /api/compile` | C | `{ sessionId, llm?: boolean }` → `{ map, llm: boolean, note?, understanding, teachback }` | deterministic pass, then validated LLM refinement when a key is set |
 | `POST /api/teachback` | C | `{ sessionId }` → `{ text, sure: string[], unsure: string[] }` | generated from the map, ≤ 130 words |
 | `POST /api/vision` | B | `{ seq, image: dataURL, prevState?, t? }` → `{ seq, screen, state, uiActivity, piiRegions, confidence, model, latencyMs }` · 503 without key | one frame in, state out |
@@ -261,9 +263,11 @@ getSession(id): Promise<SessionLog | undefined>     saveSession(s): Promise<void
 listSessions(): Promise<Pick<SessionLog,"id"|"mode"|"task"|"expertName"|"startedAt"|"endedAt">[]>
 getMap(sessionId): Promise<WorkMap | undefined>     saveMap(map): Promise<void>      // saveMap bumps map.revision
 saveClip(sessionId, audioId, bytes): Promise<string>     readClip(sessionId, audioId): Promise<Uint8Array | undefined>
+saveFrame(sessionId, frameId, bytes, contentType?): Promise<string>  readFrame(sessionId, frameId): Promise<Uint8Array | undefined>
+getErpState/saveErpState(state), saveErpInvoices(invoices), saveErpGuard(guard), patchErpInvoice(id, patch), allowRateLimit(bucket, limit, seconds)
 ```
 
-Today: JSON files under `.data/{sessions,maps,clips}/` plus `.data/erp.json` and `.data/erp-guard.json` (written directly by `lib/erp.ts` — moving behind the store, P-21). Whatever B changes underneath for the deploy, **these signatures do not change**; other lanes import only these functions (and `lib/erp.ts`'s exports for the sandbox).
+The default local backend stores JSON/media under `.data/<workspace>/`; production uses the private Supabase tables and `tacit-media` bucket. Whatever B changes underneath for the deploy, **these signatures do not change**; other lanes import only these functions (and `lib/erp.ts`'s exports for the sandbox).
 
 ---
 
@@ -277,6 +281,10 @@ Today: JSON files under `.data/{sessions,maps,clips}/` plus `.data/erp.json` and
 | `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile |
 | `VISION_MODEL`, `COMPILE_MODEL` | server (B, C) | gateway model slugs |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |
+| `STORAGE_BACKEND` | server (B) | `local` or `supabase`; Vercel requires Supabase |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | server (B) | required together; service-role key is never sent to the browser |
+| `SUPABASE_STORAGE_BUCKET` | server (B) | private media bucket; default `tacit-media` |
+| `STORE_OWNER_ID` | local scripts (B) | optional local workspace owner; request routes always use the private cookie |
 | `NEXT_PUBLIC_SILENCE_SECS` | client (A) | Expert-speech quiet period before a normal window may open; default `2.5` seconds. |
 | `NEXT_PUBLIC_STILL_SECS` | client (A) | Screen-still period before a normal window may open; default `2` seconds. |
 | `NEXT_PUBLIC_COOLDOWN_SECS` | client (A) | Minimum time between normal question windows; demo default `20` seconds. |
@@ -341,11 +349,23 @@ Cost centers: `4711` opex maintenance · `0400` capex machinery · `4120` opex f
 
 ## 9. Pre-approved additive changes (no further discussion needed; just announce `CONTRACT:` when landed)
 
+### Durable deployment contract (Supabase + Vercel)
+
+Roy authorized the cross-lane deployment work on Oct 3. Store function signatures remain stable; request context scopes sessions, maps, ERP, guard and media to the anonymous workspace cookie. No login or shared global tutor knowledge-base writes are introduced.
+
+- `POST /api/teachback` also returns `revision`. Confirmation sends that `revision`; stale confirmation or incomplete evidence/debrief returns 409. Map edits, slot answers and corrections invalidate `confirmedAt`.
+- Teach-session creation requires a confirmed source map; guard arming requires the same workspace's teach session and matching map revision. Draft export and autopilot return 409.
+- Provider wire schemas in `lib/model-contracts.ts` are finite and nullable; internal `WorkMap`/`Cond` contracts remain unchanged. Compile and vision use `generateText` + `Output.object`.
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are server-only. Production has no filesystem fallback. See `.env.example` and README for backend selection and deployment.
+- Shared ElevenLabs agent configuration is not mutated on confirmation. The current confirmed map is sent only as context to its own tutor conversation.
+
+These are intentional safety tightenings: clients must handle 409 by reviewing the latest map rather than claiming success.
+
 See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are binding so lanes can code against them before they land.
 
 | # | Change | Owner | Consumers |
 |---|---|---|---|
-| P-1 | `POST /api/sessions/:id/frames` (multipart `frameId`, `file` jpeg) + `GET …/frames?frameId=`; `Frame.dataUrl` becomes optional and `Frame.url?: string` is added. Frames stop travelling inside the session JSON. | B | A (Capture sync), C (replay), D (WorkMapView, replay view) — render `frame.url ?? frame.dataUrl` |
+| P-1 | `POST /api/sessions/:id/frames?frameId=` (binary JPEG/PNG, ≤750 KiB) + `GET …/frames?frameId=`; `Frame.dataUrl` remains a string and persisted logs replace capture data URLs with same-origin private media URLs. | B | A (Capture sync), C (replay), D (WorkMapView, replay view) |
 | P-2 | `saveFrame(sessionId, frameId, bytes)` / `readFrame(sessionId, frameId)` in `lib/store.ts` | B | — |
 | P-3 | `GET /api/agent-token?role=interviewer\|tutor` → `{ token \| signedUrl }` for private agents; `VoiceApi.connect` uses it transparently | A | — |
 | P-4 | `QuestionWindow.closedBy?: "tool" \| "scribe_fallback" \| "timeout" \| "user"` | A | C (metrics) |
@@ -354,7 +374,7 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 | P-7 | `WorkMap.expert.language` is honored end to end; `Quote.translation` filled at compile when language ≠ `en` (stretch X2) | C + A | D |
 | P-8 | `ScreenEvent.latencyMs?: number` (change → event) and `SessionLog.metrics.visionP50Ms` | B | D (measured slide) |
 | P-9 | `VoiceApi.lastError?: string`, `VoiceApi.degraded: boolean` (voice or STT fell back mid-session) | A | D (honest badge) |
-| P-10 | `GET /api/health` → `{ ok, keys: { elevenlabs, gateway }, agents: { interviewer, tutor }, store: "fs"\|"…" , commit }` | B | D (preflight screen) |
+| P-10 | `GET /api/health` → `{ ok, storage: { configured, reachable, backend }, integrations: { voice: { available, status }, gateway: { available, status } } }`; storage failures return 503 and integrations report `ready` or `degraded`. | B | D (preflight screen) |
 | P-11 | `EventKind` gains **`"save_intent"`**: posted by the ERP when the save-confirm opens, carrying the *proposed* `state`. A sandbox verdict like `save_blocked`: delivered in every source mode, never a vision event, never a compiled step. | B (type, pipeline) · D (`InvoiceForm` posts it) | C (matcher intervenes on it) |
 | P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
 | P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`) and resolves only when the session is connected | A | C passes names in Map and Teach |

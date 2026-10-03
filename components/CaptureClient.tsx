@@ -7,6 +7,7 @@ import { CandidateQueue, buildCandidates, extractThresholds, narrationFills, new
 import { describeEvent, emptySession, type Frame, type QuestionWindow, type ScreenEvent, type SessionLog, type TranscriptSegment } from "@/lib/events";
 import { redactText } from "@/lib/redact";
 import { computeMetrics } from "@/lib/metrics";
+import { createSessionSync } from "@/lib/session-sync";
 import { Meter } from "./Meter";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
 import { VoiceProvider, useTranscriber, useVoice, type ToolHandlers } from "./voice";
@@ -34,6 +35,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const [partial, setPartial] = useState("");
   const [holding, setHolding] = useState(false);
   const [synced, setSynced] = useState<number | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [showMechanism, setShowMechanism] = useState(false);
   const [drawing, setDrawing] = useState<{ x: number; y: number } | null>(null);
   const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -50,6 +52,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const chunks = useRef<Blob[]>([]);
   const entitiesRedacted = useRef(0);
   const dirty = useRef(false);
+  const sync = useRef<ReturnType<typeof createSessionSync> | null>(null);
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
 
@@ -134,7 +137,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     }
   }, []);
 
-  const stopRecorder = useCallback(async (): Promise<string | undefined> => {
+  const stopRecorder = useCallback(async (save = true): Promise<string | undefined> => {
     const r = recorder.current;
     recorder.current = null;
     if (!r) return undefined;
@@ -143,12 +146,18 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       r.stop();
     });
     const blob = new Blob(chunks.current, { type: "audio/webm" });
+    chunks.current = [];
+    if (!save) return undefined;
     if (blob.size < 2000) return undefined;
     const audioId = `clip_${Date.now().toString(36)}`;
     const fd = new FormData();
     fd.append("audioId", audioId);
     fd.append("file", blob, `${audioId}.webm`);
-    await fetch(`/api/sessions/${log.current.id}/clips`, { method: "POST", body: fd }).catch(() => {});
+    const response = await fetch(`/api/sessions/${log.current.id}/clips`, { method: "POST", body: fd }).catch(() => null);
+    if (!response?.ok) {
+      setSyncError("Could not save the answer audio.");
+      return undefined;
+    }
     return audioId;
   }, []);
 
@@ -161,7 +170,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       const qw = L.windows.find((x) => x.id === w.id);
       const t = nowSecs();
       voiceRef.current.setMicMuted(true);
-      const audioId = await stopRecorder();
+      const audioId = await stopRecorder(outcome !== "off_record");
       if (qw) {
         qw.closedAt = t;
         qw.outcome = outcome;
@@ -169,7 +178,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
         if (extra?.answerText) qw.answerText = [qw.answerText, extra.answerText].filter(Boolean).join(" ");
         if (outcome === "answered" && !qw.answerText && qw.logged?.reason) qw.answerText = qw.logged.reason;
         if (outcome === "answered") qw.answeredAt ??= t;
-        qw.answerAudioId = audioId;
+        qw.answerAudioId = outcome === "off_record" ? undefined : audioId;
       }
       if (outcome === "answered") queue.current.markFilled(w.candidateId);
       else {
@@ -211,7 +220,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       for (const s of L.transcript) if (s.t >= from && s.t <= to) Object.assign(s, { text: "", redacted: true });
       for (const e of L.events) if (e.t >= from && e.t <= to) Object.assign(e, { redacted: true, from: undefined, to: undefined, state: undefined });
       L.frames = L.frames.filter((f) => f.t < from || f.t > to);
-      for (const qw of L.windows) if (qw.openedAt >= from && qw.openedAt <= to) Object.assign(qw, { answerText: "", outcome: "off_record", logged: undefined });
+      for (const qw of L.windows) if (qw.openedAt >= from && qw.openedAt <= to) Object.assign(qw, { answerText: "", answerAudioId: undefined, outcome: "off_record", logged: undefined });
       for (const c of queue.current.items) if (c.createdAt >= from && c.createdAt <= to && c.status === "queued") c.status = "expired";
       L.offRecord.push({ from, to });
       pipeline.bumpEpoch(); // anything the vision model returns for struck frames is discarded
@@ -239,7 +248,12 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     L.endedAt = Date.now();
     queue.current.drainToDebrief();
     L.metrics = { ...computeMetrics(L), framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred } as unknown as Record<string, number>;
-    await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) });
+    try {
+      if (sync.current) await sync.current.sync(L);
+    } catch {
+      setSyncError("Could not save this capture. Try again.");
+      return;
+    }
     voiceRef.current.disconnect();
     pipeline.stop();
     router.push(`/map/${L.id}`);
@@ -311,18 +325,35 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       dirty.current = false;
       const L = log.current;
       L.metrics = { framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred };
-      const res = await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) }).catch(() => null);
-      if (res?.ok) setSynced(Date.now());
+      try {
+        if (sync.current) await sync.current.sync(L);
+        setSynced(Date.now());
+      } catch {
+        dirty.current = true;
+        setSyncError("Could not save this capture.");
+      }
     }, 5000);
     return () => window.clearInterval(id);
   }, [started, pipeline.framesSeen, pipeline.piiBlurred]);
 
   // ---------- start ----------
   const start = async () => {
-    const res = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName }) });
+    setSyncError(null);
+    let res: Response;
+    try {
+      res = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName }) });
+    } catch {
+      setSyncError("Could not create a capture session.");
+      return;
+    }
+    if (!res.ok) {
+      setSyncError("Could not create a capture session.");
+      return;
+    }
     const { session } = await res.json();
     log.current = session;
     log.current.startedAt = Date.now();
+    sync.current = createSessionSync(session.id);
     setStarted(true);
     // ?share=0 skips the screen share (phones, smoke tests); the ERP telemetry channel still delivers exact events
     if (new URLSearchParams(window.location.search).get("share") !== "0") await pipeline.start().catch(() => {});
@@ -377,6 +408,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
             <button className="btn btn-primary w-full" onClick={start} disabled={!consented}>
               Start session and share the ERP tab
             </button>
+            {syncError && <p className="text-xs text-red-400">{syncError}</p>}
             <p className="text-xs text-muted">Open the sandbox ERP in another tab first. Use headphones: the apprentice must not hear itself.</p>
           </div>
         </div>
@@ -560,6 +592,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
           <button className="btn btn-primary w-full" onClick={endTask}>
             Done · start the debrief
           </button>
+          {syncError && <p className="mt-2 text-xs text-red-400">{syncError}</p>}
         </div>
       </div>
     </main>

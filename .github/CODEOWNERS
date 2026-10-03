@@ -5,7 +5,7 @@
 
 # ---- Lane A · Voice & Timing ----
 /components/voice.tsx                 @LANE_A
-/components/CaptureClient.tsx         @LANE_A
+/components/CaptureClient.tsx         @LANE_A @LANE_B
 /components/views/capture.vm.ts       @LANE_A
 /app/capture/                         @LANE_A
 /agents/                              @LANE_A
@@ -25,6 +25,14 @@
 /lib/events.ts                        @LANE_B
 /lib/telemetry.ts                     @LANE_B
 /lib/store.ts                         @LANE_B
+/lib/store.durable.test.ts            @LANE_B
+/lib/session-route.test.ts            @LANE_B
+/lib/uploads.test.ts                  @LANE_B
+/lib/session-sync.test.ts             @LANE_B
+/lib/request.ts                       @LANE_B
+/lib/workspace.ts                     @LANE_B
+/lib/session-sync.ts                  @LANE_B
+/proxy.ts                              @LANE_B
 /lib/export.ts                        @LANE_B
 /lib/autopilot.ts                     @LANE_B
 /app/api/vision/                      @LANE_B
@@ -52,10 +60,10 @@
 /lib/teachback.ts                     @LANE_C
 /lib/matcher.ts                       @LANE_C
 /lib/metrics.ts                       @LANE_C
-/lib/erp.ts                           @LANE_C
+/lib/erp.ts                           @LANE_B @LANE_C
 /lib/engines.test.ts                  @LANE_C
 /components/MapClient.tsx             @LANE_C
-/components/TeachClient.tsx           @LANE_C
+/components/TeachClient.tsx           @LANE_B @LANE_C
 /components/views/map.vm.ts           @LANE_C
 /components/views/teach.vm.ts         @LANE_C
 /app/map/                             @LANE_C

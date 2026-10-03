@@ -71,7 +71,7 @@ export interface QuestionWindow {
 export interface Frame {
   id: string;
   t: number;
-  /** data URL of a downscaled JPEG with PII regions blurred */
+  /** Capture data URL in memory; persisted logs use a same-origin private media URL. */
   dataUrl: string;
   width: number;
   height: number;

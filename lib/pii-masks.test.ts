@@ -43,7 +43,8 @@ describe("DOM PII coordinates", () => {
       element("name"), element("email"), element("iban"), element("phone"),
       element("supplier"), element("name", Infinity), element("name", 300),
     ]) };
-    const message = publishPiiRects(doc as unknown as Document);
+    const message = publishPiiRects("erp-1", doc as unknown as Document);
+    expect(message?.sourceId).toBe("erp-1");
     expect(doc.querySelectorAll).toHaveBeenCalledWith("[data-pii]");
     expect(message?.rects).toEqual(["name", "email", "iban", "phone"].map((kind) => ({ x: 0.05, y: 0.2, w: 0.2, h: 0.3, kind })));
     expect(Channel.all[0].name).toBe("tacit-erp-pii");
@@ -53,36 +54,55 @@ describe("DOM PII coordinates", () => {
   it("validates channel payloads, rejects malformed updates and unsubscribes", () => {
     vi.stubGlobal("BroadcastChannel", Channel);
     const handler = vi.fn();
-    const stop = subscribePiiRects(handler);
+    const stop = subscribePiiRects("erp-1", handler);
     for (const data of [null, {}, { at: Infinity, rects: [] }, { at: 1, rects: [null] },
       ...[{ kind: "supplier" }, { x: NaN }, { w: 0 }].map((invalid) => ({ at: 1, rects: [{ ...region, ...invalid }] })),
     ]) {
-      Channel.all[0].onmessage?.({ data });
+      Channel.all[0].onmessage?.({ data: data && { ...data, sourceId: "erp-1" } });
     }
     expect(handler).not.toHaveBeenCalled();
-    Channel.all[0].onmessage?.({ data: { at: 1, rects: [region] } });
-    expect(handler).toHaveBeenCalledWith({ at: 1, rects: [region] });
-    Channel.all[0].onmessage?.({ data: { at: 1, rects: [{ ...region, x: -0.25 }] } });
-    expect(handler).toHaveBeenLastCalledWith({ at: 1, rects: [{ ...region, x: 0, w: 0.25 }] });
-    Channel.all[0].onmessage?.({ data: { at: 2, rects: [] } });
-    expect(handler).toHaveBeenLastCalledWith({ at: 2, rects: [] });
+    Channel.all[0].onmessage?.({ data: { sourceId: "erp-2", at: 1, rects: [region] } });
+    Channel.all[0].onmessage?.({ data: { at: 1, rects: [] } });
+    expect(handler).not.toHaveBeenCalled();
+    Channel.all[0].onmessage?.({ data: { sourceId: "erp-1", at: 1, rects: [region] } });
+    expect(handler).toHaveBeenCalledWith({ sourceId: "erp-1", at: 1, rects: [region] });
+    Channel.all[0].onmessage?.({ data: { sourceId: "erp-1", at: 1, rects: [{ ...region, x: -0.25 }] } });
+    expect(handler).toHaveBeenLastCalledWith({ sourceId: "erp-1", at: 1, rects: [{ ...region, x: 0, w: 0.25 }] });
+    Channel.all[0].onmessage?.({ data: { sourceId: "erp-1", at: 2, rects: [] } });
+    expect(handler).toHaveBeenLastCalledWith({ sourceId: "erp-1", at: 2, rects: [] });
     stop();
     expect(Channel.all[0].close).toHaveBeenCalledOnce();
   });
   it("is safe without browser globals", () => {
     vi.stubGlobal("document", undefined);
     vi.stubGlobal("BroadcastChannel", undefined);
-    expect(publishPiiRects()).toBeUndefined();
-    expect(() => subscribePiiRects(vi.fn())()).not.toThrow();
+    expect(publishPiiRects("erp-1")).toBeUndefined();
+    expect(() => subscribePiiRects("erp-1", vi.fn())()).not.toThrow();
+    expect(() => subscribePiiRects("", vi.fn())).toThrow();
+    expect(() => publishPiiRects("")).toThrow();
   });
   it("clips published boxes to the visible viewport and ignores an invalid viewport", () => {
     const doc = { defaultView: { innerWidth: 100, innerHeight: 100 }, querySelectorAll: () => [{
       getAttribute: () => "name", getBoundingClientRect: () => ({ x: -10, y: 80, width: 50, height: 50 }),
     }] };
     vi.stubGlobal("BroadcastChannel", undefined);
-    expect(publishPiiRects(doc as unknown as Document)?.rects).toEqual([{ x: 0, y: 0.8, w: 0.4, h: expect.closeTo(0.2), kind: "name" }]);
+    expect(publishPiiRects("erp-1", doc as unknown as Document)?.rects).toEqual([{ x: 0, y: 0.8, w: 0.4, h: expect.closeTo(0.2), kind: "name" }]);
     doc.defaultView.innerWidth = 0;
-    expect(publishPiiRects(doc as unknown as Document)).toBeUndefined();
+    expect(publishPiiRects("erp-1", doc as unknown as Document)).toBeUndefined();
+  });
+  it("intersects scroll-container clips instead of masking adjacent content", () => {
+    const parent = { parentElement: null, clientLeft: 2, clientTop: 2, clientWidth: 100, clientHeight: 100,
+      offsetWidth: 104, offsetHeight: 104, getBoundingClientRect: () => ({ x: -2, y: -2, width: 104, height: 104 }) };
+    const doc = { defaultView: { innerWidth: 200, innerHeight: 200,
+      getComputedStyle: () => ({ overflowX: "hidden", overflowY: "auto" }) }, querySelectorAll: () => [{
+      parentElement: parent, getAttribute: () => "name", getBoundingClientRect: () => ({ x: 90, y: 90, width: 40, height: 40 }),
+    }] };
+    vi.stubGlobal("BroadcastChannel", undefined);
+    expect(publishPiiRects("erp-1", doc as unknown as Document)?.rects).toEqual([
+      { x: 0.45, y: 0.45, w: expect.closeTo(0.05), h: expect.closeTo(0.05), kind: "name" },
+    ]);
+    parent.clientWidth = 80;
+    expect(publishPiiRects("erp-1", doc as unknown as Document)?.rects).toEqual([]);
   });
 });
 

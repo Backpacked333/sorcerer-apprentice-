@@ -8,16 +8,17 @@ export interface Redaction {
   entities: { kind: string; original: string }[];
 }
 
+const subscriber = String.raw`(?:\d{5,9}|\d{3}[ -]\d{4}|\d{4}[ -]\d{4})`;
 const PATTERNS: { kind: string; re: RegExp }[] = [
   { kind: "iban", re: /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,4})?\b/g },
   { kind: "email", re: /\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g },
   { kind: "vat_id", re: /\b(?:DE|CZ|AT|FR|NL)\s?\d{8,11}\b/g },
   { kind: "tax_number", re: /\b\d{2,3}\/\d{3}\/\d{4,5}\b/g },
-  { kind: "card", re: /(?<![\w+])\d(?:[ -]?\d){12,18}\b/g },
-  { kind: "phone", re: /(?<![\w+])(?:\+\d{1,3}[ -]?(?:\(\d{1,5}\)[ -]?)?|\(\d{2,5}\)[ -]?|0\d{1,4}[ -]?|(?=\d{3}-\d{3}-\d{4}\b))\d(?:[\d ()-]*\d)?\b/g },
+  { kind: "card", re: /(?<![\w+])(?<!\d-)(?:\d{13,19}|\d{4}[ -]\d{6}[ -]\d{5}|\d{4}(?:[ -]\d{4}){2}[ -]\d{1,4}(?:[ -]\d{3})?)\b/g },
+  { kind: "phone", re: new RegExp(String.raw`(?<![\w+])(?:\+\d{1,3}[ -](?:\(\d{1,5}\)|\d{1,5})[ -]${subscriber}|(?:\(\d{2,5}\)|0\d{1,4})[ -]${subscriber}|\d{3}[ -]\d{3}[ -]\d{4}|\+\d{8,15}|0\d{7,14})\b`, "g") },
 ];
 
-/** Supply actual personal names, not company names or role/escalation labels. */
+/** Supply full personal names (at least three characters), not initials or company/role labels. */
 export function redactText(text: string, personalNames: string[] = []): Redaction {
   const entities: Redaction["entities"] = [];
   let out = text;
@@ -30,7 +31,7 @@ export function redactText(text: string, personalNames: string[] = []): Redactio
       return `[${kind}]`;
     });
   }
-  for (const name of personalNames.map((name) => name.trim()).filter(Boolean).sort((a, b) => b.length - a.length)) {
+  for (const name of personalNames.map((name) => name.trim()).filter((name) => name.length >= 3).sort((a, b) => b.length - a.length)) {
     const re = new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRe(name)}(?![\\p{L}\\p{N}_])`, "giu");
     out = out.replace(re, (original) => { entities.push({ kind: "person", original }); return "[person]"; });
   }

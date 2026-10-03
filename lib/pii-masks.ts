@@ -3,7 +3,7 @@ import type { PiiRegion } from "./redact";
 export const PII_CHANNEL = "tacit-erp-pii";
 const kinds = new Set(["name", "email", "iban", "phone"]);
 export interface CaptureRect { x: number; y: number; w: number; h: number }
-export interface PiiRectsMessage { at: number; rects: PiiRegion[] }
+export interface PiiRectsMessage { sourceId: string; at: number; rects: PiiRegion[] }
 
 function validRect(r: CaptureRect): boolean {
   return [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0;
@@ -16,8 +16,11 @@ function clip(r: PiiRegion): PiiRegion | undefined {
   return right > x && bottom > y ? { x, y, w: right - x, h: bottom - y, kind: r.kind } : undefined;
 }
 
-/** Rects are local to the publishing document's viewport, including inside a same-origin iframe. */
-export function publishPiiRects(doc?: Document): PiiRectsMessage | undefined {
+/** sourceId must uniquely pair this ERP document with its capture subscriber (e.g. a shared UUID).
+ * Rects are local to the publishing document's viewport, including inside a same-origin iframe.
+ */
+export function publishPiiRects(sourceId: string, doc?: Document): PiiRectsMessage | undefined {
+  if (!sourceId?.trim()) throw new Error("PII publisher identity required");
   doc ??= typeof document === "undefined" ? undefined : document;
   const view = doc?.defaultView;
   if (!doc || !view || !validRect({ x: 0, y: 0, w: view.innerWidth, h: view.innerHeight })) return;
@@ -25,11 +28,11 @@ export function publishPiiRects(doc?: Document): PiiRectsMessage | undefined {
   for (const el of doc.querySelectorAll("[data-pii]")) {
     const kind = el.getAttribute("data-pii") ?? "";
     if (!kinds.has(kind)) continue;
-    const r = el.getBoundingClientRect();
+    const r = visibleRect(el, view);
     const bounded = clip({ x: r.x / view.innerWidth, y: r.y / view.innerHeight, w: r.width / view.innerWidth, h: r.height / view.innerHeight, kind });
     if (bounded) rects.push(bounded);
   }
-  const message = { at: Date.now(), rects };
+  const message = { sourceId, at: Date.now(), rects };
   if (typeof BroadcastChannel !== "undefined") {
     const channel = new BroadcastChannel(PII_CHANNEL);
     try { channel.postMessage(message); } finally { channel.close(); }
@@ -37,13 +40,33 @@ export function publishPiiRects(doc?: Document): PiiRectsMessage | undefined {
   return message;
 }
 
-export function subscribePiiRects(handler: (message: PiiRectsMessage) => void): () => void {
+function visibleRect(el: Element, view: Window) {
+  const r = el.getBoundingClientRect();
+  let x = r.x, y = r.y, right = r.right ?? r.x + r.width, bottom = r.bottom ?? r.y + r.height;
+  for (let parent = el.parentElement; parent; parent = parent.parentElement) {
+    const style = view.getComputedStyle(parent), bounds = parent.getBoundingClientRect();
+    const sx = parent.offsetWidth ? bounds.width / parent.offsetWidth : 1;
+    const sy = parent.offsetHeight ? bounds.height / parent.offsetHeight : 1;
+    if (/^(hidden|clip|auto|scroll)$/.test(style.overflowX)) {
+      const left = bounds.x + parent.clientLeft * sx;
+      x = Math.max(x, left); right = Math.min(right, left + parent.clientWidth * sx);
+    }
+    if (/^(hidden|clip|auto|scroll)$/.test(style.overflowY)) {
+      const top = bounds.y + parent.clientTop * sy;
+      y = Math.max(y, top); bottom = Math.min(bottom, top + parent.clientHeight * sy);
+    }
+  }
+  return { x, y, width: right - x, height: bottom - y };
+}
+
+export function subscribePiiRects(sourceId: string, handler: (message: PiiRectsMessage) => void): () => void {
+  if (!sourceId?.trim()) throw new Error("PII publisher identity required");
   if (typeof BroadcastChannel === "undefined") return () => {};
   const channel = new BroadcastChannel(PII_CHANNEL);
   channel.onmessage = ({ data }) => {
-    if (!data || !Number.isFinite(data.at) || data.at < 0 || !Array.isArray(data.rects)) return;
+    if (!data || data.sourceId !== sourceId || !Number.isFinite(data.at) || data.at < 0 || !Array.isArray(data.rects)) return;
     if (!data.rects.every((r: PiiRegion | null) => r && kinds.has(r.kind) && validRect(r))) return;
-    handler({ at: data.at, rects: data.rects.map(clip).filter((r: PiiRegion | undefined) => r !== undefined) });
+    handler({ sourceId, at: data.at, rects: data.rects.map(clip).filter((r: PiiRegion | undefined) => r !== undefined) });
   };
   return () => channel.close();
 }

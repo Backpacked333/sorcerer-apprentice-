@@ -3,71 +3,111 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyConversationGate,
   createSpeechAuthorizationLatch,
-  installAudioAttachmentGate,
-  type AudioAttachmentNode,
-  type AudioAttachmentRoot,
+  installElevenLabsPlaybackGate,
+  isElevenLabsRemoteStreamAudio,
+  type RemoteStreamAudio,
 } from "@/components/voice";
 import { evaluateSilenceSoak } from "@/app/voice-check/VoiceCheck";
 
-function audio(volume = 1): AudioAttachmentNode & { volume: number } {
-  return { nodeName: "AUDIO", volume };
+function remoteAudio(volume = 1): RemoteStreamAudio {
+  return {
+    nodeName: "AUDIO",
+    volume,
+    autoplay: true,
+    parentElement: null,
+    srcObject: { getAudioTracks: () => [{ kind: "audio" }] },
+  };
 }
 
-describe("audio attachment gate", () => {
-  it("sets the closed-gate volume before a fake adapter can play its first frame", () => {
-    let firstFrameVolume = -1;
-    const root: AudioAttachmentRoot = {
-      appendChild(node) {
-        firstFrameVolume = (node as { volume: number }).volume;
-        return node;
+describe("ElevenLabs playback gate", () => {
+  it("sets volume before play in the installed LiveKit attach then ElevenLabs append order", async () => {
+    let volumeAtPlay = -1;
+    let volumeAtAppend = -1;
+    const playTarget = {
+      play(this: RemoteStreamAudio) {
+        volumeAtPlay = this.volume;
+        return Promise.resolve();
       },
-      querySelectorAll: () => [],
     };
-    const stop = installAudioAttachmentGate({ root, readVolume: () => 0 });
-
-    const fakeAdapter = { attach: () => root.appendChild(audio()) };
-    fakeAdapter.attach();
-
-    expect(firstFrameVolume).toBe(0);
+    const stop = installElevenLabsPlaybackGate({ playTarget, readVolume: () => 0 });
+    const root = { appendChild(element: RemoteStreamAudio) { volumeAtAppend = element.volume; } };
+    const fakeInstalledAdapter = {
+      attachRemoteTrack() {
+        const element = remoteAudio();
+        void playTarget.play.call(element); // livekit-client Track.attach()
+        root.appendChild(element); // @elevenlabs/client WebAudioAdapter
+      },
+    };
+    fakeInstalledAdapter.attachRemoteTrack();
+    expect({ volumeAtPlay, volumeAtAppend }).toEqual({ volumeAtPlay: 0, volumeAtAppend: 0 });
     stop();
   });
 
-  it("uses the current open-gate volume and guards nested audio added by another DOM API", () => {
-    let observerCallback: ((records: ArrayLike<{ addedNodes: ArrayLike<AudioAttachmentNode> }>) => void) | undefined;
-    let open = true;
-    const root: AudioAttachmentRoot = {
-      appendChild: (node) => node,
-      querySelectorAll: () => [],
-    };
-    const stop = installAudioAttachmentGate({
-      root,
-      readVolume: () => open ? 1 : 0,
-      createObserver: (callback) => {
-        observerCallback = callback;
-        return { observe: vi.fn(), disconnect: vi.fn() };
-      },
-    });
-    const direct = audio();
-    root.appendChild(direct);
-    expect(direct.volume).toBe(1);
-
-    open = false;
-    const nested = audio();
-    observerCallback?.([{ addedNodes: [{ nodeName: "DIV", querySelectorAll: () => [nested] }] }]);
-    expect(nested.volume).toBe(0);
+  it("never changes unrelated product audio", () => {
+    const volumes: number[] = [];
+    const playTarget = { play(this: RemoteStreamAudio) { volumes.push(this.volume); return Promise.resolve(); } };
+    const stop = installElevenLabsPlaybackGate({ playTarget, readVolume: () => 0 });
+    const clip = { nodeName: "AUDIO", volume: 1, autoplay: true, parentElement: null, srcObject: null };
+    void playTarget.play.call(clip);
+    expect(isElevenLabsRemoteStreamAudio(clip)).toBe(false);
+    expect(volumes).toEqual([1]);
     stop();
+  });
+
+  it("is reference-counted and survives two installers cleaning up out of order", () => {
+    const volumes: number[] = [];
+    const originalPlay = function (this: RemoteStreamAudio) { volumes.push(this.volume); return Promise.resolve(); };
+    const playTarget = { play: originalPlay };
+    const stopClosed = installElevenLabsPlaybackGate({ playTarget, readVolume: () => 0 });
+    const wrappedPlay = playTarget.play;
+    const stopOpen = installElevenLabsPlaybackGate({ playTarget, readVolume: () => 1 });
+    expect(playTarget.play).toBe(wrappedPlay);
+    stopClosed();
+    expect(playTarget.play).toBe(wrappedPlay);
+    void playTarget.play.call(remoteAudio());
+    expect(volumes).toEqual([1]);
+    stopOpen();
+    expect(playTarget.play).toBe(originalPlay);
+  });
+
+  it("keeps the remaining closed installer when the newer installer cleans up first", () => {
+    const volumes: number[] = [];
+    const originalPlay = function (this: RemoteStreamAudio) { volumes.push(this.volume); return Promise.resolve(); };
+    const playTarget = { play: originalPlay };
+    const stopClosed = installElevenLabsPlaybackGate({ playTarget, readVolume: () => 0 });
+    const stopOpen = installElevenLabsPlaybackGate({ playTarget, readVolume: () => 1 });
+    stopOpen();
+    void playTarget.play.call(remoteAudio());
+    expect(volumes).toEqual([0]);
+    stopClosed();
+    expect(playTarget.play).toBe(originalPlay);
   });
 });
 
 describe("speech authorization latch", () => {
-  it("keeps pending authorization and heartbeat suppression until speech actually begins", () => {
+  it("times out pending authorization after eight seconds and resumes heartbeat", () => {
     vi.useFakeTimers();
-    const latch = createSpeechAuthorizationLatch();
+    const timedOut = vi.fn();
+    const latch = createSpeechAuthorizationLatch({ onPendingTimeout: timedOut });
     latch.authorize();
-    vi.advanceTimersByTime(60_000);
+    vi.advanceTimersByTime(7_999);
     expect(latch.snapshot()).toMatchObject({ pending: true, active: false, authorized: true, heartbeatAllowed: false });
-    latch.onMode("listening");
-    expect(latch.snapshot().authorized).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(latch.snapshot()).toMatchObject({ pending: false, active: false, authorized: false, heartbeatAllowed: true });
+    expect(timedOut).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it("cancels the watchdog on the first speaking edge and never times out active speech", () => {
+    vi.useFakeTimers();
+    const timedOut = vi.fn();
+    const latch = createSpeechAuthorizationLatch({ onPendingTimeout: timedOut });
+    latch.authorize();
+    vi.advanceTimersByTime(7_999);
+    latch.onMode("speaking");
+    vi.advanceTimersByTime(10_000);
+    expect(latch.snapshot()).toMatchObject({ pending: false, active: true, authorized: true, heartbeatAllowed: false });
+    expect(timedOut).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 

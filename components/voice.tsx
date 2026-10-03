@@ -74,63 +74,69 @@ export function applyConversationGate(control: ConversationVolumeControl, open: 
   }
 }
 
-export interface AudioAttachmentNode {
+export interface RemoteStreamAudio {
   nodeName?: string;
-  volume?: number;
-  querySelectorAll?: (selector: string) => ArrayLike<AudioAttachmentNode>;
+  volume: number;
+  autoplay?: boolean;
+  parentElement?: unknown;
+  srcObject?: null | { getAudioTracks?: () => ArrayLike<{ kind?: string }> };
 }
 
-export interface AudioAttachmentRoot extends AudioAttachmentNode {
-  appendChild(node: AudioAttachmentNode): AudioAttachmentNode;
+export interface MediaPlayTarget {
+  play(this: RemoteStreamAudio): Promise<void>;
 }
 
-interface AudioAttachmentObserver {
-  observe(root: AudioAttachmentRoot, options: { childList: boolean; subtree: boolean }): void;
-  disconnect(): void;
-}
-
-type AudioMutation = { addedNodes: ArrayLike<AudioAttachmentNode> };
-
-function applyAttachedAudioVolume(node: AudioAttachmentNode, volume: number): void {
-  if (node.nodeName?.toUpperCase() === "AUDIO" && typeof node.volume === "number") node.volume = volume;
-  for (const audio of Array.from(node.querySelectorAll?.("audio") ?? [])) {
-    if (typeof audio.volume === "number") audio.volume = volume;
-  }
-}
-
-export function installAudioAttachmentGate({
-  root,
-  readVolume,
-  createObserver,
-}: {
-  root: AudioAttachmentRoot;
+interface PlaybackGateEntry {
   readVolume: () => number;
-  createObserver?: (callback: (records: ArrayLike<AudioMutation>) => void) => AudioAttachmentObserver;
-}): () => void {
-  const originalAppendChild = root.appendChild;
-  const guardedAppendChild = function (this: AudioAttachmentRoot, node: AudioAttachmentNode) {
-    applyAttachedAudioVolume(node, readVolume());
-    return originalAppendChild.call(this, node);
-  };
-  root.appendChild = guardedAppendChild;
-  for (const existing of Array.from(root.querySelectorAll?.("audio") ?? [])) applyAttachedAudioVolume(existing, readVolume());
+  isTarget: (element: RemoteStreamAudio) => boolean;
+}
 
-  const makeObserver = createObserver ?? (typeof MutationObserver === "undefined"
-    ? undefined
-    : (callback: (records: ArrayLike<AudioMutation>) => void) => {
-      const observer = new MutationObserver((records) => callback(records));
-      return observer as unknown as AudioAttachmentObserver;
-    });
-  const observer = makeObserver?.((records) => {
-    for (const record of Array.from(records)) {
-      for (const node of Array.from(record.addedNodes)) applyAttachedAudioVolume(node, readVolume());
-    }
-  });
-  observer?.observe(root, { childList: true, subtree: true });
+interface PlaybackGateRegistry {
+  originalPlay: MediaPlayTarget["play"];
+  guardedPlay: MediaPlayTarget["play"];
+  entries: Set<PlaybackGateEntry>;
+}
+
+const playbackGateRegistries = new WeakMap<object, PlaybackGateRegistry>();
+
+export function isElevenLabsRemoteStreamAudio(element: RemoteStreamAudio): boolean {
+  if (element.nodeName?.toUpperCase() !== "AUDIO" || element.autoplay !== true || element.parentElement != null) return false;
+  const tracks = element.srcObject?.getAudioTracks?.();
+  return Boolean(tracks && Array.from(tracks).some((track) => track.kind === undefined || track.kind === "audio"));
+}
+
+export function installElevenLabsPlaybackGate({
+  playTarget,
+  readVolume,
+  isTarget = isElevenLabsRemoteStreamAudio,
+}: {
+  playTarget: MediaPlayTarget;
+  readVolume: () => number;
+  isTarget?: (element: RemoteStreamAudio) => boolean;
+}): () => void {
+  let registry = playbackGateRegistries.get(playTarget);
+  if (!registry) {
+    const originalPlay = playTarget.play;
+    const entries = new Set<PlaybackGateEntry>();
+    const guardedPlay = function (this: RemoteStreamAudio) {
+      const volumes = Array.from(entries).flatMap((entry) => entry.isTarget(this) ? [entry.readVolume()] : []);
+      if (volumes.length) this.volume = Math.min(...volumes);
+      return originalPlay.call(this);
+    };
+    registry = { originalPlay, guardedPlay, entries };
+    playbackGateRegistries.set(playTarget, registry);
+    playTarget.play = guardedPlay;
+  }
+  const entry = { readVolume, isTarget };
+  registry.entries.add(entry);
 
   return () => {
-    observer?.disconnect();
-    if (root.appendChild === guardedAppendChild) root.appendChild = originalAppendChild;
+    const current = playbackGateRegistries.get(playTarget);
+    if (!current) return;
+    current.entries.delete(entry);
+    if (current.entries.size > 0) return;
+    if (playTarget.play === current.guardedPlay) playTarget.play = current.originalPlay;
+    playbackGateRegistries.delete(playTarget);
   };
 }
 
@@ -144,30 +150,41 @@ export interface SpeechAuthorizationSnapshot {
 
 export function createSpeechAuthorizationLatch({
   fallingEdgeMs = 600,
+  speechStartWatchdogMs = 8_000,
   schedule = (callback, ms) => globalThis.setTimeout(callback, ms),
   cancelTimer = (timer) => globalThis.clearTimeout(timer),
   onChange = () => {},
   onDefinitiveEnd = () => {},
+  onPendingTimeout = () => {},
 }: {
   fallingEdgeMs?: number;
+  speechStartWatchdogMs?: number;
   schedule?: (callback: () => void, ms: number) => ReturnType<typeof globalThis.setTimeout>;
   cancelTimer?: (timer: ReturnType<typeof globalThis.setTimeout>) => void;
   onChange?: () => void;
   onDefinitiveEnd?: () => void;
+  onPendingTimeout?: () => void;
 } = {}) {
   let pending = false;
   let active = false;
   let speaking = false;
   let fallingTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
+  let pendingTimer: ReturnType<typeof globalThis.setTimeout> | undefined;
   const changed = () => onChange();
   const cancelFalling = () => {
     if (fallingTimer === undefined) return;
     cancelTimer(fallingTimer);
     fallingTimer = undefined;
   };
+  const cancelPending = () => {
+    if (pendingTimer === undefined) return;
+    cancelTimer(pendingTimer);
+    pendingTimer = undefined;
+  };
   const finishAfterFallingEdge = () => {
     if (fallingTimer !== undefined || (!active && !pending)) return;
     if (pending) {
+      cancelPending();
       pending = false;
       active = true;
     }
@@ -185,11 +202,20 @@ export function createSpeechAuthorizationLatch({
       pending = true;
       active = false;
       speaking = false;
+      cancelPending();
+      pendingTimer = schedule(() => {
+        pendingTimer = undefined;
+        if (!pending) return;
+        pending = false;
+        changed();
+        onPendingTimeout();
+      }, speechStartWatchdogMs);
       changed();
     },
     onMode(mode: "speaking" | "listening") {
       const rising = mode === "speaking" && !speaking;
       if (mode === "speaking") {
+        cancelPending();
         cancelFalling();
         speaking = true;
         if (pending) {
@@ -207,6 +233,7 @@ export function createSpeechAuthorizationLatch({
     finish: finishAfterFallingEdge,
     cancel() {
       cancelFalling();
+      cancelPending();
       pending = false;
       active = false;
       speaking = false;
@@ -338,8 +365,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const micMutedRef = useRef(true);
   const gateHoldUntilRef = useRef(0);
   const gateChangedRef = useRef<() => void>(() => {});
+  const authorizationTimeoutRef = useRef<() => void>(() => {});
+  const noteUserActivityRef = useRef<() => void>(() => {});
   const authorization = useRef<ReturnType<typeof createSpeechAuthorizationLatch> | undefined>(undefined);
-  if (!authorization.current) authorization.current = createSpeechAuthorizationLatch({ onChange: () => gateChangedRef.current() });
+  if (!authorization.current) authorization.current = createSpeechAuthorizationLatch({
+    onChange: () => gateChangedRef.current(),
+    onPendingTimeout: () => authorizationTimeoutRef.current(),
+  });
   const lastUserActivityAtRef = useRef(0);
   const firstMessages = useRef(new Map<number, string>());
   const establishedGeneration = useRef<number | undefined>(undefined);
@@ -411,6 +443,17 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       // A disconnect can race a heartbeat; the next connected interval resumes it.
     }
   }, [controls, conversationStatus.status, emit]);
+  useEffect(() => {
+    noteUserActivityRef.current = noteUserActivity;
+    authorizationTimeoutRef.current = () => {
+      emit("gate", "authorization_timeout", { watchdogMs: 8_000 });
+      noteUserActivityRef.current();
+    };
+    return () => {
+      noteUserActivityRef.current = () => {};
+      authorizationTimeoutRef.current = () => {};
+    };
+  }, [emit, noteUserActivity]);
   const activateFallback = useCallback((reason: string, generation?: number) => {
     if (generation !== undefined && establishedGeneration.current !== generation) return;
     establishedGeneration.current = undefined;
@@ -481,9 +524,9 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   });
 
   useEffect(() => {
-    if (configuredMode !== "agent") return;
-    return installAudioAttachmentGate({
-      root: document.body as unknown as AudioAttachmentRoot,
+    if (configuredMode !== "agent" || typeof HTMLMediaElement === "undefined") return;
+    return installElevenLabsPlaybackGate({
+      playTarget: HTMLMediaElement.prototype as unknown as MediaPlayTarget,
       readVolume: () => gateIsOpenAt(Date.now()) ? 1 : 0,
     });
   }, [configuredMode, gateIsOpenAt]);
@@ -667,8 +710,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     (m: boolean) => {
       micMutedRef.current = m;
       setMicMutedState(m);
-      if (m) applyConversationGate(controls, false);
-      else reassertGate();
+      reassertGate();
     },
     [controls, reassertGate],
   );

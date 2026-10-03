@@ -275,7 +275,17 @@ Today: JSON files under `.data/{sessions,maps,clips}/` plus `.data/erp.json` and
 | `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile |
 | `VISION_MODEL`, `COMPILE_MODEL` | server (B, C) | gateway model slugs |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |
-| `NEXT_PUBLIC_SILENCE_SECS`, `_STILL_SECS`, `_COOLDOWN_SECS`, `_MAX_QUESTIONS_PER_10MIN` | client (A) | governor tuning |
+| `NEXT_PUBLIC_SILENCE_SECS` | client (A) | Expert-speech quiet period before a normal window may open; default `2.5` seconds. |
+| `NEXT_PUBLIC_STILL_SECS` | client (A) | Screen-still period before a normal window may open; default `2` seconds. |
+| `NEXT_PUBLIC_COOLDOWN_SECS` | client (A) | Minimum time between normal question windows; demo default `20` seconds. |
+| `NEXT_PUBLIC_MAX_QUESTIONS_PER_10MIN` | client (A) | Maximum spoken-question budget in a trailing ten-minute window; default `5`. |
+| `NEXT_PUBLIC_WARMUP_SECS` | client (A) | No-question period at the start of Capture; demo default `8` seconds. |
+| `NEXT_PUBLIC_READING_SECS` | client (A) | No-question period after an invoice opens; demo default `5` seconds. |
+| `NEXT_PUBLIC_TYPING_QUIET_SECS` | client (A) | Typing-free period before a window may open; default `3` seconds. |
+| `NEXT_PUBLIC_WINDOW_TIMEOUT_SECS` | client (A) | Maximum unanswered question-window duration; default `20` seconds. |
+| `NEXT_PUBLIC_MIN_VALUE` | client (A) | Minimum candidate value after any boundary bonus; default `0.6`. |
+| `NEXT_PUBLIC_GRACE_SECS` | client (A) | Time a just-left invoice remains eligible via retro wording; default `18` seconds. |
+| `NEXT_PUBLIC_MAX_CHAINED` | client (A) | Maximum chained guardrail follow-ups in Capture; default `2`. |
 
 Anything prefixed `NEXT_PUBLIC_` ships to the browser: never a secret.
 

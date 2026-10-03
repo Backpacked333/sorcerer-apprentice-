@@ -16,6 +16,10 @@ export interface GovernorConfig {
   minValue: number; // candidate value needed to open a window
   warmupSecs: number; // no questions in the first seconds of a session: the expert is settling in
   readingSecs: number; // no questions right after an invoice opens: a still screen there means reading, not pausing
+  abortCooldownSecs?: number;
+  chainWindowSecs?: number;
+  chainSilenceSecs?: number;
+  maxChained?: number;
 }
 
 export const DEFAULT_GOVERNOR: GovernorConfig = {
@@ -31,6 +35,17 @@ export const DEFAULT_GOVERNOR: GovernorConfig = {
   readingSecs: 8,
 };
 
+export const DEMO_GOVERNOR: GovernorConfig = {
+  ...DEFAULT_GOVERNOR,
+  cooldownSecs: 20,
+  warmupSecs: 8,
+  readingSecs: 5,
+  abortCooldownSecs: 8,
+  chainWindowSecs: 6,
+  chainSilenceSecs: 1.2,
+  maxChained: 2,
+};
+
 export interface Signals {
   now: number; // seconds since session start
   lastSpeechAt: number; // last Scribe partial from the expert (-Infinity if never)
@@ -39,6 +54,7 @@ export interface Signals {
   lastBoundaryAt: number; // last save/close/back-to-list event
   lastInvoiceOpenedAt: number; // last invoice_opened event: the expert is reading
   agentSpeaking: boolean;
+  transcriberHealthy?: boolean;
 }
 
 export interface Lights {
@@ -70,6 +86,7 @@ export class Governor {
   readonly config: GovernorConfig;
   private asked: number[] = []; // timestamps of questions asked
   private lastClosedAt = -Infinity;
+  private closeCooldownSecs: number | undefined;
   window: OpenWindow | null = null;
 
   constructor(config: Partial<GovernorConfig> = {}) {
@@ -78,18 +95,19 @@ export class Governor {
 
   evaluate(s: Signals): Decision {
     const c = this.config;
-    const silence = s.now - s.lastSpeechAt >= c.silenceSecs && !s.agentSpeaking;
+    const silence = s.transcriberHealthy !== false && s.now - s.lastSpeechAt >= c.silenceSecs && !s.agentSpeaking;
     const still = s.now - s.lastScreenChangeAt >= c.stillSecs;
     const notTyping = s.now - s.lastTypingAt >= c.typingQuietSecs;
     const notReading = s.now - (s.lastInvoiceOpenedAt ?? -Infinity) >= c.readingSecs;
-    const budget = this.questionsInLast10Min(s.now) < c.maxPer10Min && s.now - this.lastClosedAt >= c.cooldownSecs && s.now >= c.warmupSecs;
+    const cooldownSecs = this.closeCooldownSecs ?? c.cooldownSecs;
+    const budget = this.questionsInLast10Min(s.now) < c.maxPer10Min && s.now - this.lastClosedAt >= cooldownSecs && s.now >= c.warmupSecs;
     const boundaryBonus = s.now - s.lastBoundaryAt <= c.boundaryBonusSecs ? 0.2 : 0;
     const reasons: string[] = [];
     if (!silence) reasons.push(s.agentSpeaking ? "agent speaking" : "expert talking");
     if (!still) reasons.push("screen moving");
     if (!notTyping) reasons.push("typing");
     if (!notReading) reasons.push("reading a new invoice");
-    if (!budget) reasons.push(s.now < c.warmupSecs ? "warming up" : s.now - this.lastClosedAt < c.cooldownSecs ? "cooldown" : "budget spent");
+    if (!budget) reasons.push(s.now < c.warmupSecs ? "warming up" : s.now - this.lastClosedAt < cooldownSecs ? "cooldown" : "budget spent");
     const quiet = silence && still && notTyping && notReading;
     const state = this.window ? this.window.phase : quiet ? "waiting" : "listening";
     return { interruptible: quiet && budget && !this.window, lights: { silence, still, notTyping, notReading, budget }, boundaryBonus, reasons, state };
@@ -120,10 +138,28 @@ export class Governor {
   }
 
   close(now: number): OpenWindow | null {
+    return this.closeWith(now);
+  }
+
+  closeWith(now: number, options: { cooldownSecs?: number; refund?: boolean } = {}): OpenWindow | null {
     const w = this.window;
     this.window = null;
     this.lastClosedAt = now;
+    this.closeCooldownSecs = options.cooldownSecs;
+    if (options.refund && w?.askedAt !== undefined) {
+      const index = this.asked.lastIndexOf(w.askedAt);
+      if (index >= 0) this.asked.splice(index, 1);
+    }
     return w;
+  }
+
+  canChain(s: Signals): boolean {
+    const c = this.config;
+    if (this.window || s.transcriberHealthy === false || s.agentSpeaking) return false;
+    if (this.questionsInLast10Min(s.now) >= c.maxPer10Min) return false;
+    if (s.now - s.lastScreenChangeAt < c.stillSecs || s.now - s.lastTypingAt < c.typingQuietSecs) return false;
+    if (s.now - s.lastSpeechAt < (c.chainSilenceSecs ?? c.silenceSecs)) return false;
+    return s.now - this.lastClosedAt <= (c.chainWindowSecs ?? 0);
   }
 
   /** Abort before the question was spoken (expert started talking again). No budget consumed, no cooldown. */

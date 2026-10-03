@@ -75,7 +75,7 @@ it("keeps same-invoice ERP fields in combined state, but not across invoice swit
   fetchMock.mockResolvedValue(response(200, frame({ invoice: "1001" }))); await tick();
   expect(pipeline.currentState.current.costCenter).toBe("030");
   fetchMock.mockResolvedValue(response(200, frame({}, "invoice_list", "posted"))); await tick();
-  expect(events.find((e) => e.kind === "save_clicked")?.state).toMatchObject({ invoice: "1001", amount: 7200, category: "equipment" });
+  expect(events.find((e) => e.kind === "save_clicked")?.state).toMatchObject({ invoice: "1001", amount: 7200, category: "equipment", costCenter: "030" });
   expect(pipeline.currentState.current).toEqual({});
   fetchMock.mockResolvedValue(response(200, frame({ invoice: "1002", costCenter: "040" }))); await tick();
   expect(pipeline.currentState.current).toEqual({ invoice: "1002", costCenter: "040" });

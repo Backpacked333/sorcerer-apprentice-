@@ -143,7 +143,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
       state.current = combined;
       for (const spec of result.specs) {
         const eventState = next.screen === "invoice_list"
-          ? { ...(current.invoice === spec.invoice ? current : {}), ...spec.state } : combined;
+          ? { ...spec.state, ...(current.invoice === spec.invoice ? current : {}) } : combined;
         emit({ ...spec, state: spec.state ? eventState : undefined, t });
       }
       state.current = combined;

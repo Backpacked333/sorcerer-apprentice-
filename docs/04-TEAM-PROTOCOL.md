@@ -40,6 +40,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
+| `lib/visiondiff.ts`, `lib/visiondiff.test.ts`, `lib/vision-pipeline.test.ts` | **B** | pure visual diff, normalized identities and mocked capture lifecycle regressions (#33) |
 | `lib/redact.ts` | **B** | privacy |
 | `lib/store.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |

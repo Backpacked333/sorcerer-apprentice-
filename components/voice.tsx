@@ -6,7 +6,7 @@
  *  - fallback: the browser's speechSynthesis and webkitSpeechRecognition, so the whole flow runs with no keys
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { CommitStrategy, ConversationProvider, useConversation, useConversationClientTool, useScribe } from "@elevenlabs/react";
+import { CommitStrategy, ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe } from "@elevenlabs/react";
 
 export const TOOL_NAMES = ["log_answer", "mark_off_record", "confirm_teachback", "end_task", "flag_for_expert", "show_replay", "record_prediction", "record_mastery", "end_session"] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -19,6 +19,39 @@ export interface VoiceMessage {
   t: number; // epoch ms
 }
 
+export interface VoiceDebugEvent {
+  at: number;
+  src: "agent" | "scribe" | "turn" | "gate" | "tool";
+  type: string;
+  data?: unknown;
+}
+
+export interface VoiceConnectOptions {
+  firstMessage?: string;
+  prompt?: string;
+  language?: string;
+  dynamicVariables?: Record<string, string>;
+}
+
+export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOptions = {}) {
+  const agentOverrides = {
+    ...(opts.firstMessage ? { firstMessage: opts.firstMessage } : {}),
+    ...(opts.prompt ? { prompt: { prompt: opts.prompt } } : {}),
+    ...(opts.language ? { language: opts.language as "en" } : {}),
+  };
+  return {
+    agentId,
+    connectionType: "webrtc" as const,
+    dynamicVariables: {
+      expert_name: "the expert",
+      newhire_name: "the new hire",
+      task: "the task on screen",
+      ...opts.dynamicVariables,
+    },
+    ...(Object.keys(agentOverrides).length ? { overrides: { agent: agentOverrides } } : {}),
+  };
+}
+
 export interface VoiceApi {
   mode: "agent" | "fallback";
   connected: boolean;
@@ -26,8 +59,11 @@ export interface VoiceApi {
   isSpeaking: boolean;
   micMuted: boolean;
   messages: VoiceMessage[];
-  connect: (opts?: { firstMessage?: string; prompt?: string; language?: string }) => Promise<void>;
+  degraded: boolean;
+  lastError?: string;
+  connect: (opts?: VoiceConnectOptions) => Promise<void>;
   disconnect: () => void;
+  getId: () => string | undefined;
   /** Tagged message to the agent ([ASK], [DEBRIEF], [TEACHBACK], [INTERVENE] ...). In fallback mode the text is spoken aloud. */
   say: (tag: string, text: string, spoken?: string) => void;
   setMicMuted: (muted: boolean) => void;
@@ -35,6 +71,7 @@ export interface VoiceApi {
 }
 
 const VoiceContext = createContext<VoiceApi | null>(null);
+const VoiceDebugContext = createContext<((event: VoiceDebugEvent) => void) | undefined>(undefined);
 
 export function useVoice(): VoiceApi {
   const v = useContext(VoiceContext);
@@ -42,32 +79,133 @@ export function useVoice(): VoiceApi {
   return v;
 }
 
-export function VoiceProvider({ agentId, tools, children }: { agentId?: string; tools: React.MutableRefObject<ToolHandlers>; children: ReactNode }) {
+export function VoiceProvider({
+  agentId,
+  tools,
+  onDebugEvent,
+  children,
+}: {
+  agentId?: string;
+  tools: React.MutableRefObject<ToolHandlers>;
+  onDebugEvent?: (event: VoiceDebugEvent) => void;
+  children: ReactNode;
+}) {
   return (
     <ConversationProvider>
-      <VoiceInner agentId={agentId} tools={tools}>
+      <VoiceInner agentId={agentId} tools={tools} onDebugEvent={onDebugEvent}>
         {children}
       </VoiceInner>
     </ConversationProvider>
   );
 }
 
-function VoiceInner({ agentId, tools, children }: { agentId?: string; tools: React.MutableRefObject<ToolHandlers>; children: ReactNode }) {
-  const mode: VoiceApi["mode"] = agentId ? "agent" : "fallback";
+function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: string; tools: React.MutableRefObject<ToolHandlers>; onDebugEvent?: (event: VoiceDebugEvent) => void; children: ReactNode }) {
+  const configuredMode: VoiceApi["mode"] = agentId ? "agent" : "fallback";
   const [micMuted, setMicMutedState] = useState(true);
   const [messages, setMessages] = useState<VoiceMessage[]>([]);
   const [fallbackSpeaking, setFallbackSpeaking] = useState(false);
   const [fallbackConnected, setFallbackConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [degraded, setDegraded] = useState(false);
+  const [lastError, setLastError] = useState<string>();
+  const controls = useConversationControls();
+  const conversationStatus = useConversationStatus();
+  const conversationMode = useConversationMode();
+  const connectAttempt = useRef<{
+    resolve: () => void;
+    firstMessage?: string;
+    connected: boolean;
+    sawSpeaking: boolean;
+    timer: number;
+  } | undefined>(undefined);
+  const explicitDisconnect = useRef(false);
+  const lastVadEventAt = useRef(0);
+  const emit = useCallback((src: VoiceDebugEvent["src"], type: string, data?: unknown) => {
+    onDebugEvent?.({ at: Date.now(), src, type, ...(data === undefined ? {} : { data }) });
+  }, [onDebugEvent]);
+  const finishConnect = useCallback(() => {
+    const attempt = connectAttempt.current;
+    if (!attempt) return;
+    window.clearTimeout(attempt.timer);
+    connectAttempt.current = undefined;
+    attempt.resolve();
+  }, []);
+  const degradeConnect = useCallback((reason: string) => {
+    setDegraded(true);
+    setLastError(reason);
+    setFallbackConnected(true);
+    emit("agent", "degraded", { reason });
+    const firstMessage = connectAttempt.current?.firstMessage;
+    finishConnect();
+    if (firstMessage) void speakFallbackRef.current(firstMessage);
+  }, [emit, finishConnect]);
+  const speakFallbackRef = useRef<(text: string) => Promise<void>>(async () => {});
 
-  const conversation = useConversation({
+  useConversation({
     micMuted,
-    onMessage: (m) => setMessages((xs) => [...xs, { role: m.role === "agent" ? "agent" : "user", text: m.message, t: Date.now() }]),
-    onError: (message) => setError(message),
+    onConnect: (data) => {
+      window.speechSynthesis?.cancel();
+      setFallbackConnected(false);
+      setDegraded(false);
+      setLastError(undefined);
+      emit("agent", "connect", data);
+      const attempt = connectAttempt.current;
+      if (!attempt) return;
+      attempt.connected = true;
+      window.clearTimeout(attempt.timer);
+      if (!attempt.firstMessage) return finishConnect();
+      attempt.timer = window.setTimeout(finishConnect, 15_000);
+    },
+    onDisconnect: (details) => {
+      emit("agent", "disconnect", details);
+      const wasExplicit = explicitDisconnect.current;
+      explicitDisconnect.current = false;
+      if (connectAttempt.current && !wasExplicit) return degradeConnect(`Agent disconnected before it was ready (${details.reason}).`);
+      if (connectAttempt.current) finishConnect();
+      if (!wasExplicit && details.reason !== "user") {
+        setDegraded(true);
+        setLastError(`Agent disconnected (${details.reason}).`);
+        setFallbackConnected(true);
+      }
+    },
+    onError: (message, context) => {
+      emit("agent", "error", { message, context });
+      if (connectAttempt.current) degradeConnect(message);
+      else {
+        setDegraded(true);
+        setLastError(message);
+      }
+    },
+    onStatusChange: (data) => emit("agent", "status", data),
+    onModeChange: (data) => {
+      emit("agent", "mode", data);
+      const attempt = connectAttempt.current;
+      if (!attempt?.firstMessage) return;
+      if (data.mode === "speaking") attempt.sawSpeaking = true;
+      else if (attempt.connected && attempt.sawSpeaking) finishConnect();
+    },
+    onMessage: (m) => {
+      setMessages((xs) => [...xs, { role: m.role === "agent" ? "agent" : "user", text: m.message, t: Date.now() }]);
+      emit("agent", "message", m);
+    },
+    onDebug: (data) => emit("agent", "debug", data),
+    onIncomingEvent: (data) => emit("agent", "incoming", data),
+    onOutgoingEvent: (data) => emit("agent", "outgoing", data),
+    onAgentToolRequest: (data) => emit("agent", "tool_request", data),
+    onAgentToolResponse: (data) => emit("agent", "tool_response", data),
+    onUnhandledClientToolCall: (data) => emit("agent", "unhandled_client_tool", data),
+    onInterruption: (data) => emit("agent", "interruption", data),
+    onVadScore: (data) => {
+      const now = Date.now();
+      if (now - lastVadEventAt.current >= 500) {
+        lastVadEventAt.current = now;
+        emit("agent", "vad", data);
+      }
+    },
   });
 
   // register every client tool once; handlers are looked up at call time so pages can swap them freely
   const handle = (name: ToolName) => async (params: Record<string, unknown>) => {
+    emit("tool", "dispatch", { name, params });
     const fn = tools.current[name];
     if (!fn) return `no handler for ${name}`;
     const out = await fn(params ?? {});
@@ -83,12 +221,15 @@ function VoiceInner({ agentId, tools, children }: { agentId?: string; tools: Rea
   useConversationClientTool("record_mastery", handle("record_mastery"));
   useConversationClientTool("end_session", handle("end_session"));
 
-  const speakFallback = useCallback((text: string) => {
+  const speakFallback = useCallback((text: string) => new Promise<void>((resolve) => {
     setMessages((xs) => [...xs, { role: "agent", text, t: Date.now() }]);
     // text-only fallback when the browser cannot speak: pretend to talk for as long as the words would take
     const simulate = () => {
       setFallbackSpeaking(true);
-      window.setTimeout(() => setFallbackSpeaking(false), Math.min(12000, 600 + text.split(/\s+/).length * 330));
+      window.setTimeout(() => {
+        setFallbackSpeaking(false);
+        resolve();
+      }, Math.min(12000, 600 + text.split(/\s+/).length * 330));
     };
     if (typeof window === "undefined" || !("speechSynthesis" in window)) return simulate();
     window.speechSynthesis.cancel();
@@ -101,8 +242,14 @@ function VoiceInner({ agentId, tools, children }: { agentId?: string; tools: Rea
       started = true;
       setFallbackSpeaking(true);
     };
-    u.onend = () => setFallbackSpeaking(false);
-    u.onerror = () => setFallbackSpeaking(false);
+    u.onend = () => {
+      setFallbackSpeaking(false);
+      resolve();
+    };
+    u.onerror = () => {
+      setFallbackSpeaking(false);
+      resolve();
+    };
     window.speechSynthesis.speak(u);
     window.setTimeout(() => {
       if (!started) {
@@ -110,78 +257,133 @@ function VoiceInner({ agentId, tools, children }: { agentId?: string; tools: Rea
         simulate();
       }
     }, 1500);
-  }, []);
+  }), []);
+  speakFallbackRef.current = speakFallback;
 
   const connect = useCallback<VoiceApi["connect"]>(
     async (opts) => {
-      if (mode === "fallback") {
+      if (configuredMode === "fallback") {
         setFallbackConnected(true);
-        if (opts?.firstMessage) speakFallback(opts.firstMessage);
+        setLastError(undefined);
+        if (opts?.firstMessage) await speakFallback(opts.firstMessage);
         return;
       }
-      conversation.startSession({
-        agentId: agentId!,
-        connectionType: "webrtc",
-        overrides: opts ? { agent: { ...(opts.firstMessage !== undefined ? { firstMessage: opts.firstMessage } : {}), ...(opts.prompt ? { prompt: { prompt: opts.prompt } } : {}), ...(opts.language ? { language: opts.language as "en" } : {}) } } : undefined,
+      if (conversationStatus.status === "connected") return;
+      if (connectAttempt.current) return new Promise<void>((resolve) => {
+        const priorResolve = connectAttempt.current!.resolve;
+        connectAttempt.current!.resolve = () => {
+          priorResolve();
+          resolve();
+        };
+      });
+      setDegraded(false);
+      setLastError(undefined);
+      explicitDisconnect.current = false;
+      return new Promise<void>((resolve) => {
+        connectAttempt.current = {
+          resolve,
+          firstMessage: opts?.firstMessage || undefined,
+          connected: false,
+          sawSpeaking: false,
+          timer: window.setTimeout(() => degradeConnect("Agent connection timed out after 20 seconds."), 20_000),
+        };
+        try {
+          const inputDeviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
+          controls.startSession({ ...buildAgentSessionOptions(agentId!, opts), ...(inputDeviceId ? { inputDeviceId } : {}) });
+        } catch (error) {
+          degradeConnect(error instanceof Error ? error.message : String(error));
+        }
       });
     },
-    [agentId, conversation, mode, speakFallback],
+    [agentId, configuredMode, controls, conversationStatus.status, degradeConnect, speakFallback],
   );
 
   const disconnect = useCallback(() => {
-    if (mode === "fallback") {
+    if (configuredMode === "fallback") {
       window.speechSynthesis?.cancel();
       setFallbackConnected(false);
       return;
     }
-    conversation.endSession();
-  }, [conversation, mode]);
+    explicitDisconnect.current = true;
+    window.speechSynthesis?.cancel();
+    setFallbackConnected(false);
+    controls.endSession();
+  }, [configuredMode, controls]);
 
   const say = useCallback<VoiceApi["say"]>(
     (tag, text, spoken) => {
-      if (mode === "fallback") {
-        speakFallback(spoken ?? text);
+      if (configuredMode === "fallback" || degraded || conversationStatus.status !== "connected") {
+        void speakFallback(spoken ?? text);
         return;
       }
       setMessages((xs) => [...xs, { role: "user", text: `[${tag}] ${text}`, t: Date.now() }]);
-      conversation.sendUserMessage(`[${tag}] ${text}`);
+      try {
+        controls.sendUserMessage(`[${tag}] ${text}`);
+      } catch (error) {
+        degradeConnect(error instanceof Error ? error.message : String(error));
+        void speakFallback(spoken ?? text);
+      }
     },
-    [conversation, mode, speakFallback],
+    [configuredMode, controls, conversationStatus.status, degradeConnect, degraded, speakFallback],
   );
 
   const setMicMuted = useCallback(
     (m: boolean) => {
       setMicMutedState(m);
-      if (mode === "agent") conversation.setMuted(m);
     },
-    [conversation, mode],
+    [],
   );
 
   const sendContext = useCallback(
     (text: string) => {
-      if (mode === "agent" && conversation.status === "connected") conversation.sendContextualUpdate(text);
+      if (configuredMode === "agent" && !degraded && conversationStatus.status === "connected") {
+        try {
+          controls.sendContextualUpdate(text);
+        } catch (error) {
+          setDegraded(true);
+          setLastError(error instanceof Error ? error.message : String(error));
+        }
+      }
     },
-    [conversation, mode],
+    [configuredMode, controls, conversationStatus.status, degraded],
   );
+
+  const getId = useCallback(() => {
+    if (configuredMode !== "agent") return undefined;
+    try {
+      return controls.getId();
+    } catch {
+      return undefined;
+    }
+  }, [configuredMode, controls]);
+
+  useEffect(() => () => {
+    if (connectAttempt.current) window.clearTimeout(connectAttempt.current.timer);
+  }, []);
+
+  const mode: VoiceApi["mode"] = configuredMode === "agent" && !degraded ? "agent" : "fallback";
 
   const api = useMemo<VoiceApi>(
     () => ({
       mode,
-      connected: mode === "fallback" ? fallbackConnected : conversation.status === "connected",
-      status: mode === "fallback" ? (fallbackConnected ? "fallback: browser speech" : "fallback: off") : error ? `error: ${error}` : conversation.status,
-      isSpeaking: mode === "fallback" ? fallbackSpeaking : conversation.isSpeaking,
+      connected: mode === "fallback" ? fallbackConnected : conversationStatus.status === "connected",
+      status: mode === "fallback" ? (fallbackConnected ? "fallback: browser speech" : "fallback: off") : conversationStatus.message ? `error: ${conversationStatus.message}` : conversationStatus.status,
+      isSpeaking: mode === "fallback" ? fallbackSpeaking : conversationMode.isSpeaking,
       micMuted,
       messages,
+      degraded,
+      lastError,
       connect,
       disconnect,
+      getId,
       say,
       setMicMuted,
       sendContext,
     }),
-    [mode, fallbackConnected, conversation.status, conversation.isSpeaking, error, fallbackSpeaking, micMuted, messages, connect, disconnect, say, setMicMuted, sendContext],
+    [mode, fallbackConnected, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext],
   );
 
-  return <VoiceContext.Provider value={api}>{children}</VoiceContext.Provider>;
+  return <VoiceDebugContext.Provider value={onDebugEvent}><VoiceContext.Provider value={api}>{children}</VoiceContext.Provider></VoiceDebugContext.Provider>;
 }
 
 // ---------- Transcription: Scribe v2 Realtime, or the browser's recognizer when there is no key ----------
@@ -194,6 +396,7 @@ export interface TranscriberOptions {
 }
 
 export function useTranscriber(opts: TranscriberOptions) {
+  const debug = useContext(VoiceDebugContext);
   const [engine, setEngine] = useState<"scribe" | "webspeech" | "none">("none");
   const [connected, setConnected] = useState(false);
   const optsRef = useRef(opts);
@@ -206,13 +409,24 @@ export function useTranscriber(opts: TranscriberOptions) {
     vadSilenceThresholdSecs: 1.0,
     includeTimestamps: true,
     languageCode: opts.language,
-    onPartialTranscript: (d) => optsRef.current.onPartial(d.text),
+    onPartialTranscript: (d) => {
+      debug?.({ at: Date.now(), src: "scribe", type: "partial", data: d });
+      optsRef.current.onPartial(d.text);
+    },
     onCommittedTranscriptWithTimestamps: (d) => {
+      debug?.({ at: Date.now(), src: "scribe", type: "commit", data: d });
       const words = d.words?.filter((w) => w.type !== "spacing") ?? [];
       optsRef.current.onCommitted(d.text, words[0]?.start, words[words.length - 1]?.end);
     },
-    onConnect: () => setConnected(true),
-    onDisconnect: () => setConnected(false),
+    onConnect: () => {
+      setConnected(true);
+      debug?.({ at: Date.now(), src: "scribe", type: "connect" });
+    },
+    onDisconnect: () => {
+      setConnected(false);
+      debug?.({ at: Date.now(), src: "scribe", type: "disconnect" });
+    },
+    onError: (error) => debug?.({ at: Date.now(), src: "scribe", type: "error", data: error instanceof Error ? error.message : String(error) }),
   });
 
   useEffect(() => {
@@ -224,7 +438,8 @@ export function useTranscriber(opts: TranscriberOptions) {
         const { token } = res.ok ? await res.json() : { token: null };
         if (token) {
           if (cancelled) return;
-          await scribe.connect({ token, microphone: { echoCancellation: true, noiseSuppression: true } });
+          const deviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
+          await scribe.connect({ token, microphone: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: true, noiseSuppression: true } });
           setEngine("scribe");
           return;
         }

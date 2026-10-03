@@ -145,6 +145,13 @@ interface VoiceApi {
   say(tag: string, text: string, spoken?: string): void;   // agent mode: sends "[TAG] text" as a user message; fallback: speaks `spoken ?? text`
   setMicMuted(muted: boolean): void;
   sendContext(text: string): void;                          // contextual update: adds context, never triggers speech
+  turn(opts: TurnOptions): Promise<TurnResult>;             // never rejects; one tagged utterance plus optional listening window
+  cancelTurn(reason?: TurnResult["abortReason"]): void;
+  submitTyped(text: string): void;
+  setSessionStart(epochMs: number): void;
+  lastHumanSpeechAt(): number;
+  turnPhase: TurnPhase; partial: string;
+  stt: { engine: "scribe"|"webspeech"|"none"; connected: boolean };
 }
 type VoiceDebugEvent = { at: number; src: "agent"|"scribe"|"turn"|"gate"|"tool"; type: string; data?: unknown };
 interface VoiceProviderProps { agentId?: string; tools: MutableRefObject<ToolHandlers>; onDebugEvent?: (event: VoiceDebugEvent) => void }
@@ -153,6 +160,21 @@ useVoice(): VoiceApi
 useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
 type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
+
+type TurnPhase = "idle"|"sending"|"waiting_for_speech"|"speaking"|"listening"|"closing";
+interface TurnOptions {
+  tag: string; text: string; spoken?: string; listen?: boolean; timeoutSecs?: number; maxSecs?: number;
+  recordClip?: { sessionId: string }; abortOnHumanSpeech?: boolean; watchdogSecs?: number;
+  silenceCloseSecs?: number; ackMaxSecs?: number; onPhase?: (phase: TurnPhase, at: number) => void;
+}
+interface TurnResult {
+  spoke: boolean; heard: string; via: "tool"|"scribe"|"typed"|"timeout"|"aborted"|"spoken";
+  tool?: { name: ToolName; params: Record<string, unknown> }; audioId?: string;
+  sentAt: number; spokeAt?: number; askedAt: number; answeredAt?: number; closedAt: number;
+  spokenBy?: "agent"|"fallback"; spokenText?: string; heardSource?: "scribe"|"agent_asr"|"typed";
+  command?: "off_record"|"not_now";
+  abortReason?: "resumed"|"user"|"superseded"|"paused"|"disconnected"|"silent";
+}
 ```
 
 **What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; anything transcribed while `isSpeaking` is never attributed to the human; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
@@ -322,7 +344,7 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 | P-9 | `VoiceApi.lastError?: string`, `VoiceApi.degraded: boolean` (voice or STT fell back mid-session) | A | D (honest badge) |
 | P-10 | `GET /api/health` → `{ ok, keys: { elevenlabs, gateway }, agents: { interviewer, tutor }, store: "fs"\|"…" , commit }` | B | D (preflight screen) |
 | P-11 | `EventKind` gains **`"save_intent"`**: posted by the ERP when the save-confirm opens, carrying the *proposed* `state`. A sandbox verdict like `save_blocked`: delivered in every source mode, never a vision event, never a compiled step. | B (type, pipeline) · D (`InvoiceForm` posts it) | C (matcher intervenes on it) |
-| P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to "say a tagged line and (optionally) listen". `opts: { tag: string; text: string; spoken?: string; listen?: boolean; timeoutSecs?: number; maxSecs?: number; recordClip?: { sessionId: string } }` → `TurnResult: { spoke: boolean; heard: string /* Scribe-verbatim, "" if none */; via: "tool" \| "scribe" \| "typed" \| "timeout" \| "aborted"; tool?: { name: ToolName; params: Record<string, unknown> }; audioId?: string; askedAt: number; answeredAt?: number }`. Owns: wait-for-speech watchdog, opening the mic only after the agent finished, echo filtering, speech-aware timeout, re-mute. `say()` stays for no-listen lines. | A | C (Map + Teach controllers adopt by M2) |
+| P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
 | P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`) and resolves only when the session is connected | A | C passes names in Map and Teach |
 | P-14 | `TelemetryMessage` gains `queue: Queue` and `sandboxSession?: string`; a `"hello"` message from a subscriber makes an open `InvoiceForm` re-announce `invoice_opened` | B · D | A, C |
 | P-15 | `SessionLog.deferred?: { kind: string; question: string; stepRef: string }[]` — live candidates that were deferred, stale or never asked | B (type) · A (writes) | C (`buildSlots` asks them first) |

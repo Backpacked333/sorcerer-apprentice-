@@ -7,6 +7,7 @@ Updated 2026-10-03 on `d/human-knowledge-ui`. This is a focused presentation pas
 Not merged. Implemented on this branch:
 - WD-5 / N5: warmer tokens, loaded Inter and JetBrains Mono, visible keyboard focus, reduced-motion support; removed decorative glow and repeating animation.
 - WD-12 / N5: knowledge-first landing with Work Maps as the primary destination; existing Capture, Teach and ERP paths retained; keyless mode explicitly labeled.
+- WD-12 / N2 review follow-up: dynamically select the newest confirmed, nonempty `demo_` capture map through read-only store calls. The landing page links straight to that map and preselects it for Teach; missing/unconfirmed samples produce an explicit disabled sample action. Real captures are not promoted as public samples.
 - WD-6 / A1: a small expressive dot driven by the existing governor state, with native expandable timing details. No voice, microphone or privacy-state inference from the dot.
 - WD-7 / M3: decision and literal expert reasoning before screenshots; evidence counts rather than confidence labels; draft/confirmed state; guardrail summaries separated from verbatim `quote.text`; missing evidence disclosed.
 - New D-owned server-rendered presentation regression tests. No controllers, runtime contracts, dependencies or engine logic changed.

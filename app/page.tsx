@@ -1,4 +1,8 @@
 import Link from "next/link";
+import { getMap, listSessions } from "@/lib/store";
+import { pickSample } from "@/lib/ui/landing";
+
+export const dynamic = "force-dynamic";
 
 const knowledge = [
   { title: "The decision", body: "What changed, and at which moment in the work." },
@@ -6,7 +10,10 @@ const knowledge = [
   { title: "The boundaries", body: "When the approach changes. When to stop and ask." },
 ];
 
-export default function Home() {
+export default async function Home() {
+  const sessions = (await listSessions()).filter((s) => s.mode === "capture" && s.id.startsWith("demo_"));
+  const sample = pickSample(await Promise.all(sessions.map(async (session) => ({ ...session, map: await getMap(session.id) }))));
+  const sampleId = sample ? encodeURIComponent(sample.id) : undefined;
   return (
     <main className="min-h-screen">
       <header className="border-b border-line">
@@ -33,10 +40,13 @@ export default function Home() {
               Turn an expert’s experience into a Work Map someone else can learn from.
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/map" className="btn btn-primary px-5 py-3">Explore Work Maps <span aria-hidden="true">↗</span></Link>
+              {sampleId ? <>
+                <Link href={`/map/${sampleId}`} className="btn btn-primary px-5 py-3">Open a finished Work Map <span aria-hidden="true">↗</span></Link>
+                <Link href={`/teach?from=${sampleId}`} className="btn px-5 py-3">Be the new hire</Link>
+              </> : <button type="button" className="btn btn-primary px-5 py-3" disabled>No sample Work Map yet</button>}
               <Link href="/capture" className="btn px-5 py-3">Share your know-how</Link>
             </div>
-            <p className="mt-4 text-sm text-muted">Start with what’s already been learned, or capture something new.</p>
+            <p className="mt-4 text-sm text-muted">{sampleId ? "Explore a confirmed sample, or capture something new." : "No confirmed sample is available. You can still capture something new."}</p>
           </section>
           <section aria-labelledby="knowledge-title" className="panel p-6 md:p-8">
             <p className="panel-title">Inside a Work Map</p>

@@ -1,11 +1,19 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
 import { Meter } from "@/components/Meter";
 import { WorkMapView } from "@/components/WorkMapView";
 import type { Decision } from "./governor";
 import { WorkMapSchema } from "./workmap";
+import { getMap, listSessions } from "./store";
+
+vi.mock("./store", () => ({ getMap: vi.fn(), listSessions: vi.fn() }));
+
+beforeEach(() => {
+  vi.resetAllMocks();
+  vi.mocked(listSessions).mockResolvedValue([]);
+});
 
 const map = WorkMapSchema.parse({
   sessionId: "presentation-test", task: "Inspect a returned item", expert: { name: "Alex" }, privacy: {},
@@ -22,11 +30,42 @@ const renderMap = (value = map, editable = false) => renderToStaticMarkup(create
 }));
 
 describe("knowledge-first presentation", () => {
-  it("keeps all entry paths and clearly labels keyless mode", () => {
-    const html = renderToStaticMarkup(createElement(Home));
+  it("keeps all entry paths and clearly labels keyless mode and the missing sample", async () => {
+    const html = renderToStaticMarkup(await Home());
     for (const path of ["/map", "/capture", "/teach", "/erp"]) expect(html).toContain(`href="${path}"`);
-    expect(html).toContain("Explore Work Maps");
+    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>No sample Work Map yet<\/button>/);
+    expect(html).toContain("No confirmed sample is available.");
+    expect(html).not.toContain("/teach?from=");
     expect(html).toContain("Keyless mode uses ERP telemetry and browser speech");
+  });
+
+  it("links directly to the newest confirmed sample and its tutor, not a draft or real capture", async () => {
+    const sessions = [
+      { id: "real_capture", startedAt: 5, mode: "capture" as const },
+      { id: "demo_teach", startedAt: 4, mode: "teach" as const },
+      { id: "demo_draft", startedAt: 3, mode: "capture" as const },
+      { id: "demo_latest", startedAt: 2, mode: "capture" as const },
+      { id: "demo_old", startedAt: 1, mode: "capture" as const },
+    ].map((s) => ({ ...s, task: map.task, expertName: map.expert.name }));
+    vi.mocked(listSessions).mockResolvedValue(sessions);
+    vi.mocked(getMap).mockImplementation(async (id) => ({ ...map, sessionId: id, confirmedAt: id === "demo_draft" ? undefined : 100 }));
+    const html = renderToStaticMarkup(await Home());
+    expect(html).toContain('href="/map/demo_latest"');
+    expect(html).toContain('href="/teach?from=demo_latest"');
+    expect(html).toContain("Open a finished Work Map");
+    expect(html).toContain("Explore a confirmed sample");
+    expect(html).not.toContain('href="/map/demo_draft"');
+    expect(getMap).not.toHaveBeenCalledWith("real_capture");
+    expect(getMap).not.toHaveBeenCalledWith("demo_teach");
+  });
+
+  it.each([undefined, map])("does not offer a finished map for missing or draft sample data", async (storedMap) => {
+    vi.mocked(listSessions).mockResolvedValue([{ id: "demo_pending", startedAt: 1, mode: "capture", task: map.task, expertName: map.expert.name }]);
+    vi.mocked(getMap).mockResolvedValue(storedMap);
+    const html = renderToStaticMarkup(await Home());
+    expect(html).toContain("No confirmed sample is available.");
+    expect(html).not.toContain('href="/map/demo_pending"');
+    expect(html).not.toContain("/teach?from=");
   });
 
   it("puts the decision and literal evidence before the screen moment", () => {

@@ -54,6 +54,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `app/globals.css`, `app/layout.tsx`, `app/page.tsx`, `app/icon.svg`, `public/` | **D** | design system |
 | `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX |
 | `lib/experience.presentation.test.ts` | **D** | server-rendered knowledge UI and presence regressions |
+| `lib/ui/landing.ts`, `lib/ui/landing.test.ts` | **D** | pure confirmed-sample selection for the landing page |
 | `components/WorkMapView.tsx`, `components/Meter.tsx`, `components/TeachStart.tsx` | **D** | |
 | `components/InvoiceForm.tsx`, `components/ErpHeader.tsx`, `app/erp/`, `lib/erp-model.ts`, `app/demo/` | **D** | ERP UI **and the scenario data** (seed invoices are a contract: announce changes; the ERP server + guard is C) |
 | `README.md`, `docs/05-DEMO-AND-SUBMISSION.md`, deck, video | **D** | |

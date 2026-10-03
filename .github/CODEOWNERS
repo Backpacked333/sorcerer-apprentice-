@@ -1,0 +1,97 @@
+# Ownership map. Source of truth for humans and AI agents: docs/04-TEAM-PROTOCOL.md §2.
+# Replace the four handles below with real GitHub usernames at kickoff (search/replace).
+# CODEOWNERS only auto-requests a review as a notification; reviews are NOT required to merge (see protocol).
+# Later rules win, so shared/contract files are listed last. CODEOWNERS does not support [brackets], so the [id] route segment is written as *.
+
+# ---- Lane A · Voice & Timing ----
+/components/voice.tsx                 @LANE_A
+/components/CaptureClient.tsx         @LANE_A
+/components/views/capture.vm.ts       @LANE_A
+/app/capture/                         @LANE_A
+/agents/                              @LANE_A
+/scripts/create-agents.ts             @LANE_A
+/app/api/scribe-token/                @LANE_A
+/app/api/agent-token/                 @LANE_A
+/app/voice-check/                     @LANE_A
+/lib/governor.ts                      @LANE_A
+/lib/curiosity.ts                     @LANE_A
+/lib/elevenlabs-sync.ts               @LANE_A
+/lib/voice-protocol.ts                @LANE_A
+
+# ---- Lane B · Eyes, Trust & Platform ----
+/components/useScreenPipeline.ts      @LANE_B
+/lib/framediff.ts                     @LANE_B
+/lib/redact.ts                        @LANE_B
+/lib/events.ts                        @LANE_B
+/lib/telemetry.ts                     @LANE_B
+/lib/store.ts                         @LANE_B
+/lib/export.ts                        @LANE_B
+/lib/autopilot.ts                     @LANE_B
+/app/api/vision/                      @LANE_B
+/app/api/sessions/route.ts            @LANE_B
+/app/api/sessions/*/route.ts       @LANE_B
+/app/api/sessions/*/clips/         @LANE_B
+/app/api/sessions/*/frames/        @LANE_B
+/app/api/export/                      @LANE_B
+/app/api/autopilot/                   @LANE_B
+/app/api/mcp/                         @LANE_B
+/app/api/health/                      @LANE_B
+/app/api/demo/                        @LANE_B
+/scripts/vision-eval.mjs              @LANE_B
+/scripts/seed-session.ts              @LANE_B
+/scripts/smoke.mjs                    @LANE_B
+/.github/                             @LANE_B
+/next.config.ts                       @LANE_B
+/package.json                         @LANE_B
+/package-lock.json                    @LANE_B
+/.env.example                         @LANE_B
+
+# ---- Lane C · Map & Teach Brain ----
+/lib/workmap.ts                       @LANE_C
+/lib/compile.ts                       @LANE_C
+/lib/teachback.ts                     @LANE_C
+/lib/matcher.ts                       @LANE_C
+/lib/metrics.ts                       @LANE_C
+/lib/erp.ts                           @LANE_C
+/lib/engines.test.ts                  @LANE_C
+/components/MapClient.tsx             @LANE_C
+/components/TeachClient.tsx           @LANE_C
+/components/views/map.vm.ts           @LANE_C
+/components/views/teach.vm.ts         @LANE_C
+/app/map/                             @LANE_C
+/app/teach/                           @LANE_C
+/app/api/compile/                     @LANE_C
+/app/api/teachback/                   @LANE_C
+/app/api/sessions/*/map/           @LANE_C
+/app/api/sessions/*/slot/          @LANE_C
+/app/api/sessions/*/confirm/       @LANE_C
+/app/api/teach/                       @LANE_C
+/app/api/erp/                         @LANE_C
+
+# ---- Lane D · Experience, Demo & Pitch ----
+/app/globals.css                      @LANE_D
+/app/layout.tsx                       @LANE_D
+/app/page.tsx                         @LANE_D
+/app/icon.svg                         @LANE_D
+/app/erp/                             @LANE_D
+/components/views/                    @LANE_D
+/components/ui/                       @LANE_D
+/components/WorkMapView.tsx           @LANE_D
+/components/Meter.tsx                 @LANE_D
+/components/TeachStart.tsx            @LANE_D
+/components/InvoiceForm.tsx           @LANE_D
+/components/ErpHeader.tsx             @LANE_D
+/lib/erp-model.ts                     @LANE_D
+/app/demo/                            @LANE_D
+/README.md                            @LANE_D
+/docs/05-DEMO-AND-SUBMISSION.md       @LANE_D
+/public/                              @LANE_D
+
+# view-model files are owned by the logic lane even though they live under /components/views/
+/components/views/capture.vm.ts       @LANE_A
+/components/views/map.vm.ts           @LANE_C
+/components/views/teach.vm.ts         @LANE_C
+
+# ---- Shared contracts: additive-only, announce in chat with "CONTRACT:" ----
+/docs/03-CONTRACTS.md                 @LANE_A @LANE_B @LANE_C @LANE_D
+/AGENTS.md                            @LANE_A @LANE_B @LANE_C @LANE_D

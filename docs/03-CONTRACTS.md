@@ -241,7 +241,7 @@ All routes are Next.js route handlers; `params` is a Promise in Next 16 (`const 
 | `POST /api/sessions/:id/confirm` | C | `{ confirmed, correction?, t? }` → `{ map, teachback, understanding, open, knowledge }` | yes locks + syncs tutor KB; correction patches |
 | `POST /api/compile` | C | `{ sessionId, llm?: boolean }` → `{ map, llm: boolean, note?, understanding, teachback }` | deterministic pass, then validated LLM refinement when a key is set |
 | `POST /api/teachback` | C | `{ sessionId }` → `{ text, sure: string[], unsure: string[] }` | generated from the map, ≤ 130 words |
-| `POST /api/vision` | B | `{ seq, image: dataURL, prevState?, t? }` → `{ seq, screen, state, uiActivity, piiRegions, confidence, model, latencyMs }` · 503 without key | one frame in, state out |
+| `POST /api/vision` | B | `{ seq, image }` → `{ seq, screen, state, banner, uiActivity, piiRegions, confidence, model, latencyMs }` · 503 with `mock: true` without key | one frame in, visible state out; details below |
 | `GET /api/scribe-token` | A | → `{ token \| null }` | single-use Scribe token |
 | `GET /api/erp/invoices?queue=` | C | → invoices | queues: `expert`, `newhire`, `autopilot` |
 | `GET/PATCH /api/erp/invoices/:id` | C | PATCH `{ costCenter?, route?, status?, assetNumber?, notes? }` → `{ invoice, state }` · **409 `SaveVerdict`** when the armed guard blocks | the authoritative save path |
@@ -251,6 +251,16 @@ All routes are Next.js route handlers; `params` is a Promise in Next 16 (`const 
 | `POST /api/autopilot` | B | `{ sessionId, apply? }` → `{ steps, remaining }` | runs the policy over the `autopilot` queue, halts where she would |
 
 `SaveVerdict` (`lib/matcher.ts`): `{ blocked: boolean; ruleId?; title?; quote?; who?; reason? }`. The guard enforces **only a confirmed map** and only learned rules.
+
+### Vision response and wire schema — `lib/vision-schema.ts` · Owner **B** · Consumers A, C, D
+
+- Request: nonnegative integer `seq`; `image` is nonempty JPEG base64, optionally prefixed with `data:image/jpeg;base64,` or `data:image/jpg;base64,`. The image string is bounded at `4 * 1024 * 1024` characters **before** prefix removal and stack-safe base64 validation. This is not a streaming HTTP-body limit or JPEG-content validation. Legacy `prevState` and `t` are ignored, not sent to the model.
+- HTTP 200: echoes `seq`; `screen` is `invoice_list | invoice_detail | confirm_dialog | other`; `banner` is `none | posted | blocked`; `uiActivity` is `typing | reading | navigating | idle`; `piiRegions` contains `{ x, y, w, h, kind }`; `confidence` is clamped to 0..1; `model` is the selected gateway slug and `latencyMs` measures generation/normalization time. PII coordinates are prompted as image fractions, not schema-bounded.
+- Provider `VisionWire` uses an explicit, nonrecursive object with no records, optional fields or numeric min/max constraints. Its 14 state fields are required but nullable: strings `invoice`, `supplier`, `entity`, `category`, `invoiceDate`, `costCenter`, `route`, `status`, `description`; numbers `amount`, `invoiceMonth`; booleans `hasAssetNumber`, `knownSupplier`, `hasPO`.
+- API `state` is the cleaned `InvoiceState`, not the nullable provider object: unread/null fields are omitted, false/zero preserved, invoice prefixes removed, category/route/status tokenized (`on_hold` → `hold`), and selected cost-center codes retain leading zeros. List/other screens return `{}` even if the model filled state fields. Previous state must not supply missing observations.
+- `banner: posted` means a visible successful saved/posted confirmation, never a Save button or an open dialog; `blocked` means held/not-posted. Consumers must not infer success from Cancel, a blocked banner or `approved` status alone. Full visual-save integration depends on pipeline [#33](https://github.com/Backpacked333/sorcerer-apprentice-/pull/33) and D's persistent Posted/status UI [#23](https://github.com/Backpacked333/sorcerer-apprentice-/issues/23); it is not live-verified.
+- Execution: AI SDK 7 `generateText` + `Output.object`, `timeout.totalMs: 8000`, `maxRetries: 0`, `maxOutputTokens: 500`; route `maxDuration: 30`. The provider receives a JPEG file part with raw base64, no data-URL prefix. Screenshot text is explicitly untrusted; masks must not be guessed through. These are implementation/prompt safeguards, not a claim of evaluated prompt-injection resistance or provider accuracy.
+- Errors: missing key is checked first and returns HTTP 503 `{ error: "AI_GATEWAY_API_KEY not set; use NEXT_PUBLIC_EVENT_SOURCE=dom", mock: true }` without a provider call. Invalid input with a configured key returns 400 `{ error: "invalid vision request" }`; a caught `TimeoutError` returns 504 `{ error: "vision timeout", seq }`; other generation errors return 502 `{ error: "vision unavailable", seq }`. Provider exception text/credentials are never returned. Mock 503 is not an observed frame; client shutdown/counters are supplied separately by #33.
 
 ---
 
@@ -274,8 +284,9 @@ Today: JSON files under `.data/{sessions,maps,clips}/` plus `.data/erp.json` and
 | `ELEVENLABS_API_KEY` | server (A) | Scribe tokens, agent creation, KB sync. Server-side only. |
 | `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | client (A) | empty → browser-speech fallback |
 | `ELEVENLABS_VOICE_ID`, `AGENT_LLM` | `create-agents.ts` (A) | voice and agent LLM |
-| `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile |
-| `VISION_MODEL`, `COMPILE_MODEL` | server (B, C) | gateway model slugs |
+| `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile; server-only. Missing key makes vision return 503 `mock: true`, without provider invocation. |
+| `VISION_MODEL` | server (B) | vision gateway slug; defaults to `anthropic/claude-haiku-4.5` when unset. No model bake-off or fallback/eval env contract is introduced by #28. |
+| `COMPILE_MODEL` | server (C) | compile gateway model slug; unchanged by the vision work |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |
 | `NEXT_PUBLIC_SILENCE_SECS` | client (A) | Expert-speech quiet period before a normal window may open; default `2.5` seconds. |
 | `NEXT_PUBLIC_STILL_SECS` | client (A) | Screen-still period before a normal window may open; default `2` seconds. |

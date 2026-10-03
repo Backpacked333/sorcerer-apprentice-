@@ -10,11 +10,11 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - WA-2/WA-3 pure output-gate and turn lifecycle reducer merged in PR #9 with full state/effect regression coverage.
 - WA-3 pure voice protocol is implemented with echo attribution, bounded commands, confirmation, safe tag builders, capture summaries, chunking and keyterms; merged in PR #12.
 - WA-11 knowledge sync now uploads SOP + debrief notes + tutor prompt, patches only the knowledge-base leaf, verifies agent configuration, rolls back on drift, removes only the superseded same-session document, and times out safely; live confirm remains pending.
+- WA-5 pure cadence engines merged in PR #17: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 outcome mapping, and the pure Capture loop.
 
 ## Done in the current PR (pending merge)
 
-- WA-5 pure cadence engines: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 window outcome mapping, and the pure Capture loop.
-- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the final rebase, `npm run typecheck` passed and `npm test` passed 168 tests across 13 files; audible behavior remains human-only below.
+- WA-5 Capture configuration wiring now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and includes all cadence, grace and chaining knobs. Pure parser coverage is complete; human tuning remains pending.
 
 ## Verified live by a human (who, when, what they did)
 

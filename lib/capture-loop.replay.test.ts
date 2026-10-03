@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { CaptureLoop, windowOutcome, type LoopSignals } from "./capture-loop";
-import { buildCandidates, CandidateQueue, newContext } from "./curiosity";
+import { buildCandidates, CandidateQueue, newContext, type Candidate } from "./curiosity";
 import { DEFAULT_GOVERNOR, DEMO_GOVERNOR, Governor } from "./governor";
 import type { ScreenEvent } from "./events";
 import type { TurnResult } from "./voice-turn";
+import { countsAsSpeech } from "./voice-protocol";
 
 const edit = (invoice: string, t: number, kind: "field_changed" | "route_changed" | "status_changed" = "field_changed"): ScreenEvent => ({
   id: `${kind}-${invoice}`,
@@ -42,6 +43,11 @@ const result = (partial: Partial<TurnResult>): TurnResult => ({
   ...partial,
 });
 
+function hearQuestion(loop: CaptureLoop, candidate: Candidate, openedAt: number): void {
+  loop.opened(candidate, openedAt);
+  loop.governor.markAsked(openedAt + 4);
+}
+
 describe("window outcome mapping", () => {
   it("maps verbatim answers and diagnostic tool fields", () => {
     expect(
@@ -78,11 +84,11 @@ describe("window outcome mapping", () => {
 });
 
 describe("capture cadence replay", () => {
-  it("asks at least three grounded questions including a guardrail and never opens on a red signal", () => {
+  it("replays red and green signals with three grounded windows, a guardrail and retro wording", () => {
     const governor = new Governor(DEMO_GOVERNOR);
     const queue = new CandidateQueue(90, 18);
     const loop = new CaptureLoop(governor, queue, { graceSecs: 18 });
-    const opened = [] as Array<{ invoice?: string; question: string }>;
+    const opened = [] as Array<{ invoice?: string; question: string; retro: boolean; followup: boolean }>;
     queue.add(buildCandidates(edit("9001", 10), newContext(), 10));
 
     for (const red of [
@@ -95,33 +101,43 @@ describe("capture cadence replay", () => {
       expect(loop.next(red).type).toBe("wait");
     }
 
-    const first = loop.next(signals(18));
-    expect(first).toMatchObject({ type: "open", followup: false, retro: false });
+    queue.expire(16, "9002");
+    const firstSignals = signals(18, "9002");
+    const first = loop.next(firstSignals);
+    expect(first).toMatchObject({ type: "open", followup: false, retro: true });
     if (first.type !== "open") throw new Error("expected first question");
-    opened.push(first.candidate);
-    loop.opened(first.candidate, 18);
+    opened.push({ ...first.candidate, retro: first.retro, followup: first.followup });
+    expect(first.candidate.questionRetro).toMatch(/^On invoice 9001 a moment ago,/);
+    expect(Object.values(governor.evaluate(firstSignals).lights).every(Boolean)).toBe(true);
+    hearQuestion(loop, first.candidate, 18);
     loop.closed({ candidate: first.candidate, outcome: "answered", heard: "I changed it for the current invoice.", now: 29 });
 
-    const chained = loop.next(signals(30.3));
+    const chained = loop.next(signals(30.3, "9002"));
     expect(chained).toMatchObject({ type: "open", followup: true, forced: false });
     if (chained.type !== "open") throw new Error("expected guardrail chain");
-    opened.push(chained.candidate);
+    opened.push({ ...chained.candidate, retro: chained.retro, followup: chained.followup });
     expect(chained.candidate.guardrail).toBe(true);
-    loop.opened(chained.candidate, 30.3);
+    const chainLights = governor.evaluate(signals(30.3, "9002")).lights;
+    expect(chainLights).toMatchObject({ silence: true, still: true, notTyping: true, notReading: true });
+    hearQuestion(loop, chained.candidate, 30.3);
     loop.closed({ candidate: chained.candidate, outcome: "answered", heard: "It depends on the case.", now: 41.3 });
 
     queue.add(buildCandidates(edit("9002", 48, "route_changed"), newContext(), 48));
+    queue.fillNarration("Invoice 9002 routes because the policy requires review.", 52, "9002");
     queue.add(buildCandidates(edit("9003", 60, "status_changed"), newContext(), 60));
     const third = loop.next(signals(68, "9003"));
     expect(third.type).toBe("open");
     if (third.type !== "open") throw new Error("expected third question");
-    opened.push(third.candidate);
-    loop.opened(third.candidate, 68);
+    opened.push({ ...third.candidate, retro: third.retro, followup: third.followup });
+    expect(Object.values(governor.evaluate(signals(68, "9003")).lights).every(Boolean)).toBe(true);
+    hearQuestion(loop, third.candidate, 68);
     loop.closed({ candidate: third.candidate, outcome: "answered", heard: "The review policy applies here.", now: 79 });
 
     expect(queue.windowsAsked).toBeGreaterThanOrEqual(3);
     expect(queue.guardrailAsked).toBe(true);
     expect(opened.every((candidate) => candidate.invoice && candidate.question.includes(candidate.invoice))).toBe(true);
+    expect(opened.every((candidate) => !candidate.retro || candidate.question.includes(candidate.invoice!))).toBe(true);
+    expect(loop.reasonHeard).toEqual([{ stepRef: "9002:route_changed", quote: "Invoice 9002 routes because the policy requires review.", t: 52 }]);
   });
 
   it("uses retro wording for an off-screen invoice during grace", () => {
@@ -133,14 +149,85 @@ describe("capture cadence replay", () => {
     if (action.type === "open") expect(action.candidate.questionRetro).toMatch(/^On invoice 9001 a moment ago,/);
   });
 
+  it("asks three windows after a talkative narrated reason and retains the evidence timestamp", () => {
+    const governor = new Governor({ ...DEMO_GOVERNOR, cooldownSecs: 12 });
+    const queue = new CandidateQueue(90, 18);
+    const loop = new CaptureLoop(governor, queue, { graceSecs: 18 });
+    queue.add(buildCandidates(edit("9001", 10), newContext(), 10));
+    const narratedWhy = queue.items.find((candidate) => candidate.invoice === "9001" && candidate.kind === "why")!;
+    expect(queue.fillNarration("Invoice 9001 changed because the policy requires review.", 14, "9001")).toContain(narratedWhy);
+
+    const first = loop.next(signals(18));
+    if (first.type !== "open") throw new Error("expected narrated sibling");
+    expect(first.candidate.id).not.toBe(narratedWhy.id);
+    hearQuestion(loop, first.candidate, 18);
+    loop.closed({ candidate: first.candidate, outcome: "answered", heard: "It depends on the situation.", now: 29 });
+
+    queue.add(buildCandidates(edit("9002", 32, "route_changed"), newContext(), 32));
+    const second = loop.next(signals(42, "9002"));
+    if (second.type !== "open") throw new Error("expected second window");
+    hearQuestion(loop, second.candidate, 42);
+    loop.closed({ candidate: second.candidate, outcome: "answered", heard: "I route it for a neutral reason.", now: 53 });
+
+    const third = loop.next(signals(54.3, "9002"));
+    if (third.type !== "open") throw new Error("expected chained third window");
+    hearQuestion(loop, third.candidate, 54.3);
+    loop.closed({ candidate: third.candidate, outcome: "answered", heard: "There is no fixed boundary.", now: 65.3 });
+
+    expect(queue.windowsAsked).toBeGreaterThanOrEqual(3);
+    expect(queue.guardrailAsked).toBe(true);
+    expect(loop.reasonHeard).toEqual([{ stepRef: "9001:costCenter", quote: "Invoice 9001 changed because the policy requires review.", t: 14 }]);
+  });
+
+  it("ignores one-word noise partials and still reaches the demo cadence", () => {
+    const governor = new Governor({ ...DEMO_GOVERNOR, cooldownSecs: 12 });
+    const queue = new CandidateQueue(90, 18);
+    const loop = new CaptureLoop(governor, queue, { graceSecs: 18 });
+    let previousPartial = "";
+    let lastHumanSpeechAt = Number.NEGATIVE_INFINITY;
+    for (let at = 2; at <= 18; at += 2) {
+      const partial = "uh";
+      if (countsAsSpeech(previousPartial, partial)) lastHumanSpeechAt = at;
+      previousPartial = partial;
+    }
+    expect(lastHumanSpeechAt).toBe(Number.NEGATIVE_INFINITY);
+
+    queue.add(buildCandidates(edit("9001", 10), newContext(), 10));
+    const first = loop.next(signals(18, "9001", { lastSpeechAt: lastHumanSpeechAt }));
+    if (first.type !== "open") throw new Error("expected first noise-tolerant window");
+    hearQuestion(loop, first.candidate, 18);
+    loop.closed({ candidate: first.candidate, outcome: "answered", heard: "A neutral reason for this choice.", now: 29 });
+    const chain = loop.next(signals(30.3, "9001", { lastSpeechAt: lastHumanSpeechAt }));
+    if (chain.type !== "open") throw new Error("expected noise-tolerant chain");
+    hearQuestion(loop, chain.candidate, 30.3);
+    loop.closed({ candidate: chain.candidate, outcome: "answered", heard: "It depends on the situation.", now: 41.3 });
+    queue.add(buildCandidates(edit("9002", 44, "route_changed"), newContext(), 44));
+    const third = loop.next(signals(54, "9002", { lastSpeechAt: lastHumanSpeechAt }));
+    if (third.type !== "open") throw new Error("expected third noise-tolerant window");
+    hearQuestion(loop, third.candidate, 54);
+    loop.closed({ candidate: third.candidate, outcome: "answered", heard: "A neutral routing reason.", now: 65 });
+    expect(queue.windowsAsked).toBeGreaterThanOrEqual(3);
+    expect(queue.guardrailAsked).toBe(true);
+  });
+
   it("records a narrated reason without counting it as a window", () => {
     const queue = new CandidateQueue(90, 18);
     const loop = new CaptureLoop(new Governor(DEMO_GOVERNOR), queue, { graceSecs: 18 });
     queue.add(buildCandidates(edit("9001", 10), newContext(), 10));
-    const why = queue.items.find((candidate) => candidate.kind === "why")!;
-    queue.markFilled(why.id, "narration", "Invoice 9001 changed because the policy requires it.");
-    expect(loop.reasonHeard).toEqual([{ stepRef: "9001:costCenter", quote: "Invoice 9001 changed because the policy requires it.", t: 10 }]);
+    queue.fillNarration("Invoice 9001 changed because the policy requires it.", 14, "9001");
+    expect(loop.reasonHeard).toEqual([{ stepRef: "9001:costCenter", quote: "Invoice 9001 changed because the policy requires it.", t: 14 }]);
     expect(queue.windowsAsked).toBe(0);
+  });
+
+  it("leaves governor ask accounting to the listening phase", () => {
+    const governor = new Governor(DEMO_GOVERNOR);
+    const queue = new CandidateQueue(90, 18);
+    const loop = new CaptureLoop(governor, queue, { graceSecs: 18 });
+    queue.add(buildCandidates(edit("9001", 10), newContext(), 10));
+    const why = queue.items.find((candidate) => candidate.kind === "why")!;
+    hearQuestion(loop, why, 18);
+    loop.closed({ candidate: why, outcome: "answered", heard: "Invoice 9001 changed for a neutral reason.", now: 29 });
+    expect(governor.questionsAsked).toBe(1);
   });
 
   it("does not chain a sibling already covered by the answer and orders deferred questions", () => {
@@ -148,7 +235,7 @@ describe("capture cadence replay", () => {
     const loop = new CaptureLoop(new Governor(DEMO_GOVERNOR), queue, { graceSecs: 18 });
     queue.add(buildCandidates(edit("9001", 10, "status_changed"), newContext(), 10));
     const why = queue.items.find((candidate) => candidate.kind === "why")!;
-    loop.opened(why, 18);
+    hearQuestion(loop, why, 18);
     loop.closed({ candidate: why, outcome: "answered", heard: "Only the reviewer decides and I ask them first.", now: 29 });
     expect(queue.items.filter((candidate) => candidate.parentId === why.id && candidate.status === "filled").map((candidate) => candidate.kind)).toEqual(
       expect.arrayContaining(["limit", "counterfactual", "who", "stop"]),
@@ -169,7 +256,7 @@ describe("capture cadence replay", () => {
       queue.add(buildCandidates(edit(invoice, at), newContext(), at));
       const action = loop.next(signals(at + 8, invoice));
       if (action.type === "open") {
-        loop.opened(action.candidate, at + 8);
+        hearQuestion(loop, action.candidate, at + 8);
         loop.closed({ candidate: action.candidate, outcome: "answered", heard: "A neutral reason for this choice.", now: at + 19 });
       }
       queue.expire(at + 20, `next-${invoice}`);

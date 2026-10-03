@@ -11,6 +11,11 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - WA-3 pure voice protocol is implemented with echo attribution, bounded commands, confirmation, safe tag builders, capture summaries, chunking and keyterms; merged in PR #12.
 - WA-11 knowledge sync now uploads SOP + debrief notes + tutor prompt, patches only the knowledge-base leaf, verifies agent configuration, rolls back on drift, removes only the superseded same-session document, and times out safely; live confirm remains pending.
 
+## Done in the current PR (pending merge)
+
+- WA-5 pure cadence engines: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 window outcome mapping, and the pure Capture loop.
+- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise, and the legacy-default cadence defect. `npm run typecheck` and the full test suite are required again after the final rebase.
+
 ## Verified live by a human (who, when, what they did)
 
 - None yet.
@@ -23,6 +28,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - Turn lifecycle audio behavior: after `voice.tsx` integration, run HT-2, HT-3 and HT-4; the pure reducer cannot verify interruption feel, echo on speakers, or actual mic closure.
 - WA-3 real audio attribution remains unverified: HT-4 must cover speakers, headphones, barge-in, late echo and clip playback; deterministic protocol tests cannot judge microphone echo or interruption feel.
 - WA-11 live tutor attachment remains unverified: after a key and explicit shared-agent approval, confirm one map and verify the document appears within 10 seconds without changing the prompt hash, LLM, or tool ids.
+- WA-5 audible cadence remains unverified: run HT-6 variants A (brisk), B (talkative) and C (noisy) with a human listener; deterministic replay cannot judge interruption, echo, phrasing or feel.
 
 ## Blocked on (lane, handshake id, what exactly)
 

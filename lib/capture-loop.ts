@@ -175,7 +175,6 @@ export class CaptureLoop {
       return;
     }
 
-    this.governor.markAsked(this.governor.window?.openedAt ?? now);
     if (outcome === "answered" && heard.trim()) {
       this.queue.markFilled(candidate.id, "window", heard);
       this.governor.markAnswered(now);
@@ -223,8 +222,8 @@ export class CaptureLoop {
 
   get reasonHeard(): { stepRef: string; quote: string; t: number }[] {
     return this.queue.items
-      .filter((candidate) => candidate.filledBy === "narration" && candidate.heardQuote)
-      .map((candidate) => ({ stepRef: candidate.stepRef, quote: candidate.heardQuote!, t: candidate.createdAt }));
+      .filter((candidate) => candidate.filledBy === "narration" && candidate.heardQuote && candidate.heardAt !== undefined)
+      .map((candidate) => ({ stepRef: candidate.stepRef, quote: candidate.heardQuote!, t: candidate.heardAt! }));
   }
 
   get chainedCount(): number {

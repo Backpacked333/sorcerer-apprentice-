@@ -28,6 +28,7 @@ export interface Candidate {
   retryAfter?: number;
   filledBy?: "window" | "narration" | "answer";
   heardQuote?: string;
+  heardAt?: number;
   userDeferred?: boolean;
 }
 
@@ -238,19 +239,32 @@ export class CandidateQueue {
     const c = this.items.find((x) => x.id === id);
     if (c) c.status = "asked";
   }
-  markFilled(id: string, filledBy: Candidate["filledBy"] = "window", heardQuote?: string) {
+  markFilled(id: string, filledBy: Candidate["filledBy"] = "window", heardQuote?: string, heardAt?: number) {
     const c = this.items.find((x) => x.id === id);
     if (c) {
       c.status = "filled";
       c.filledBy = filledBy;
       if (heardQuote !== undefined) c.heardQuote = heardQuote;
+      if (heardAt !== undefined) c.heardAt = heardAt;
     }
   }
   /** Something answered the question without a window (narration). */
-  fillByStep(stepRef: string, kind: CandidateKind = "why", filledBy: Candidate["filledBy"] = "narration", heardQuote?: string) {
+  fillByStep(stepRef: string, kind: CandidateKind = "why", filledBy: Candidate["filledBy"] = "narration", heardQuote?: string, heardAt?: number) {
     for (const c of this.items) {
-      if (c.stepRef === stepRef && c.kind === kind && c.status === "queued") this.markFilled(c.id, filledBy, heardQuote);
+      if (c.stepRef === stepRef && c.kind === kind && c.status === "queued") this.markFilled(c.id, filledBy, heardQuote, heardAt);
     }
+  }
+  /** Attribute a narration segment to matching live whys and retain its actual segment time. */
+  fillNarration(text: string, at: number, currentInvoice?: string): Candidate[] {
+    this.expire(at, currentInvoice);
+    const filled: Candidate[] = [];
+    for (const candidate of this.items) {
+      if (candidate.status !== "queued" || candidate.kind !== "why") continue;
+      if (!narrationMatch(text, candidate, at).fills) continue;
+      this.markFilled(candidate.id, "narration", text, at);
+      filled.push(candidate);
+    }
+    return filled;
   }
   /** Everything still unanswered goes to the debrief. */
   drainToDebrief(): Candidate[] {
@@ -282,14 +296,17 @@ export interface NarrationMatch {
 
 export function narrationMatch(text: string, c: Candidate, at?: number): NarrationMatch {
   const t = text.toLowerCase();
+  const explicitInvoices = Array.from(t.matchAll(/\binvoice\s+([\p{L}-]*\d[\p{L}\p{N}-]*)/giu), (match) => match[1].toLowerCase());
+  const conflictingInvoice = Boolean(c.invoice && explicitInvoices.some((invoice) => invoice !== c.invoice!.toLowerCase()));
   const invoice = c.invoice && new RegExp(`\\b${escapeRegExp(c.invoice.toLowerCase())}\\b`).test(t);
-  const alias = (c.aliases ?? []).find((value) => new RegExp(`\\b${escapeRegExp(value)}\\b`, "i").test(t));
   const field = c.field ? labelField(c.field).toLowerCase() : "";
+  const alias = (c.aliases ?? []).find((value) => value !== field && new RegExp(`\\b${escapeRegExp(value)}\\b`, "i").test(t));
   const fieldTarget = Boolean(field && field !== "field" && new RegExp(`\\b${escapeRegExp(field)}\\b`, "i").test(t));
   const target = invoice ? "invoice" : alias ? "value" : fieldTarget ? "field" : DEICTIC.test(t) ? "deictic" : null;
   const cue = t.match(REASON_CUES)?.[0];
   const timely = at === undefined || (at >= c.createdAt && at - c.createdAt <= 15);
-  const fills = c.kind === "why" && t.trim().split(/\s+/).length >= 6 && target !== null && Boolean(cue) && timely;
+  const ambiguousOffscreen = c.leftAt !== undefined && (target === "field" || target === "deictic");
+  const fills = c.kind === "why" && !conflictingInvoice && !ambiguousOffscreen && t.trim().split(/\s+/).length >= 6 && target !== null && Boolean(cue) && timely;
   return { fills, target, ...(cue ? { cue } : {}) };
 }
 

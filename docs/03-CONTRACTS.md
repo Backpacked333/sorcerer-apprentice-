@@ -158,15 +158,17 @@ The agents speak **only** when a message starts with a tag; otherwise they call 
 
 | Tag | Sent by | Payload | Agent does | Then calls |
 |---|---|---|---|---|
-| `[ASK]` | Capture (A) | `<question> \| stepRef=<ref> \| on screen: <last 3 events>` | asks exactly that, one warm sentence, keeps numbers/codes | `log_answer` |
+| `[ASK]` | Capture (A) | `<question> \| stepRef=<ref> \| kind=<kind> \| on screen: <last 3 events> \| labels: <code=label; …> \| said: "<last expert sentence>" \| retro=<0\|1> \| followup=<0\|1> \| phrase=<natural\|exact>` | asks once in one natural sentence (≤ 22 words), preserving numbers/codes; `phrase=exact` is verbatim; `retro=1` names the item as “a moment ago” | `log_answer` |
 | `[DEBRIEF]` | Map (C) | `slot=<slotId> <question>` | asks exactly that | `log_answer` (stepRef = slot id) |
 | `[TEACHBACK]` | Map (C) | `<teach-back text>` (or `Understood. <changed sentences> Is that right now?`) | reads it as its own understanding | `confirm_teachback` |
 | `[CONFIRMED]` | Map (C) | `<instruction>` | one short thank-you sentence, stops | — |
-| `[PREDICT]` | Teach (C) | `<question> \| expert's words: "<quote>" \| rule: <title>` | asks, waits, judges the answer | `record_prediction` |
-| `[INTERVENE]` | Teach (C) | `<message> \| expert's words: "<quote>" \| stepId=<id> \| rule: <title>` | says the message, waits for the learner's answer, then quotes her | `show_replay` |
-| `[STOP]` | Teach (C) | same shape as INTERVENE | says it, waits, checks who they would ask | `record_mastery` |
+| `[PREDICT]` | Teach (C) | `<question> \| expert's words: "<quote>" \| ruleId=<id> \| rule: <title>` | asks, waits, judges the answer without revealing the quote first | `record_prediction` |
+| `[INTERVENE]` | Teach (C) | `<message> \| expert's words: "<quote>" \| stepId=<id> \| ruleId=<id> \| rule: <title> \| clip=<yes\|no>` | says the message, waits, then teaches with either the quote or the app-played clip | `show_replay` (optional) |
+| `[STOP]` | Teach (C) | `<message> \| expert's words: "<quote>" \| ruleId=<id> \| rule: <title> \| who=<name or empty> \| clip=<yes\|no>` | says it, waits, checks who they would ask without inventing a missing person | `record_mastery` |
 | `[PRAISE]` | Teach (C) | `<message> \| expert's words: "<quote>"` | one short sentence, no wait | — |
-| `[NOVEL]` | Teach (C) | `<message>` | says it, will not guess | `flag_for_expert` |
+| `[NOVEL_COVERED]` | Teach (C) | `<message> \| expert's words: "<quote>" \| clip=<yes\|no>` | says the message and teaches only from the expert's stated words | — |
+| `[NOVEL_FLAG]` | Teach (C) | `<message>` | says it will not guess; the app has already flagged the case | — |
+| `[NOVEL]` | Teach (C) | legacy form; covered when it carries `expert's words`, otherwise flagged | follows the corresponding covered/flagged behavior | — |
 
 Screen context (never triggers speech): `sendContext("[SCREEN t=<secs>s] <describeEvent(e)>")`.
 
@@ -182,7 +184,7 @@ Application-injected messages (`[TAG] …`) are **application control, never exp
 | `end_task` | interviewer | — | `CaptureClient` (A) | ends capture → `/map/<id>` |
 | `show_replay` | tutor | `stepId?: string, rule?: string` | `TeachClient` (C) | opens the replay panel |
 | `record_prediction` | tutor | `ruleId?: string, rule?: string, correct: boolean` | `TeachClient` (C) | mastery ledger |
-| `record_mastery` | tutor | `ruleId: string, outcome: "escalation_recognized"\|"missed"` | `TeachClient` (C) | mastery ledger |
+| `record_mastery` | tutor | `ruleId?: string, outcome: "escalation_recognized"\|"missed"` | `TeachClient` (C) | mastery ledger; `ruleId` may be absent when the tag has none |
 | `flag_for_expert` | tutor | `context: string` | `TeachClient` (C) | adds a `novel` slot to the expert's map |
 | `end_session` | tutor | — | `TeachClient` (C) | outcome card |
 

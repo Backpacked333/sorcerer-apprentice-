@@ -42,6 +42,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
 | `lib/events.contract.test.ts`, `lib/store.fs.test.ts`, `lib/workspace.ts` | **B** | WB-4 event/hello and filesystem regressions; local-only workspace resolver stub |
 | `lib/redact.ts` | **B** | privacy |
+| `lib/pii-masks.ts`, `lib/pii-masks.test.ts`, `lib/redact.privacy.test.ts` | **B** | P-24 source-scoped DOM rectangles, crop projection, pre-encoding masks and text privacy regressions |
 | `lib/store.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |

@@ -42,4 +42,12 @@ describe("text privacy without destroying invoice evidence", () => {
     const card = "4000 0000 0000 0000 006";
     expect(redactText(card)).toEqual({ text: "[card]", entities: [{ kind: "card", original: card }] });
   });
+  it.each(["+1 2125550199", "+49 711123456", "+44 2079460958", "+1\u00a02125550199", "+49\u00a0711123456", "+44\u00a02079460958"])("masks contiguous national number %s without swallowing business values", (phone) => {
+    for (const suffix of ["", " 123", " 4471 4472 4473", "\u00a0123\u00a00400\u00a04120"]) {
+      expect(redactText(`${phone}${suffix}`)).toEqual({ text: `[phone]${suffix}`, entities: [{ kind: "phone", original: phone }] });
+    }
+  });
+  it.each(["ref+1 2125550199", "+1 2125550199x", "+1 123456", "+123 2125550199123"])("keeps international phone boundaries: %s", (text) => {
+    expect(redactText(text)).toEqual({ text, entities: [] });
+  });
 });

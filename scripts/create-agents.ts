@@ -101,17 +101,23 @@ function toolConfig(tool: ToolDef): ElevenLabs.ClientToolConfigInput & { type: "
 
 async function listAllTools() {
   const result: ElevenLabs.ToolResponseModel[] = [];
+  const seenCursors = new Set<string>();
   let cursor: string | undefined;
   do {
     const page = await client.conversationalAi.tools.list({ pageSize: 100, ...(cursor ? { cursor } : {}) });
     result.push(...page.tools);
-    cursor = page.hasMore ? page.nextCursor : undefined;
+    if (!page.hasMore) break;
+    const next = page.nextCursor;
+    if (!next || next === cursor || seenCursors.has(next)) {
+      throw new Error("ElevenLabs returned malformed or repeated pagination while listing tools; no changes were made.");
+    }
+    seenCursors.add(next);
+    cursor = next;
   } while (cursor);
   return result;
 }
 
-async function syncTools() {
-  const existing = await listAllTools();
+async function syncTools(existing: ElevenLabs.ToolResponseModel[]) {
   const byName = new Map<string, ElevenLabs.ToolResponseModel>();
   for (const tool of existing) {
     if (tool.toolConfig.type === "client") byName.set(tool.toolConfig.name, tool);
@@ -205,7 +211,10 @@ function isPrivacyValidationError(error: unknown) {
 async function writeAgent(
   id: string | undefined,
   body: AgentBody,
-): Promise<{ id: string; privacy: "recordVoice=false, retentionDays=7" | "not applied" }> {
+): Promise<{
+  id: string;
+  privacy: "recordVoice=false, retentionDays=7" | "recordVoice=false" | "not applied";
+}> {
   const write = async (request: AgentBody) => {
     if (id) {
       const response = await client.conversationalAi.agents.update(id, request);
@@ -219,12 +228,22 @@ async function writeAgent(
     return { id: await write(body), privacy: "recordVoice=false, retentionDays=7" };
   } catch (error) {
     if (!isPrivacyValidationError(error)) throw error;
-    const withoutPrivacy = {
+    const recordVoiceOnly: AgentBody = {
       ...body,
-      platformSettings: { ...body.platformSettings, privacy: undefined },
+      platformSettings: { ...body.platformSettings, privacy: { recordVoice: false } },
     };
-    console.warn(`${body.name ?? "Agent"}: privacy settings rejected by the API; continuing without applying them.`);
-    return { id: await write(withoutPrivacy), privacy: "not applied" };
+    console.warn(`${body.name ?? "Agent"}: privacy configuration was rejected; retrying with recordVoice=false only.`);
+    try {
+      return { id: await write(recordVoiceOnly), privacy: "recordVoice=false" };
+    } catch (recordVoiceError) {
+      if (!isPrivacyValidationError(recordVoiceError)) throw recordVoiceError;
+      const withoutPrivacy: AgentBody = {
+        ...body,
+        platformSettings: { ...body.platformSettings, privacy: undefined },
+      };
+      console.warn(`${body.name ?? "Agent"}: recordVoice-only privacy was rejected; continuing without privacy settings.`);
+      return { id: await write(withoutPrivacy), privacy: "not applied" };
+    }
   }
 }
 
@@ -232,6 +251,8 @@ async function findAgentId(name: string, envId: string) {
   if (!FORCE_NEW && process.env[envId]) return process.env[envId];
   if (FORCE_NEW) return undefined;
 
+  const exactMatches: ElevenLabs.AgentSummaryResponseModel[] = [];
+  const seenCursors = new Set<string>();
   let cursor: string | undefined;
   do {
     const page = await client.conversationalAi.agents.list({
@@ -239,11 +260,22 @@ async function findAgentId(name: string, envId: string) {
       pageSize: 100,
       ...(cursor ? { cursor } : {}),
     });
-    const exact = page.agents.find((agent) => agent.name === name);
-    if (exact) return exact.agentId;
-    cursor = page.hasMore ? page.nextCursor : undefined;
+    exactMatches.push(...page.agents.filter((agent) => agent.name === name));
+    if (!page.hasMore) break;
+    const next = page.nextCursor;
+    if (!next || next === cursor || seenCursors.has(next)) {
+      throw new Error(`ElevenLabs returned malformed or repeated pagination while finding ${name}; no changes were made.`);
+    }
+    seenCursors.add(next);
+    cursor = next;
   } while (cursor);
-  return undefined;
+
+  if (exactMatches.length > 1) {
+    throw new Error(
+      `Found ${exactMatches.length} agents named ${name}. Set ${envId} to the intended agent id and run again. No changes were made.`,
+    );
+  }
+  return exactMatches[0]?.agentId;
 }
 
 async function resolveAgent(role: Role) {
@@ -293,14 +325,26 @@ async function main() {
     return;
   }
 
-  const toolIds = await syncTools();
+  // Complete every paginated lookup and existing-agent read before the first mutation.
+  const existingTools = await listAllTools();
+  const existingIds = {} as Record<Role, string | undefined>;
+  const existingAgents = {} as Record<Role, ElevenLabs.GetAgentResponseModel | undefined>;
+  for (const role of Object.keys(ROLES) as Role[]) {
+    const config = ROLES[role];
+    existingIds[role] = await findAgentId(config.name, config.envId);
+    existingAgents[role] = existingIds[role]
+      ? await client.conversationalAi.agents.get(existingIds[role])
+      : undefined;
+  }
+
+  const toolIds = await syncTools(existingTools);
   const ids = {} as Record<Role, string>;
   const privacy = {} as Record<Role, string>;
 
   for (const role of Object.keys(ROLES) as Role[]) {
     const config = ROLES[role];
-    const existingId = await findAgentId(config.name, config.envId);
-    const existing = existingId ? await client.conversationalAi.agents.get(existingId) : undefined;
+    const existingId = existingIds[role];
+    const existing = existingAgents[role];
     const knowledgeBase = existing?.conversationConfig.agent?.prompt?.knowledgeBase;
     const result = await writeAgent(existingId, buildBody(role, toolIds[role], knowledgeBase));
     ids[role] = result.id;

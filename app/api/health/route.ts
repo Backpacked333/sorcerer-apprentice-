@@ -6,8 +6,10 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   let present = false;
   try {
-    const records = await Promise.all(["demo_sabine", "demo_sabine_confirmed"]
-      .flatMap((id) => [getSession(id), getMap(id)]));
+    const records = await Promise.all(["demo_sabine", "demo_sabine_confirmed"].map(async (id) => {
+      const [session, map] = await Promise.all([getSession(id), getMap(id)]);
+      return session?.id === id && map?.sessionId === id && (id !== "demo_sabine_confirmed" || !!map.confirmedAt);
+    }));
     present = records.every(Boolean);
   } catch {
     // Readiness fails closed; filesystem errors must not expose server paths.

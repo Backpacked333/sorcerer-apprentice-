@@ -77,22 +77,28 @@ function buildSession(id: string): SessionLog {
 }
 
 export async function seedDemo({ ifMissing = false }: { ifMissing?: boolean } = {}) {
+  const existing = ifMissing ? await Promise.all(["demo_sabine", "demo_sabine_confirmed"].map(async (id) => {
+    const [session, map] = await Promise.all([getSession(id), getMap(id)]);
+    if (!!session !== !!map) throw new Error(`Incomplete sample: ${id}`);
+    if ((session && session.id !== id) || (map && map.sessionId !== id)) throw new Error(`Invalid sample: ${id}`);
+    return { session, map };
+  })) : undefined;
   if (!ifMissing) {
     await disarmTeachGuard();
     await resetErp();
   }
-  const existingOpen = ifMissing ? await getSession("demo_sabine") : undefined;
+  const existingOpen = existing?.[0].session;
   const open = existingOpen ?? buildSession("demo_sabine");
   if (!existingOpen) await saveSession(open);
-  const existingMap = ifMissing ? await getMap(open.id) : undefined;
+  const existingMap = existing?.[0].map;
   const map = existingMap ?? compileDeterministic(open);
   if (!existingMap) await saveMap(map);
   console.log(`demo_sabine: ${map.steps.length} steps, ${map.steps.filter((s) => s.judgment).length} judgment calls, ${map.rules.length} rules, ${openSlots(map).length} open slots`);
 
-  const existingDone = ifMissing ? await getSession("demo_sabine_confirmed") : undefined;
+  const existingDone = existing?.[1].session;
   const done = existingDone ?? buildSession("demo_sabine_confirmed");
   if (!existingDone) await saveSession(done);
-  const existingConfirmed = ifMissing ? await getMap(done.id) : undefined;
+  const existingConfirmed = existing?.[1].map;
   if (!existingConfirmed) {
     const m2 = compileDeterministic(done);
     // the debrief, as the judges' script runs it

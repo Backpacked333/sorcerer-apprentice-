@@ -46,6 +46,17 @@ describe("non-destructive boot seed", () => {
     expect(resetErp).not.toHaveBeenCalled();
   });
 
+  it.each(["session", "map"])("refuses a partial sample with only its %s", async (existing) => {
+    const id = "demo_sabine_confirmed";
+    const session = emptySession(id, "capture", "expert-edited", "Tester");
+    if (existing === "session") vi.mocked(getSession).mockImplementation(async (key) => key === id ? session : undefined);
+    else vi.mocked(getMap).mockImplementation(async (key) => key === id ? compileDeterministic(session) : undefined);
+    await expect(seedDemo({ ifMissing: true })).rejects.toThrow("Incomplete sample");
+    expect(saveSession).not.toHaveBeenCalled();
+    expect(saveMap).not.toHaveBeenCalled();
+    expect(resetErp).not.toHaveBeenCalled();
+  });
+
   it("only resets ERP and disarms guards on an explicit reset", async () => {
     await seedDemo();
     expect(resetErp).toHaveBeenCalledOnce();

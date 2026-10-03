@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("./store", () => ({ getSession: vi.fn(), getMap: vi.fn() }));
 import { getMap, getSession } from "./store";
 import { GET } from "../app/api/health/route";
+import { emptySession } from "./events";
+import { emptyMap } from "./workmap";
 
 describe("health without credentials disclosure", () => {
   beforeEach(() => { vi.resetAllMocks(); vi.unstubAllEnvs(); });
@@ -9,8 +11,8 @@ describe("health without credentials disclosure", () => {
     vi.stubEnv("ELEVENLABS_API_KEY", "test-not-a-real-key");
     vi.stubEnv("AI_GATEWAY_API_KEY", "test-not-a-real-gateway-key");
     vi.stubEnv("NEXT_PUBLIC_INTERVIEWER_AGENT_ID", "private-test-agent");
-    vi.mocked(getSession).mockResolvedValue({} as never);
-    vi.mocked(getMap).mockResolvedValue({} as never);
+    vi.mocked(getSession).mockImplementation(async (id) => emptySession(id, "capture", "sample", "Tester"));
+    vi.mocked(getMap).mockImplementation(async (id) => ({ ...emptyMap(id, "sample", "Tester"), confirmedAt: 1 }));
     const response = await GET();
     const body = await response.json();
     expect(response.status).toBe(200);
@@ -24,5 +26,12 @@ describe("health without credentials disclosure", () => {
     const response = await GET();
     expect(response.status).toBe(503);
     expect(await response.text()).not.toContain("private storage error");
+  });
+  it("fails readiness when the Teach sample is not confirmed or has mismatched identity", async () => {
+    vi.mocked(getSession).mockImplementation(async (id) => emptySession(id, "capture", "sample", "Tester"));
+    vi.mocked(getMap).mockImplementation(async (id) => emptyMap(id, "sample", "Tester"));
+    expect((await GET()).status).toBe(503);
+    vi.mocked(getMap).mockImplementation(async () => ({ ...emptyMap("wrong", "sample", "Tester"), confirmedAt: 1 }));
+    expect((await GET()).status).toBe(503);
   });
 });

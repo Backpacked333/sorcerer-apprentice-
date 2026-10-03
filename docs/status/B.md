@@ -4,9 +4,15 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Done and merged (WP ids)
 
+None from this PR yet.
+
+## Prepared (not merged)
+
 - PR #34 prepared, not merged (N2): isolated production smoke gate, credential/dotenv exclusion, owned-server marker, console assertions and cancellation-safe cleanup. Branch typecheck/198 tests and independent diff review passed. Clean local integration: 236 tests and two smoke runs passed; deliberate 409→200 failed correctly; SIGTERM removed data and released the port.
 
 ## Verified live by a human (who, when, what they did)
+
+None reported; all results below are automated.
 
 ## Not verified yet (and the script to verify)
 
@@ -17,5 +23,9 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - Specific merge approval and landing #29 → #30 → #27. Install matching Chromium with `npx playwright install chromium --only-shell`. No lint script is configured; typecheck, tests and production build are the available code gates.
 
 ## Next 3 things
+
+- Obtain specific merge approval; land dependencies in order.
+- Re-run the keyless gate on landed main.
+- Complete the live Railway and human browser/audio checks before claiming readiness.
 
 ## Risks I see for the demo

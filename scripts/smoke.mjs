@@ -4,47 +4,69 @@
  */
 import { chromium } from "playwright";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
+import { isolatedProject, expectedGuardConsole, cleanupSmoke } from "../lib/smoke-runtime.mjs";
 
 const BASE = "http://localhost:3077";
 const OUT = process.env.OUT ?? "/tmp/tacit-shots";
 mkdirSync(OUT, { recursive: true });
 const shot = (page, name) => page.screenshot({ path: `${OUT}/${name}.png`, fullPage: false });
-const dataDir = mkdtempSync(join(tmpdir(), "tacit-smoke-"));
-const projectDir = process.cwd();
-const next = resolve("node_modules/next/dist/bin/next");
+const root = mkdtempSync(join(tmpdir(), "tacit-smoke-"));
+const dataDir = join(root, "data");
+mkdirSync(dataDir);
+let projectDir;
+const children = new Set();
 const env = {
-  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|AGENT_ID/.test(key))),
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !/KEY|TOKEN|AGENT_ID/i.test(key))),
   ELEVENLABS_API_KEY: "", AI_GATEWAY_API_KEY: "", VERCEL_OIDC_TOKEN: "",
   NEXT_PUBLIC_INTERVIEWER_AGENT_ID: "", NEXT_PUBLIC_TUTOR_AGENT_ID: "",
   NEXT_PUBLIC_EVENT_SOURCE: "dom", DATA_DIR: dataDir, NEXT_TELEMETRY_DISABLED: "1",
 };
 const run = (args, cwd = projectDir) => new Promise((resolve, reject) => {
   const child = spawn(process.execPath, args, { env, cwd, stdio: "inherit" });
+  children.add(child);
   child.on("error", reject);
   child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${args[0]} exited ${code}`)));
 });
 let server;
 let browser;
+let cleaning;
+const cleanup = () => cleaning ??= cleanupSmoke(browser, children, root).then((ok) => { if (!ok) process.exitCode = 1; });
+for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]]) {
+  process.once(signal, async () => { await cleanup(); process.exit(code); });
+}
 try {
   // Refuse to test a leftover process which could have real provider credentials.
   await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(1000) }).then(() => {
     throw new Error("Port 3077 is occupied; stop the existing server before smoke.");
   }, () => {});
+  const isolated = isolatedProject(process.cwd(), root);
+  projectDir = isolated.project;
+  const next = resolve(projectDir, "node_modules/next/dist/bin/next");
   await run([next, "build"]);
-  await run([resolve("node_modules/tsx/dist/cli.mjs"), resolve("scripts/seed-session.ts"), "--if-missing"], dataDir);
+  await run([resolve(projectDir, "node_modules/tsx/dist/cli.mjs"), resolve(projectDir, "scripts/seed-session.ts"), "--if-missing"], dataDir);
   server = spawn(process.execPath, [next, "start", projectDir, "-p", "3077"], { env, cwd: dataDir, stdio: "inherit" });
+  children.add(server);
   let serverError;
   server.on("error", (error) => { serverError = error; });
+  server.on("exit", () => {
+    if (!cleaning) {
+      serverError = new Error("Smoke server stopped unexpectedly");
+      process.exitCode = 1;
+      void browser?.close().catch(() => {});
+    }
+  });
   let healthy = false;
   for (let n = 0; n < 120; n++) {
     if (serverError) throw serverError;
     if (server.exitCode !== null) throw new Error(`Server exited ${server.exitCode}`);
     const response = await fetch(`${BASE}/api/health`, { signal: AbortSignal.timeout(1000) }).catch(() => null);
     if (response?.ok) {
+      const identity = await fetch(`${BASE}/smoke-${isolated.nonce}.txt`, { signal: AbortSignal.timeout(1000) });
+      assert.equal(await identity.text(), isolated.nonce, "Only the isolated smoke instance may be exercised");
       const health = await response.json();
       assert.deepEqual(health.keys, { elevenlabs: false, gateway: false }, "Smoke must never use paid credentials");
       assert.equal(health.agents.interviewer, false);
@@ -62,6 +84,7 @@ browser = await chromium.launch({
   args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--auto-select-desktop-capture-source=Entire screen", "--autoplay-policy=no-user-gesture-required"],
 });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+await ctx.route("**/*", (route) => serverError || new URL(route.request().url()).origin !== BASE ? route.abort() : route.continue());
 await ctx.addInitScript(() => {
   Object.defineProperty(window, "SpeechRecognition", { value: undefined, configurable: true });
   Object.defineProperty(window, "webkitSpeechRecognition", { value: undefined, configurable: true });
@@ -70,6 +93,9 @@ await ctx.addInitScript(() => {
 const errors = [];
 ctx.on("page", (p) => {
   p.on("pageerror", (e) => errors.push(`${p.url()}: ${e.message}`));
+  p.on("console", (m) => {
+    if (["error", "warning"].includes(m.type()) && !expectedGuardConsole(m.text(), m.location().url, BASE)) errors.push(`${m.type()} ${p.url()}: ${m.text().slice(0, 1200)}`);
+  });
 });
 const sel = async (page, testId, fallback) => {
   const locator = page.getByTestId(testId);
@@ -237,11 +263,8 @@ assert.ok(decisions > 0, "Tutor must intervene on a new-hire mistake");
 assert.ok((await teach.locator("text=needed the guard").count()) > 0, "Independent miss must appear in mastery");
 assert.ok((await teach.locator("text=independent: correct without help").count()) > 0, "Independent success must be recorded");
 assert.deepEqual(errors, [], "Smoke must have no page errors");
+assert.equal(serverError, undefined, "Smoke server must remain alive");
 console.log("PASS: capture, map, confirmation, tutor, independent guard, and page errors");
 } finally {
-  await browser?.close();
-  if (server && server.exitCode === null) {
-    await new Promise((resolve) => { server.once("exit", resolve); server.kill("SIGTERM"); });
-  }
-  rmSync(dataDir, { recursive: true, force: true });
+  await cleanup();
 }

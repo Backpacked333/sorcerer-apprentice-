@@ -104,6 +104,22 @@ describe("DOM PII coordinates", () => {
     parent.clientWidth = 80;
     expect(publishPiiRects("erp-1", doc as unknown as Document)?.rects).toEqual([]);
   });
+  it.each(["fixed", "absolute"])("retains %s PII escaping an overflow ancestor, including positioned descendants", (position) => {
+    const wrapper = { parentElement: null, clientLeft: 0, clientTop: 0, clientWidth: 100, clientHeight: 100,
+      offsetWidth: 100, offsetHeight: 100, getBoundingClientRect: () => ({ x: 0, y: 0, width: 100, height: 100 }) };
+    const positioned = { ...wrapper, parentElement: wrapper };
+    const field = { parentElement: wrapper as typeof wrapper | typeof positioned,
+      getAttribute: () => "email", getBoundingClientRect: () => ({ x: 150, y: 150, width: 100, height: 20 }) };
+    let positionedNode: unknown = field;
+    const doc = { defaultView: { innerWidth: 400, innerHeight: 300, getComputedStyle: (node: unknown) => ({
+      position: node === positionedNode ? position : "static", transform: "none", overflowX: "hidden", overflowY: "hidden",
+    }) }, querySelectorAll: () => [field] };
+    vi.stubGlobal("BroadcastChannel", undefined);
+    const expected = [{ x: 0.375, y: 0.5, w: 0.25, h: expect.closeTo(20 / 300), kind: "email" }];
+    expect(publishPiiRects("erp-1", doc as unknown as Document)?.rects).toEqual(expected);
+    field.parentElement = positioned; positionedNode = positioned;
+    expect(publishPiiRects("erp-1", doc as unknown as Document)?.rects).toEqual(expected);
+  });
 });
 
 describe("black mask painting before frame encoding", () => {

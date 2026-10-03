@@ -8,14 +8,15 @@ export interface Redaction {
   entities: { kind: string; original: string }[];
 }
 
-const subscriber = String.raw`(?:\d{5,9}|\d{3}[ -]\d{4}|\d{4}[ -]\d{4})`;
+const phoneSeparator = String.raw`[ \t\u00a0\u202f-]`;
+const subscriber = String.raw`(?:\d{5,9}|\d{3}${phoneSeparator}\d{4}|\d{4}${phoneSeparator}\d{4})`;
 const PATTERNS: { kind: string; re: RegExp }[] = [
   { kind: "iban", re: /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){3,7}(?:\s?[A-Z0-9]{1,4})?\b/g },
   { kind: "email", re: /\b[\w.+-]+@[\w-]+\.[\w.-]+\b/g },
   { kind: "vat_id", re: /\b(?:DE|CZ|AT|FR|NL)\s?\d{8,11}\b/g },
   { kind: "tax_number", re: /\b\d{2,3}\/\d{3}\/\d{4,5}\b/g },
+  { kind: "phone", re: new RegExp(String.raw`(?<![\w+])(?:\+\d{1,3}${phoneSeparator}(?:\(\d{1,5}\)|\d{1,5})${phoneSeparator}${subscriber}|(?:\(\d{2,5}\)${phoneSeparator}?|0\d{1,4}${phoneSeparator})${subscriber}|\d{3}${phoneSeparator}\d{3}${phoneSeparator}\d{4}|\+\d{8,15}|0\d{7,14})\b`, "g") },
   { kind: "card", re: /(?<![\w+])(?<!\d-)(?:\d{13,19}|\d{4}[ -]\d{6}[ -]\d{5}|\d{4}(?:[ -]\d{4}){2}[ -]\d{1,4}(?:[ -]\d{3})?)\b/g },
-  { kind: "phone", re: new RegExp(String.raw`(?<![\w+])(?:\+\d{1,3}[ -](?:\(\d{1,5}\)|\d{1,5})[ -]${subscriber}|(?:\(\d{2,5}\)|0\d{1,4})[ -]${subscriber}|\d{3}[ -]\d{3}[ -]\d{4}|\+\d{8,15}|0\d{7,14})\b`, "g") },
 ];
 
 /** Supply full personal names (at least three characters), not initials or company/role labels. */
@@ -25,10 +26,16 @@ export function redactText(text: string, personalNames: string[] = []): Redactio
   for (const { kind, re } of PATTERNS) {
     out = out.replace(re, (m) => {
       const digits = m.replace(/\D/g, "");
-      if (kind === "phone" && (digits.length < 8 || digits.length > 15 || /^\d{4}(?: \d{4})+$/.test(m))) return m;
-      if (kind === "card" && !validCard(digits)) return m;
+      if (kind === "phone" && (digits.length < 8 || digits.length > 15 || /^\d{4}(?:[ \t\u00a0\u202f-]\d{4})+$/.test(m))) return m;
+      let suffix = "";
+      if (kind === "card" && !validCard(digits)) {
+        const prefix = m.replace(/[ -]\d{3}$/, "");
+        if (prefix === m || !validCard(prefix.replace(/\D/g, ""))) return m;
+        suffix = m.slice(prefix.length);
+        m = prefix;
+      }
       entities.push({ kind, original: m });
-      return `[${kind}]`;
+      return `[${kind}]${suffix}`;
     });
   }
   for (const name of personalNames.map((name) => name.trim()).filter((name) => name.length >= 3).sort((a, b) => b.length - a.length)) {
@@ -39,6 +46,7 @@ export function redactText(text: string, personalNames: string[] = []): Redactio
 }
 
 function validCard(digits: string): boolean {
+  if (digits.length < 13 || digits.length > 19) return false;
   let sum = 0;
   for (let i = digits.length - 1; i >= 0; i--) {
     let digit = Number(digits[i]);

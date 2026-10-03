@@ -42,6 +42,11 @@ export function publishPiiRects(sourceId: string, doc?: Document): PiiRectsMessa
 
 function visibleRect(el: Element, view: Window) {
   const r = el.getBoundingClientRect();
+  if (!el.parentElement) return r;
+  // Positioned descendants can escape overflow clips; retain coverage when containing blocks are uncertain.
+  for (let node: Element | null = el; node; node = node.parentElement) {
+    if (/^(fixed|absolute)$/.test(view.getComputedStyle(node).position)) return r;
+  }
   let x = r.x, y = r.y, right = r.right ?? r.x + r.width, bottom = r.bottom ?? r.y + r.height;
   for (let parent = el.parentElement; parent; parent = parent.parentElement) {
     const style = view.getComputedStyle(parent), bounds = parent.getBoundingClientRect();

@@ -11,10 +11,12 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 - WA-3 pure voice protocol is implemented with echo attribution, bounded commands, confirmation, safe tag builders, capture summaries, chunking and keyterms; merged in PR #12.
 - WA-11 knowledge sync now uploads SOP + debrief notes + tutor prompt, patches only the knowledge-base leaf, verifies agent configuration, rolls back on drift, removes only the superseded same-session document, and times out safely; live confirm remains pending.
 - WA-5 pure cadence engines merged in PR #17: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 outcome mapping, and the pure Capture loop.
+- WA-2 real-client structural gate now guards only ElevenLabs remote-stream audio before LiveKit `play()`, reasserts on SDK lifecycle events, persistently squelches late speech after the 8 s authorization watchdog, uses a flicker-safe speech authorization latch, sends idle heartbeats, and exposes snapshot-based soak diagnostics; merge pending.
 
 ## Done in the current PR (pending merge)
 
 - WA-5 Capture configuration parsing/page routing now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and carries all cadence, grace and chaining knobs through the existing config prop. Pure parser coverage is complete; human tuning remains pending. `graceSecs` and `maxChained` are currently runtime no-ops because frozen `CaptureClient` still constructs `new CandidateQueue(90)` and does not adopt `CaptureLoop`; the mechanism drawer also does not display effective values.
+- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the final rebase, `npm run typecheck` passed and `npm test` passed 190 tests across 15 files; audible behavior remains human-only below.
 
 ## Verified live by a human (who, when, what they did)
 
@@ -22,7 +24,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Not verified yet (and the script to verify)
 
-- Prompt tone, phrasing and structural silence: run HT-1 then HT-2 from `docs/lanes/A-voice-and-timing.md` with headphones, followed by the speaker echo check in HT-4.
+- Prompt tone, phrasing and structural silence: run HT-1 then revised HT-2 from `docs/lanes/A-voice-and-timing.md` with headphones; record both the automated soak result and the human audible result, followed by the speaker echo check in HT-4.
 - Live provisioning: after explicit approval and a key, run `npm run agents:create` twice and confirm identical IDs, then `npm run agents:create -- --check` and confirm prompt hashes/tool counts/settings.
 - Awaited connect and `/voice-check`: run HT-1 with a real agent key and microphone; verify connect id, event order, exact Scribe commit, and audible response timing. Headless checks cannot verify audio or permissions.
 - Turn lifecycle audio behavior: after `voice.tsx` integration, run HT-2, HT-3 and HT-4; the pure reducer cannot verify interruption feel, echo on speakers, or actual mic closure.
@@ -41,7 +43,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 ## Next 3 things
 
 1. After D lands issue #4, integrate `CandidateQueue(90, graceSecs)` + `CaptureLoop`/`maxChained` and expose the effective timing values through the Capture view model for the mechanism drawer.
-2. Integrate the merged P-12 reducer into `components/voice.tsx` with the structural output gate.
+2. Have a human run the keyed three-minute HT-2 soak and record automated counters plus the audible pass/fail.
 3. With explicit approval and a key, update both shared agents, run `npm run agents:create -- --check`, then run HT-1 through HT-6.
 
 ## Risks I see for the demo

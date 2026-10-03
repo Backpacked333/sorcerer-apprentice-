@@ -256,27 +256,21 @@ Anything prefixed `NEXT_PUBLIC_` ships to the browser: never a secret.
 
 ## 7. View-models — `components/views/*.vm.ts` · Owners **A** (capture), **C** (map, teach) · Consumer **D**
 
-Created by D's seam-split PR (protocol §3). Shape rule: a `vm` is a plain object of **render-ready state + callbacks**, no SDK objects, no refs except `videoRef`.
+Created by D's seam-split PR (protocol §3). Shape rule: a `vm` is a plain object of **render-ready state + callbacks**, no SDK objects, no refs except `videoRef`. The TypeScript interfaces in the three `*.vm.ts` files are the source of truth. A client builds that object and returns `<XView vm={vm} />`. A view renders it and does not fetch.
 
-```ts
-// capture.vm.ts (A) — minimum fields after the split; A adds more as needed
-interface CaptureVM { started: boolean; expertName: string; task: string; consented: boolean;
-  setExpertName, setTask, setConsented, start(): Promise<void>, endTask(): Promise<void>;
-  sessionId: string; voice: Pick<VoiceApi,"mode"|"connected"|"status"|"isSpeaking">; sttEngine: "scribe"|"webspeech"|"none";
-  pipeline: { videoRef, sharing, start(), activity, framesSeen, framesSent, dropped, visionLatency, visionError, masks, addMask, clearMasks, paused };
-  decision?: Decision; questionsLast10Min: number; budget: number;          // the governor meter
-  openWindow?: QuestionWindow & { phase: "asking"|"answering" }; partial: string;
-  queued: Candidate[]; askedCount: number; guardrailAsked: boolean; toDebrief: number;
-  events: ScreenEvent[]; candidateFor(eventId): Candidate | undefined; transcript: TranscriptSegment[];
-  ledger: { framesSeen: number; framesKept: number; entitiesRedacted: number; secondsStruck: number };
-  strike(): void; notNow(): void; holding: boolean; setHolding(b: boolean): void;
-  submitTypedAnswer(text: string): void; synced: number | null; }
-// map.vm.ts (C): map, session frames, phase, currentSlot, heard, teachback, rounds, metrics, autopilot state,
-//                startDebrief(), submitAnswer(text), confirm(yes, correction?), recompile(llm), runAutopilot(), onMapChange(map)
-// teach.vm.ts (C): log, map, started, ended, phase, decisions[], replay, card[], missed[], pipeline view, start(), endSession(), closeReplay()
-```
+Optional fields a view already reads, and which stay absent until the owning lane sets them:
 
-D may *read* any field and call any callback. D never imports `lib/governor`, `lib/matcher`, the ElevenLabs SDK, or `fetch`es an API from a view.
+| View-model | Field | Owner | What the view does when it is missing |
+|---|---|---|---|
+| `CaptureVM` | `voice.degraded`, `voice.lastError` | A | badges stay on `mode` / `connected` |
+| `CaptureVM` | `reasonHeard` | A | the "reason heard" chip stays hidden |
+| `CaptureVM` | `pipeline.setCropTarget`, `pipeline.surface` | A, from B's pipeline | real vision uses the companion layout |
+| `MapVM` | `lastPatch`, `pending`, `canonical`, `matrix`, `knowledge`, `llm` | C | teach-back has no rule diff; confirm stays clickable; headline counts recorded steps; no matrix |
+| `TeachVM` | `tutorState` | C | presence stays Watching or Speaking from `voice.isSpeaking`. The view never infers listening |
+| `TeachVM` | `practice` | C | no "Practice this" button |
+| `TeachVM` | `pipeline.setCropTarget` | C | same companion fallback as Capture |
+
+`CropHandle` (`setCropTarget?`, `surface?`) lives on `capture.vm.ts` and is shared by the teach pipeline pick.
 
 ---
 
@@ -284,15 +278,19 @@ D may *read* any field and call any callback. D never imports `lib/governor`, `l
 
 | Queue | Invoice | What it is | Role in the demo |
 |---|---|---|---|
-| expert | 4471 | Müller Werkzeugbau, €7,850 CNC spindle unit, prefilled 4711 | re-code to 0400 (capex) |
-| expert | 4472 | Novak Logistik s.r.o. (subsidiary), €2,300 intercompany freight | send for second approval |
-| expert | 4473 | Bäcker Elektrotechnik, €1,180, dated Dec 2 | put on hold |
-| newhire (coached) | 4490 | Hoffmann Maschinen, **€7,200** hydraulic press controller, prefilled 4711 | the brief's unseen case: tutor intervenes before save |
-| newhire (coached) | 4491 | Schmidt Reinigung, €640, dated Dec 4 | tutor stays quiet: the December hold is Bäcker-only |
-| newhire (coached) | 4492 | Müller, −€420 credit note, no PO | never shown: tutor quotes the debrief or flags it |
-| newhire (independent) | 4493 | Krüger Automation, €8,900 equipment | tutor silent; guard is the only backstop |
-| newhire (independent) | 4494 | Novak (subsidiary), €2,750 freight | tutor silent |
-| autopilot | 4501–4505 | four routine, one unknown supplier (4505) | stretch X1: agent halts where she would |
+| expert | 4470 | Schmidt Reinigung, €640 office cleaning, prefilled 4300, dated 2025-11-25 | routine warm-up: nothing to change, post it |
+| expert | 4471 | Müller Werkzeugbau, €7,850 CNC spindle unit, prefilled 4711, dated 2025-11-26 | re-code to 0400 (capex) |
+| expert | 4472 | Novak Logistik s.r.o. (subsidiary), €2,300 intercompany freight, dated 2025-11-27 | send for second approval |
+| expert | 4473 | Bäcker Elektrotechnik, €1,180, dated 2025-12-02 | put on hold |
+| expert | 4474 | Hartmann Werkzeuge, €1,460 bench vise, prefilled 4711, dated 2025-11-28 | routine: nothing to change, post it |
+| newhire (coached) | 4490 | Hoffmann Maschinen, **€7,200** hydraulic press controller, cost center starts empty, dated 2025-12-03 | the brief's unseen case: tutor intervenes before save |
+| newhire (coached) | 4491 | Schmidt Reinigung, €640, dated 2025-12-04, cost center starts empty | tutor stays quiet: the December hold is Bäcker-only |
+| newhire (coached) | 4492 | Müller, −€420 credit note, no PO, cost center starts empty | never shown: tutor quotes the debrief or flags it |
+| newhire (independent) | 4493 | Krüger Automation, €8,900 equipment, cost center starts empty | tutor silent; guard is the only backstop |
+| newhire (independent) | 4494 | Novak (subsidiary), €2,750 freight, cost center starts empty | tutor silent |
+| autopilot | 4501–4505 | four routine, one unknown supplier (4505); dates in 2025; 4502 asset `A-2025-117` | stretch X1: agent halts on the unknown supplier |
+
+`Invoice` also carries `contactName`, `contactEmail`, `contactPhone` and `iban` on the expert and new-hire rows. Those fields never enter `InvoiceState`. `toInvoiceState` omits an empty `costCenter`. A normal save commits `status: "posted"`. Dates are all in 2025.
 
 The **business reasoning is not in the code or any prompt** — only fields are. The expert's rules live on a private role card (`docs/05-DEMO-AND-SUBMISSION.md`) that must never be copied into `agents/*.md`, compile prompts, seed data or tests of the live path. Changing an invoice's id, amount, supplier, date or queue is a `CONTRACT:` change (D's script and video depend on them).
 

@@ -12,6 +12,7 @@ export type EventKind =
   | "status_changed"
   | "route_changed"
   | "save_clicked"
+  | "save_intent" // the ERP opened its save confirm; the proposed state is not committed yet (P-11)
   | "save_blocked" // the sandbox's pre-save guard refused a commit that broke a confirmed rule
   | "typing";
 
@@ -119,6 +120,8 @@ export function describeEvent(e: ScreenEvent): string {
       return `${inv}: approval route ${e.from ?? "single"} -> ${e.to}`;
     case "save_clicked":
       return `${inv}: saved`;
+    case "save_intent":
+      return `${inv}: save proposed (${e.state?.status ?? "posted"})`;
     case "save_blocked":
       return `${inv}: save held by the guard (${e.blocked?.title ?? "learned rule"})`;
     case "typing":

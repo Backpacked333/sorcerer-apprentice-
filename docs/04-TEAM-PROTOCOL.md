@@ -61,7 +61,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/workmap.ts` | **C** | THE contract: additive only |
 | `lib/workmap.contracts.test.ts` | **C** | legacy/new map compatibility for pre-approved contract additions |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
-| `lib/compile/{steps,rules-regex,slots,rules-llm,fill,correct}.ts`, `lib/compile.split.test.ts` | **C** | compiler internals; `lib/compile.ts` retains the public API |
+| `lib/compile/{steps,rules-regex,slots,rules-llm,fill,correct,evidence}.ts`, `lib/compile.split.test.ts`, `lib/compile.evidence-integrity.test.ts` | **C** | compiler internals and quote-evidence integrity; `lib/compile.ts` retains the public API |
 | `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |
 | `app/api/compile/`, `app/api/teachback/`, `app/api/sessions/[id]/{map,slot,confirm}/` | **C** | |
 | `components/MapClient.tsx`, `components/TeachClient.tsx` (logic), `components/views/{map,teach}.vm.ts`, `app/map/`, `app/teach/` | **C** | after the seam split (§3) |
@@ -76,6 +76,13 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/WorkMapView.tsx`, `components/Meter.tsx`, `components/TeachStart.tsx` | **D** | |
 | `components/InvoiceForm.tsx`, `components/ErpHeader.tsx`, `app/erp/`, `lib/erp-model.ts`, `app/demo/` | **D** | ERP UI **and the scenario data** (seed invoices are a contract: announce changes; the ERP server + guard is C) |
 | `README.md`, `docs/05-DEMO-AND-SUBMISSION.md`, deck, video | **D** | |
+| `components/glass/**`, `lib/ui/{moods,geometry,layout,capture-copy,mapview,teachview}.ts` (+ tests), `components/ui/LayoutReveal.tsx`, `lib/ui-copy.coverage.test.ts` | **D** | Liquid Glass design system: orb moods, companion card, overlays, scrubber; moods derive only from real state |
+| `components/companion/{capture,map,teach}/**` | **A** / **C** / **C** | presentational companion sub-views (seam rules apply: no fetch, no SDK) |
+| `lib/capture-frame.ts`, `lib/capture-frame.test.ts` | **B** | one frame painter: crop to the ERP, paint out occluders, masks and DOM PII before any read or encode |
+| `app/claims/**`, `components/claims/**`, `lib/claims-model.ts`, `lib/vision-claims.test.ts` | **D** (UI) / **B** (vision) | claims workbench sandbox, vision-only, fictional, no business rules |
+| `app/platform/**`, `components/platform/**`, `lib/platform/**` | **C** (derive/load) / **D** (UI) | company map, role memory, ontology: real derivations plus the labelled demo dataset |
+| `app/demo/companion/`, `components/demo/companion/**`, `components/landing/**`, `lib/demo/**` | **D** | demo mode gallery and tour (fictional fixtures), landing illustration, health status |
+| `components/erp/ErpShell.tsx`, `app/erp/QueueTable.tsx`, `lib/erp-ui.ts`, `lib/erp-ui.confirm.test.ts` | **D** | MB-ERP shell |
 | `docs/status/<lane>.md` | each lane | your running status, updated by your AI on every PR |
 | `docs/01…04`, `AGENTS.md` | all | change only by announcing `CONTRACT:` in chat |
 

@@ -28,6 +28,12 @@ export interface MappedWindowOutcome {
   strike?: boolean;
 }
 
+/** During a question, a commit is answer evidence only after the listening gate opened. */
+export function turnCommitEvidenceEligible(window: QuestionWindow | undefined, committedAt: number): boolean {
+  if (!window) return true;
+  return window.askedAt !== undefined && committedAt >= window.askedAt;
+}
+
 const loggedFields = (result: TurnResult): MappedWindowOutcome["logged"] => {
   if (result.tool?.name !== "log_answer") return undefined;
   const stringParam = (name: string) => (typeof result.tool?.params[name] === "string" ? (result.tool.params[name] as string) : undefined);
@@ -38,7 +44,8 @@ const loggedFields = (result: TurnResult): MappedWindowOutcome["logged"] => {
 /** Pure WA-4 lifecycle mapping. Callers apply the returned window, candidate and governor effects. */
 export function windowOutcome(result: TurnResult): MappedWindowOutcome {
   const retryAfter = result.closedAt + 6;
-  if (result.via === "tool" && result.heard.trim()) {
+  const answerClockIsValid = result.answeredAt !== undefined && result.answeredAt >= result.askedAt;
+  if (result.via === "tool" && result.heard.trim() && answerClockIsValid) {
     return {
       outcome: "answered",
       closedBy: "tool",
@@ -50,7 +57,7 @@ export function windowOutcome(result: TurnResult): MappedWindowOutcome {
       governor: "close",
     };
   }
-  if ((result.via === "scribe" || result.via === "typed") && result.heard.trim()) {
+  if ((result.via === "scribe" || result.via === "typed") && result.heard.trim() && answerClockIsValid) {
     return {
       outcome: "answered",
       closedBy: result.via === "scribe" ? "scribe_fallback" : "user",

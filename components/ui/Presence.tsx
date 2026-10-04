@@ -1,27 +1,31 @@
+"use client";
+
+import { Orb } from "@/components/glass/Orb";
+import type { OrbMood } from "@/lib/ui/moods";
 import type { PresenceState } from "@/lib/ui/presence";
 
-export function Presence({ state, label, sub }: { state: PresenceState; label: string; sub?: string }) {
-  const dotState = state === "listening" ? "answering" : state;
+const MOOD_OF: Record<PresenceState, OrbMood> = {
+  "off-record": "off",
+  asking: "asking",
+  listening: "listening",
+  quiet: "quiet",
+};
+
+/**
+ * The presence line: the orb plus the label and sub-line from `presenceOf` (test-locked copy).
+ * `mood` overrides the orb mood when a richer real state is known (e.g. from `captureMood`).
+ * The orb animates inside its own aria-hidden layers; this row holds no controls.
+ */
+export function Presence({ state, label, sub, mood, rippleKey, ringMs }: { state: PresenceState; label: string; sub?: string; mood?: OrbMood; rippleKey?: string | number; ringMs?: number | null }) {
   return (
-    <div className={`presence presence-${state}`} data-testid="capture-presence" role="status" aria-live="polite" aria-atomic="true">
-      <PresenceDot state={dotState} />
-      <div>
-        <p className="text-base font-medium">{label}</p>
-        {sub ? <p className="t-small text-muted">{sub}</p> : null}
+    <div className={`presence presence-${state} flex items-center gap-3`} data-testid="capture-presence" aria-live="polite" style={{ minHeight: 64 }}>
+      <Orb mood={mood ?? MOOD_OF[state]} size={44} rippleKey={rippleKey ?? state} ringMs={ringMs} />
+      <div className="min-w-0">
+        <p key={label} className="text-[17px] font-semibold leading-tight tracking-[-.01em] text-[#1d1d1f]" style={{ animation: "tc-rise .55s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both" }}>
+          {label}
+        </p>
+        {sub ? <p className="mt-0.5 text-[13px] leading-snug text-[#6e6e73]">{sub}</p> : null}
       </div>
     </div>
-  );
-}
-
-export function PresenceDot({ state = "unavailable" }: { state?: "listening" | "waiting" | "asking" | "answering" | "unavailable" | "quiet" | "off-record" }) {
-  return (
-    <svg className="presence-dot" data-state={state} viewBox="0 0 32 32" aria-hidden="true" focusable="false">
-      <circle cx="16" cy="16" r="15" fill="currentColor" opacity={state === "unavailable" ? 0.3 : 1} />
-      <g fill="var(--color-bg)">
-        <ellipse cx="12" cy="14" rx="1.3" ry={state === "waiting" ? 1 : 2} />
-        <ellipse cx="20" cy="14" rx="1.3" ry={state === "waiting" ? 1 : 2} />
-      </g>
-      <path d="M13 20 Q16 22 19 20" fill="none" stroke="var(--color-bg)" strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
   );
 }

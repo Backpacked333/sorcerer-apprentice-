@@ -2,21 +2,18 @@
 
 import Link from "next/link";
 import { usePresenter } from "@/components/ui/usePresenter";
-
-const QUEUES = [
-  { key: "expert", label: "Invoice queue · expert" },
-  { key: "newhire", label: "Invoice queue · new hire" },
-  { key: "autopilot", label: "Routine queue · agent" },
-] as const;
+import { QUEUE_KEYS, QUEUE_LABEL } from "@/lib/erp-ui";
 
 export function PresenterQueueTabs({ queue }: { queue: string }) {
   const on = usePresenter();
   if (!on) return null;
   return (
-    <div className="erp-tabs">
-      {QUEUES.map((q) => (
-        <Link key={q.key} href={`/erp?queue=${q.key}`} className={`erp-btn ${queue === q.key ? "erp-btn-primary" : ""}`}>{q.label}</Link>
+    <nav className="erp-tabs" aria-label="Queues">
+      {QUEUE_KEYS.map((k) => (
+        <Link key={k} href={`/erp?queue=${k}`} className={`erp-tab${queue === k ? " is-on" : ""}`} aria-current={queue === k ? "page" : undefined}>
+          {QUEUE_LABEL[k]}
+        </Link>
       ))}
-    </div>
+    </nav>
   );
 }

@@ -3,201 +3,269 @@
 import { useMemo, useState } from "react";
 import type { Frame } from "@/lib/events";
 import { describeAct, describeCond, type Rule, type Step, type WorkMap } from "@/lib/workmap";
-import { dedupeConfirmedBy, frameSrc } from "@/lib/ui/mapview";
-import { FrameThumb } from "@/components/ui/FrameThumb";
+import {
+  dedupeConfirmedBy,
+  evidenceBadge,
+  frameSrc,
+  lowConfidenceLine,
+  mmssOf,
+  quoteCaption,
+  quoteSourceLabel,
+  railHeadline,
+  railMeta,
+  stepHeading,
+} from "@/lib/ui/mapview";
+import { GuardrailCard } from "@/components/ui/GuardrailCard";
+import { QuoteCard } from "@/components/ui/QuoteCard";
+import { Pill } from "@/components/glass";
 
-/**
- * The clickable timeline: every step shows the screen moment, the decision, the reason in the expert's words
- * and the guardrails around it. The expert can delete anything before confirming.
- */
-export function WorkMapView({ map, frames, sessionId, onChange, editable, matrix }: { map: WorkMap; frames: Frame[]; sessionId: string; onChange: (m: WorkMap) => void; editable: boolean; matrix?: { stepId: string; cells: { key: string; word: string }[] }[] | null }) {
-  const steps = useMemo(() => [...map.steps].sort((a, b) => a.index - b.index), [map.steps]);
-  const [selectedId, setSelectedId] = useState<string | null>(steps.find((s) => s.judgment)?.id ?? steps[0]?.id ?? null);
-  const selected = steps.find((s) => s.id === selectedId) ?? steps[0];
-  const frameOf = (s?: Step) => (s?.screenMoment.frameId ? frames.find((f) => f.id === s.screenMoment.frameId) : undefined);
-  const ruleOf = (s?: Step): Rule | undefined => (s ? map.rules.find((r) => r.stepId === s.id) : undefined);
+type Matrix = { stepId: string; cells: { key: string; word: string }[] }[] | null | undefined;
 
-  const deleteStep = (id: string) => {
-    const next = { ...map, steps: map.steps.filter((s) => s.id !== id).map((s, i) => ({ ...s, index: i })), rules: map.rules.filter((r) => r.stepId !== id), slots: map.slots.filter((s) => s.stepId !== id) };
-    onChange(next);
-    setSelectedId(null);
-  };
-  const deleteQuote = (stepId: string) => {
-    const next = { ...map, steps: map.steps.map((s) => (s.id === stepId ? { ...s, reason: undefined } : s)) };
-    onChange(next);
-  };
-  const deleteGuardrail = (stepId: string, grId: string) => {
-    const next = { ...map, steps: map.steps.map((s) => (s.id === stepId ? { ...s, guardrails: s.guardrails.filter((g) => g.id !== grId) } : s)) };
-    onChange(next);
-  };
+const RISE = "tc-rise .55s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both";
 
-  const frame = frameOf(selected);
-  const src = frameSrc(frame);
-  const rule = ruleOf(selected);
-  const explanations = steps.filter((s) => s.reason?.text).length;
-  const guardrails = steps.reduce((n, s) => n + s.guardrails.length, 0);
-  const followUps = map.slots.filter((s) => s.status === "open").length;
+export function sortedSteps(map: WorkMap): Step[] {
+  return [...map.steps].sort((a, b) => a.index - b.index);
+}
 
+/** Left glass rail: every step with mm:ss · from → to, a judgment dot, and the selected state. */
+export function WorkMapRail({ map, selectedId, onSelect, askingStepId }: { map: WorkMap; selectedId: string | null; onSelect: (id: string) => void; askingStepId?: string | null }) {
+  const steps = useMemo(() => sortedSteps(map), [map]);
   return (
-    <div className="grid min-w-0 gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-      <header className="panel flex flex-wrap items-start justify-between gap-5 p-6 xl:col-span-2">
-        <div className="min-w-0">
-          <p className="panel-title">Work Map · knowledge from {map.expert.name}</p>
-          <h2 className="mt-2 break-words text-2xl font-medium tracking-tight">{map.task}</h2>
-          <p className="mt-2 text-sm text-muted">Explore a decision. Understand the why. Know its boundaries.</p>
-        </div>
-        <div className="space-y-2 text-sm">
-          <p className={map.confirmedAt ? "text-green" : "text-amber"}>{map.confirmedAt ? "Expert-confirmed map" : "Draft · awaiting expert confirmation"}</p>
-          <p className="text-muted">{steps.length} recorded step{steps.length === 1 ? "" : "s"} · {explanations} explanation{explanations === 1 ? "" : "s"}</p>
-          <p className="text-muted">{guardrails} guardrail{guardrails === 1 ? "" : "s"} · {followUps} open follow-up{followUps === 1 ? "" : "s"}</p>
-        </div>
-      </header>
-      <nav aria-label="Work Map decisions" className="panel min-w-0 self-start p-3">
-        <p className="panel-title px-1">Explore the decisions</p>
-        <ol className="mt-2 space-y-1">
-          {steps.map((s) => (
+    <nav aria-label="Steps of the Work Map" className="flex flex-col gap-0.5">
+      <p className="px-2.5 pb-1.5 text-[11px] font-semibold text-[#6e6e73]">{railHeadline(steps)}</p>
+      {steps.length === 0 && <p className="px-2.5 text-[13px] text-[#6e6e73]">No steps compiled yet.</p>}
+      <ol className="m-0 flex list-none flex-col gap-0.5 p-0">
+        {steps.map((s) => {
+          const on = s.id === selectedId;
+          return (
             <li key={s.id}>
-              <button type="button" aria-current={selected?.id === s.id ? "step" : undefined} className={`flex w-full items-start gap-2 rounded-lg px-3 py-3 text-left text-sm hover:bg-panel-2 ${selected?.id === s.id ? "bg-panel-2 outline outline-1 outline-amber/60" : ""}`} onClick={() => setSelectedId(s.id)}>
-                <span className="mono w-6 shrink-0 text-sm text-muted">{s.index + 1}</span>
+              <button
+                type="button"
+                aria-current={on ? "step" : undefined}
+                data-testid="map-rail-step"
+                onClick={() => onSelect(s.id)}
+                className="flex w-full cursor-pointer items-start gap-3 rounded-[12px] px-2.5 py-[9px] text-left outline-none focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(245,166,35,.75)] hover:bg-[rgba(255,255,255,.6)]"
+                style={{
+                  background: on ? "#fff" : undefined,
+                  boxShadow: on ? "0 1px 3px rgba(0,0,0,.08),0 0 0 .5px rgba(0,0,0,.05)" : "none",
+                  transition: "background-color .3s, box-shadow .3s",
+                }}
+              >
+                <span className="w-[18px] flex-none pt-[2px] font-mono text-[12px]" style={{ color: on ? "#a35f00" : "#8e8e93" }}>{s.index + 1}</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block break-words">{s.title}</span>
-                  <span className="mt-0.5 flex flex-wrap gap-1">
-                    {s.judgment && <span className="tag tag-amber">judgment</span>}
-                    {s.guardrails.length > 0 && <span className="tag">{s.guardrails.length} guardrail{s.guardrails.length > 1 ? "s" : ""}</span>}
-                    {s.reason && <span className={`tag ${s.reason.source === "narration" ? "tag-blue" : "tag-green"}`}>{s.reason.source}</span>}
-                  </span>
+                  <span className="block text-[14px] leading-[1.3] text-[#1d1d1f]" style={{ fontWeight: on ? 600 : 400 }}>{s.title}</span>
+                  <span className="mt-0.5 block text-[12px] text-[#6e6e73]" style={{ fontVariantNumeric: "tabular-nums" }}>{railMeta(s)}</span>
                 </span>
-                <span className="mono text-xs text-muted">{s.screenMoment.t.toFixed(0)}s</span>
+                {s.judgment && (
+                  <span
+                    aria-label="judgment call"
+                    title={askingStepId === s.id ? "Judgment call · being asked now" : "Judgment call"}
+                    className="mt-[7px] flex-none rounded-full"
+                    style={{ width: 7, height: 7, background: "#f5a623", boxShadow: askingStepId === s.id ? "0 0 0 3px rgba(245,166,35,.22)" : "none", transition: "box-shadow .5s" }}
+                  />
+                )}
               </button>
             </li>
-          ))}
-        </ol>
-      </nav>
+          );
+        })}
+      </ol>
+    </nav>
+  );
+}
 
-      {selected ? (
-        <div className="min-w-0 space-y-5 break-words" id={`step-${selected.id}`}>
-          <div className="grid gap-5 min-[1600px]:grid-cols-2">
-            <div className="panel min-w-0 p-6">
-              <p className="panel-title">Decision</p>
-              <h3 className="mt-2 text-xl font-medium">{selected.decision}</h3>
-              <p className="mt-2 text-sm text-muted">{"field" in selected.action ? `${selected.action.field}: ${selected.action.from || "empty"} → ${selected.action.to}` : selected.action.type}</p>
-              <p className="panel-title mt-6">Reason, in {map.expert.name}&apos;s words</p>
-              {selected.reason ? (
-                <blockquote className="mt-3 border-l-2 border-amber pl-4 text-base leading-relaxed">
-                  “{selected.reason.text}”
-                  {selected.reason.translation && <p className="mt-2 text-sm text-muted">{selected.reason.translation}</p>}
-                  <span className="mt-3 block text-sm text-muted">
-                    {selected.reason.source} · {selected.reason.t.toFixed(0)}s
-                    {selected.reason.audioId && <audio className="mt-1 block h-8 w-full" controls src={`/api/sessions/${sessionId}/clips?audioId=${selected.reason.audioId}`} />}
-                  </span>
-                  {editable && (
-                    <button className="btn mt-2 text-xs" onClick={() => deleteQuote(selected.id)}>
-                      remove quote
-                    </button>
-                  )}
-                </blockquote>
-              ) : (
-                <p className="mt-2 text-sm text-muted">{selected.judgment ? "Not yet explained. The debrief will ask." : "Routine step, no reason needed."}</p>
-              )}
-            </div>
-            <div className="panel min-w-0 p-6">
-              <p className="panel-title">Guardrails</p>
-              <p className="mt-1 text-sm text-muted">Where the approach changes, and when to ask.</p>
-              {selected.guardrails.length === 0 && <p className="mt-2 text-sm text-muted">None captured for this step.</p>}
-              <ul className="mt-2 space-y-2 text-sm">
-                {selected.guardrails.map((g) => (
-                  <li key={g.id} className="rounded border border-line p-2">
-                    <span className={`tag ${g.kind === "escalation" ? "tag-red" : g.kind === "limit" ? "tag-amber" : "tag-blue"}`}>{g.kind}</span>
-                    {g.quote?.source === "debrief" && <span className="tag ml-1">described by the expert; not directly demonstrated</span>}
-                    {g.quote?.source === "counterfactual" && <span className="tag ml-1">answered as a what-if</span>}
-                    <p className="mt-2">{g.text}</p>
-                    {g.quote?.text ? <blockquote className="mt-3 border-l-2 border-line pl-3">
-                      “{g.quote.text}”
-                      <span className="mt-2 block text-sm text-muted">{map.expert.name} · {g.quote.source} · {g.quote.t.toFixed(0)}s</span>
-                    </blockquote> : <p className="mt-2 text-sm text-muted">No expert quote attached.</p>}
-                    {g.quote?.audioId && <audio className="mt-1 block h-8 w-full" controls src={`/api/sessions/${sessionId}/clips?audioId=${g.quote.audioId}`} />}
-                    {editable && (
-                      <button className="btn mt-1 text-xs" onClick={() => deleteGuardrail(selected.id, g.id)}>
-                        remove
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {rule && (
-                <div className="mt-4 rounded border border-amber/40 bg-panel-2 p-3 text-sm">
-                  <p className="panel-title">Learned rule</p>
-                  <p className="mt-1 font-medium">{rule.title}</p>
-                  <p className="mt-1 text-muted">
-                    when {describeCond(rule.when)}
-                    {rule.unless ? `, unless ${describeCond(rule.unless)}` : ""} → {describeAct(rule.then)}
-                  </p>
-                  {rule.stopAndAsk && <p className="mt-1 text-red">stop and ask {rule.stopAndAsk.who || "— who to ask is still open"} when {describeCond(rule.stopAndAsk.when)}</p>}
-                  <p className="mt-2 flex flex-wrap gap-1">
-                    <span className="tag">{rule.quotes.length} supporting quote{rule.quotes.length === 1 ? "" : "s"}</span>
-                    {dedupeConfirmedBy(rule.confirmedBy).map((c) => (
-                      <span key={c} className="tag">confirmed by {c}</span>
-                    ))}
-                  </p>
-                </div>
-              )}
-            </div>
+function StepStill({ frame, step }: { frame?: Frame; step: Step }) {
+  const src = frameSrc(frame);
+  if (!src) {
+    return (
+      <div className="grid h-[118px] place-items-center rounded-[14px] text-[13px] text-[#6e6e73]" style={{ background: "rgba(0,0,0,.03)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.08)" }}>
+        No still kept for this step
+      </div>
+    );
+  }
+  const r = step.screenMoment.region;
+  const ar = frame && frame.width > 0 && frame.height > 0 ? frame.width / frame.height : null;
+  return (
+    <figure className="m-0">
+      {/* The box takes the still's own aspect (never cropped): full column width, capped in height for tall stills,
+          so the region box stays aligned with the image. */}
+      <div
+        className="relative mx-auto max-w-full overflow-hidden rounded-[14px]"
+        style={{ background: "#f4f6f8", boxShadow: "0 0 0 .5px rgba(0,0,0,.1)", ...(ar ? { aspectRatio: String(ar), width: `min(100%, calc(min(52vh, 460px) * ${ar.toFixed(4)}))` } : { width: "100%" }) }}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- data: or same-origin still */}
+        <img src={src} alt={`Captured still of step ${step.index + 1}`} className={ar ? "block h-full w-full object-contain" : "block h-auto w-full"} style={{ border: 0, borderRadius: 0 }} />
+        {r && (
+          <span
+            aria-hidden
+            className="pointer-events-none absolute"
+            style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%`, border: "1.5px solid #f5a623", borderRadius: 4, boxShadow: "0 0 10px rgba(245,166,35,.7)" }}
+          />
+        )}
+        <span
+          className="absolute bottom-2 left-2 inline-flex h-6 items-center rounded-[12px] px-2.5 text-[11.5px] font-medium text-[#1d1d1f]"
+          style={{ background: "rgba(255,255,255,.82)", boxShadow: "0 0 0 .5px rgba(0,0,0,.1),0 4px 12px rgba(0,0,0,.12)", fontVariantNumeric: "tabular-nums" }}
+          title="Time of the screen moment in the capture"
+        >
+          {mmssOf(step.screenMoment.t)}
+        </span>
+      </div>
+      <figcaption className="mt-1 text-[12px] text-[#6e6e73]">
+        captured still{frame?.piiRegionsBlurred != null ? ` · ${frame.piiRegionsBlurred} regions blurred` : ""}
+      </figcaption>
+    </figure>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return <p className="text-[12px] font-semibold text-[#6e6e73]">{children}</p>;
+}
+
+/** Right column: the selected step's evidence (still, verbatim quote, guardrails, rule, notes). */
+export function WorkMapDetail({ map, frames, sessionId, step, matrix, onSelect }: { map: WorkMap; frames: Frame[]; sessionId: string; step?: Step; matrix?: Matrix; onSelect?: (id: string) => void }) {
+  const total = map.steps.length;
+  const name = map.expert.name;
+  const frame = step?.screenMoment.frameId ? frames.find((f) => f.id === step.screenMoment.frameId) : undefined;
+  const rule: Rule | undefined = step ? map.rules.find((r) => r.stepId === step.id) : undefined;
+  const low = lowConfidenceLine(rule?.confidence ?? step?.confidence);
+  const clip = (audioId?: string) => (audioId ? `/api/sessions/${sessionId}/clips?audioId=${audioId}` : undefined);
+
+  return (
+    <div className="flex flex-col gap-5">
+      {step ? (
+        <article key={step.id} id={`step-${step.id}`} className="flex flex-col gap-2.5" style={{ animation: RISE }}>
+          <p className="text-[12px] font-semibold" style={{ color: step.judgment ? "#a35f00" : "#8e8e93" }}>{stepHeading(step, total)}</p>
+          <h2 className="text-[19px] font-semibold leading-[1.25] tracking-[-.012em] text-[#1d1d1f]">{step.title}</h2>
+          <StepStill frame={frame} step={step} />
+          <div className="mt-1">
+            <SectionLabel>Decision</SectionLabel>
+            <p className="mt-1 text-[14.5px] leading-[1.45] text-[#1d1d1f]">{step.decision}</p>
+            <p className="mt-0.5 font-mono text-[12px] text-[#6e6e73]">{"field" in step.action ? `${step.action.field}: ${step.action.from || "empty"} → ${step.action.to}` : step.action.type}</p>
           </div>
-          <div className="panel overflow-hidden">
-            <div className="border-b border-line px-6 py-4"><p className="panel-title">The screen moment</p><p className="mt-1 text-sm text-muted">Evidence attached to this decision, not a live screen.</p></div>
-            {src ? (
-              <FrameThumb src={src} width={frame?.width} height={frame?.height} t={selected.screenMoment.t} blurred={frame?.piiRegionsBlurred} region={selected.screenMoment.region} size="lg" />
+          <div className="mt-1">
+            <SectionLabel>Reason, in {name}&apos;s words</SectionLabel>
+            {step.reason ? (
+              <div className="mt-1.5">
+                <p className="text-[15px] font-medium leading-[1.45] text-[#1d1d1f]" style={{ textWrap: "pretty" }}>“{step.reason.text}”</p>
+                <p className="mt-1 text-[12px] text-[#6e6e73]">{quoteCaption(name, step.reason)}</p>
+                {step.reason.translation && <p className="mt-0.5 text-[12px] text-[#6e6e73]">{step.reason.translation}</p>}
+                {clip(step.reason.audioId) && <audio className="mt-2 w-full" controls src={clip(step.reason.audioId)} />}
+              </div>
             ) : (
-              <div className="flex min-h-32 items-center justify-center p-6 text-sm text-muted">No screen evidence attached to this step.</div>
+              <p className="mt-1 text-[13.5px] text-[#6e6e73]">{step.judgment ? "Not yet explained — the debrief will ask" : "Routine step."}</p>
             )}
-            <div className="flex flex-wrap items-center gap-3 border-t border-line px-6 py-4 text-sm text-muted">
-              <span>Recorded moment: <span className="mono text-ink">{selected.screenMoment.t.toFixed(1)}s</span> (sampled frame, not video)</span>
-              {src && frame && <span>{frame.piiRegionsBlurred} region{frame.piiRegionsBlurred === 1 ? "" : "s"} blurred</span>}
-              {editable && <button className="btn btn-danger ml-auto" onClick={() => deleteStep(selected.id)}>delete step</button>}
-            </div>
           </div>
-        </div>
-      ) : (
-        <div className="panel flex items-center justify-center p-10 text-muted">No steps compiled yet.</div>
-      )}
-      {matrix && matrix.length > 0 && (
-        <div className="panel overflow-x-auto xl:col-span-2">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="panel-title text-left">
-                {["Reason", "Trigger rule", "Replay-verified", "Limit", "Who", "Confirmed"].map((h) => <th key={h} scope="col" className="px-3 py-2">{h}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {matrix.map((row) => (
-                <tr key={row.stepId}>
-                  {row.cells.map((cell) => (
-                    <td key={cell.key} className="px-3 py-2">
-                      <button type="button" className="underline" onClick={() => {
-                        setSelectedId(row.stepId);
-                        requestAnimationFrame(() => document.getElementById(`step-${row.stepId}`)?.scrollIntoView({ block: "nearest" }));
-                      }}>{cell.word}</button>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {map.notes.length > 0 && (
-        <div className="panel p-4 xl:col-span-2">
-          <p className="panel-title">Cases described by the expert, not demonstrated</p>
-          <ul className="mt-2 space-y-2 text-sm">
-            {map.notes.map((n) => (
-              <li key={n.topic}>
-                <span className="text-muted">{n.question}</span>
-                <blockquote className="mt-1 border-l-2 border-line pl-3">“{n.quote.text}”</blockquote>
-              </li>
+          <div className="mt-1 flex flex-col gap-2">
+            <SectionLabel>Guardrails</SectionLabel>
+            {step.guardrails.length === 0 && <p className="text-[13.5px] text-[#6e6e73]">None captured for this step.</p>}
+            {step.guardrails.map((g) => (
+              <GuardrailCard
+                key={g.id}
+                kind={g.kind}
+                text={g.text}
+                evidence={g.quote ? evidenceBadge(g.quote) : undefined}
+                quote={g.quote ? { text: g.quote.text, speaker: name, source: quoteSourceLabel(g.quote.source), t: g.quote.t, audioSrc: clip(g.quote.audioId) } : undefined}
+              />
             ))}
-          </ul>
-        </div>
+          </div>
+          {rule && (
+            <div
+              className="mt-1 rounded-[18px] p-3.5"
+              style={{ background: "linear-gradient(180deg,rgba(255,250,238,.9),rgba(255,244,222,.6))", boxShadow: "inset 0 1px 0 #fff, inset 0 0 0 .5px rgba(200,120,0,.18)" }}
+            >
+              <p className="text-[12px] font-semibold text-[#a35f00]">Rule the tutor will run</p>
+              <p className="mt-1 text-[14.5px] font-semibold text-[#1d1d1f]">{rule.title}</p>
+              <p className="mt-1 text-[13px] leading-[1.45] text-[#3a3a3c]">
+                When {describeCond(rule.when)}
+                {rule.unless ? `, unless ${describeCond(rule.unless)}` : ""} → {describeAct(rule.then)}
+              </p>
+              {rule.stopAndAsk && (
+                <p className="mt-1 text-[13px] leading-[1.45] text-[#c9342f]">
+                  Stop and ask {rule.stopAndAsk.who ? rule.stopAndAsk.who : "— who to ask is still open"} when {describeCond(rule.stopAndAsk.when)}
+                </p>
+              )}
+              <p className="mt-2 flex flex-wrap gap-1">
+                {dedupeConfirmedBy(rule.confirmedBy).map((c) => (
+                  <Pill key={c}>confirmed by {c}</Pill>
+                ))}
+              </p>
+              {low && <p className="mt-2 text-[13px] text-[#6e6e73]">{low}</p>}
+            </div>
+          )}
+        </article>
+      ) : (
+        <p className="text-[14px] text-[#6e6e73]">No steps compiled yet.</p>
       )}
+
+      {matrix && matrix.length > 0 && (
+        <table className="w-full text-[13px]">
+          <thead>
+            <tr className="text-left text-[12px] text-[#6e6e73]">
+              {["Reason", "Trigger rule", "Replay-verified", "Limit", "Who", "Confirmed"].map((h) => <th key={h} className="px-2 py-1.5 font-semibold">{h}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.map((row) => (
+              <tr key={row.stepId}>
+                {row.cells.map((cell) => (
+                  <td key={cell.key} className="px-2 py-1.5">
+                    <button type="button" className="cursor-pointer underline" onClick={() => onSelect?.(row.stepId)}>{cell.word}</button>
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {map.notes.length > 0 && (
+        <section className="flex flex-col gap-2" style={{ borderTop: ".5px solid rgba(0,0,0,.08)", paddingTop: 14 }}>
+          <SectionLabel>Cases described, not demonstrated</SectionLabel>
+          {map.notes.map((n) => (
+            <div key={n.topic}>
+              <p className="text-[13px] text-[#6e6e73]">{n.question}</p>
+              <QuoteCard text={n.quote.text} speaker={name} source="debrief" evidence="described" t={n.quote.t} />
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+/** Rail + detail together (self-contained selection unless `selectedStepId` controls it). */
+export function WorkMapView({
+  map,
+  frames,
+  sessionId,
+  onChange,
+  editable,
+  matrix,
+  selectedStepId,
+  onSelectStep,
+}: {
+  map: WorkMap;
+  frames: Frame[];
+  sessionId: string;
+  onChange: (m: WorkMap) => void;
+  editable: boolean;
+  matrix?: Matrix;
+  selectedStepId?: string | null;
+  onSelectStep?: (id: string) => void;
+  removeStep?: (id: string) => void;
+  removeQuote?: (stepId: string) => void;
+  removeGuardrail?: (stepId: string, id: string) => void;
+}) {
+  void onChange;
+  void editable;
+  const steps = useMemo(() => sortedSteps(map), [map]);
+  const [own, setOwn] = useState<string | null>(steps.find((s) => s.judgment)?.id ?? steps[0]?.id ?? null);
+  const selectedId = selectedStepId ?? own;
+  const select = (id: string) => (onSelectStep ? onSelectStep(id) : setOwn(id));
+  const step = steps.find((s) => s.id === selectedId) ?? steps[0];
+  return (
+    <div className="grid gap-6 md:grid-cols-[280px_minmax(0,1fr)]">
+      <WorkMapRail map={map} selectedId={step?.id ?? null} onSelect={select} />
+      <WorkMapDetail map={map} frames={frames} sessionId={sessionId} step={step} matrix={matrix} onSelect={select} />
     </div>
   );
 }

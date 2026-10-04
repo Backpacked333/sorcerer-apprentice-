@@ -149,6 +149,28 @@ useScreenPipeline({ sessionStart: number /*epoch ms*/, source: "vision"|"dom"|"b
 - `setPaused(true)` and `bumpEpoch()` advance a **consent epoch**; any vision result from an older epoch is discarded. Masks are painted before a frame leaves the browser.
 - The governor (A) reads `signals`; the matcher (C) reads `currentState`. B must keep both refs' meaning stable.
 
+#### Capture frame pipeline (additive to P-23/P-24, overhaul WP1)
+
+Every pixel that leaves the pipeline (the 64×36 diff thumbnail, the 1024 px vision frame, the 960 px stored still) is drawn by **one** helper, `drawFrame` in `lib/capture-frame.ts`: `drawImage(video, crop)` → paint occluders + manual masks + DOM PII (opaque `#000`, `paintMaskRects`) → only then `getImageData` / `toDataURL`. All new fields are optional for callers; with no crop target, no occluders and no masks the frame is drawn exactly as before, and `?share=0` never calls `start()`.
+
+```ts
+start(opts?: { mode?: "tab" | "workspace"; app?: "erp" | "claims"; queue?: string }): Promise<void>
+setCropTarget(el: HTMLElement | null): void   // the ERP iframe or its wrapper; crop applies only on a self-tab capture
+setOccluders(els: HTMLElement[]): void         // every Tacit surface floating over the ERP; painted out of every frame
+surface: "browser" | "window" | "monitor" | undefined
+selfCapture: boolean                            // browser surface and video aspect within 2 % of innerWidth/innerHeight (or a matching Capture Handle)
+degraded: "wrong_surface" | null                // workspace mode on a non-self surface: no vision frames, no stills; telemetry continues
+lastSentUrl: string | null                      // the last masked JPEG that left the browser (vision frame or still): the honest "What I see"
+piiMode: "dom" | "manual-only"                  // whether DOM-published PII rects are being painted on the current frames
+```
+
+- `start()` calls `getDisplayMedia` synchronously before any `await`; call it first inside the click handler. `"tab"` (default) keeps the original prompt `{ video: { frameRate: 4 }, audio: false }`. `"workspace"` asks `{ video: { displaySurface: "browser", frameRate: { ideal: 5, max: 10 } }, audio: false, preferCurrentTab: true, surfaceSwitching: "exclude", monitorTypeSurfaces: "exclude" }`. A click event passed as `opts` is ignored.
+- Occluders: per element, the union of its `getBoundingClientRect()` over the last 750 ms (sampled every 100 ms while sharing and before every frame), padded `{ t: 32, r: 52, b: 72, l: 52 }` CSS px, snapped outward to 8 px and held 5 s before shrinking (so a breathing card never moves the black box's edges), projected into crop/video space (DPR and letterboxing handled). Only applied on a self-tab capture: on any other surface this tab's rects are not in the frame.
+- DOM PII, same tab (workspace iframe): the pipeline reads `iframe.contentDocument.querySelectorAll("[data-pii]")` synchronously each frame (`collectPiiRects`) and adds the iframe content-box offset. Two windows: `PiiPublisher` broadcasts on `"tacit-erp-pii"` with `sourceId = piiSourceId({ origin, app, queue })` = `"<sandbox origin>|<app>|<queue>"` (queue from `?queue=` or the ERP header link), on layout/scroll/resize/DOM change and a 1 s heartbeat; the pipeline subscribes with the same pairing (`start({ queue })`, default `"expert"` for `erp`) and paints rects no older than 3 s, only when the surface is a browser tab other than this one. Otherwise `piiMode` is `"manual-only"`.
+- Manual masks stay normalized to the full video frame and are re-projected into the crop.
+- `POST /api/vision` body gains `app: "erp" | "claims"` (default `"erp"`); the route's schema strips unknown keys, so older servers accept it.
+- Not verifiable by an agent: the share picker, Capture Handle behaviour, and the painted preview in a real Chrome share. Human check: workspace share → the "What I see" preview (`lastSentUrl`) shows the card area and PII black, and the governor still reaches "asking".
+
 ---
 
 ## 3. Voice — `components/voice.tsx` · Owner **A** · Consumers C (Map, Teach controllers), D (status badges)
@@ -193,7 +215,7 @@ interface TurnOptions {
 interface TurnResult {
   spoke: boolean; heard: string; via: "tool"|"scribe"|"typed"|"timeout"|"aborted"|"spoken";
   tool?: { name: ToolName; params: Record<string, unknown> }; audioId?: string;
-  sentAt: number; spokeAt?: number; askedAt: number; answeredAt?: number; closedAt: number;
+  sentAt: number; spokeAt?: number; askedAt: number; answerStartedAt?: number; answeredAt?: number; closedAt: number;
   spokenBy?: "agent"|"fallback"; spokenText?: string; heardSource?: "scribe"|"agent_asr"|"typed";
   command?: "off_record"|"not_now";
   abortReason?: "resumed"|"user"|"superseded"|"paused"|"disconnected"|"silent";
@@ -243,6 +265,8 @@ Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `t
 **Voice timeout quality:** `VoiceApi.turn()` allows eight seconds for agent speech by default (an explicit `watchdogSecs` still wins). If no speech starts within that window, its existing labeled browser fallback and late-agent squelch apply. This avoids replacing a healthy V4 response at the former four-second boundary while retaining recovery for a true send/transport failure.
 
 **Answer acceptance:** `VoiceApi.turn()` defaults listening `ASK`/`DEBRIEF` turns to `answerTool: "log_answer"`. When the agent speaks, raw Scribe/agent-ASR text alone cannot fill the slot: wait for the matching tool or resolve as an empty timeout within the existing bounds. A logged reason becomes `heard` only when it literally occurs in Scribe or agent ASR, excluding unrelated text accumulated in the same window; unmatched model text is never a quote. Late raw commits cannot promote an unconfirmed timeout. Typed answers and browser/keyless speech retain their existing completion paths. Other tags are unchanged.
+
+**Evidence timing:** recognition committed before `askedAt` (question finished / listening opened) is provisional interruption evidence only and cannot enter `heard`, `QuestionWindow.answerText`, or the quotable expert transcript. A later human-attributed commit after listen-open may become authoritative. `TurnResult.answerStartedAt` records when the accepted recognition segment began; `audioId` is returned only when that interval begins at or after `askedAt`, so a clip is never paired with text that predates recording.
 
 **The verbatim rule:** the page records the expert's words from **Scribe** (what was actually said), not from the tool's `reason` param (which the LLM may reword). `reason` is only a fallback when Scribe heard nothing.
 
@@ -466,3 +490,10 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 - `projectPiiRects(rects, viewport, crop = viewport): PiiRegion[]` maps publisher-normalized rectangles into crop-normalized rectangles. `viewport` and `crop` are `{ x, y, w, h }` in the **captured tab's CSS pixels**. For an embedded ERP, `viewport` is its content box excluding iframe borders; `crop` is the actual workspace capture rectangle. Full iframe crop: `crop = viewport`. Standalone ERP tab: both equal `{ x: 0, y: 0, w: viewportWidth, h: viewportHeight }`. Invalid geometry throws; nonfinite/out-of-view rectangles are discarded or clipped.
 - `paintPiiMasks(canvas, projectedRects): number` paints opaque black, outward-rounded pixels and returns the count; missing context/invalid canvas size throws. Use a fresh/resized, unclipped canvas: **draw → paint → encode/upload/store**. This applies to outgoing vision frames and stored stills.
 - **Unwired / human-unverified:** D must mark actual fields and publish on layout/scroll/resize; B must pair the selected surface, reject stale/unpaired layout data, project the current crop and invoke masking before every relevant encode. Helpers alone make no end-to-end privacy guarantee. Human network/stored-frame checks remain required after integration; no such verification has been performed for this PR.
+
+## 10. Claims workbench sandbox · vision `app` param and `ScreenEvent.subject` (additive)
+
+- **`POST /api/vision`** body gains `app?: "erp" | "claims"`. Absent, `"erp"` or any unknown value → the invoice schema, prompt and response exactly as before. Keyless still returns `503 { mock: true }` for both apps.
+- `app: "claims"` uses `ClaimsVisionWire` + `CLAIMS_VISION_PROMPT` (`lib/vision-schema.ts`; flat, every field `.nullable()`: `screen ∈ {claim_list, claim_detail, other}`, `state: { claim, cause, coverage, nextStep, reserve, priorClaims }`, `uiActivity`, `piiRegions`, `confidence`). Response: `{ seq, app: "claims", screen, state: {}, claim: ClaimState, banner: "none", uiActivity, piiRegions, confidence, model, latencyMs }`. `state` (the invoice state) is always empty; claim fields only on `claim_detail`; `nextStep` is a token `approve | deny | escalate`.
+- **`ScreenEvent.subject?: { type: "invoice" | "claim"; id: string }`** (`lib/events.ts`). `diffVision` routes frames with `app: "claims"` to `diffClaims`, which emits `screen_changed` (claim opened / left, `boundary`) and `field_changed` (`field ∈ cause | coverage | nextStep | reserve | priorClaims`) with `subject: { type: "claim", id }`, `source: "vision"`. It **never** sets `invoice` or the invoice `state`. `describeEvent` names the subject when there is no invoice.
+- The claims sandbox (`/claims`, `/claims/[id]`, `lib/claims-model.ts`) posts **no telemetry**; capturing it is vision-only. Its data is fictional and encodes no decision rules. The capture pipeline must send `app: "claims"` when the embedded/shared surface is the claims workbench.

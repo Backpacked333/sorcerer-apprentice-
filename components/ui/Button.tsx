@@ -1,23 +1,51 @@
 "use client";
 
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import { GlassButton, type GlassButtonSize, type GlassButtonVariant } from "@/components/glass/GlassButton";
 
 type Variant = "primary" | "secondary" | "danger" | "ghost";
 
+const TO_GLASS: Record<Variant, GlassButtonVariant> = {
+  primary: "amber",
+  secondary: "glass",
+  danger: "danger",
+  ghost: "ghost",
+};
+
+/**
+ * Backwards-compatible button: same props as before (`variant`, `loading`, `pressed`, native props),
+ * rendered as a light glass pill. `loading` still disables the button and sets `aria-busy`.
+ * `glass` lets a caller pick a GlassButton variant directly (e.g. "green"); `size` defaults to 40.
+ */
 export function Button({
   variant = "secondary",
+  glass,
+  size = 40,
   loading,
   pressed,
   className = "",
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; loading?: boolean; pressed?: boolean; children?: ReactNode }) {
-  const tone = variant === "primary" ? "btn btn-primary" : variant === "danger" ? "btn btn-danger" : variant === "ghost" ? "btn btn-ghost" : "btn";
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: Variant;
+  glass?: GlassButtonVariant;
+  size?: GlassButtonSize;
+  loading?: boolean;
+  pressed?: boolean;
+  children?: ReactNode;
+}) {
   const { disabled, ...restProps } = rest;
   return (
-    <button {...restProps} className={`${tone} ${className}`} aria-pressed={pressed} aria-busy={loading || undefined} disabled={!!loading || !!disabled}>
-      {loading ? <span className="btn-spin" aria-hidden /> : null}
+    <GlassButton
+      {...restProps}
+      variant={glass ?? TO_GLASS[variant]}
+      size={size}
+      pressed={pressed}
+      loading={loading}
+      disabled={!!loading || !!disabled}
+      className={className}
+    >
       {children}
-    </button>
+    </GlassButton>
   );
 }

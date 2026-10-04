@@ -1,185 +1,415 @@
-# Simon · the AI Apprentice
+# Simon — the AI Apprentice
 
-Simon sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
+**Capture an expert's reasoning. Turn it into a Work Map. Teach the next person before they make the wrong call.**
 
-One pipeline. One artifact, the Work Map. Three readers: the expert who confirms it, the new hire who is tutored from it, and an agent that can load the same rules.
+A screen recording shows what someone clicked, but not why they made a decision, when the rule stops applying, or who they would ask for help. Simon learns those missing details while an expert works: it observes the screen, asks short questions at natural pauses, and turns the answers into an evidence-linked **Work Map** that the expert reviews and confirms.
 
-## Live deployment
+The same map then guides a new hire through unfamiliar cases. In the included accounts-payable sandbox, Simon can intervene before an incorrect decision is saved and replay the expert's reasoning.
 
-[Open Tacit](https://tacit-ai-apprentice.vercel.app).
+Built for the **Hack-Nation × ElevenLabs AI Apprentice challenge**. This repository is a runnable prototype with anonymous, isolated workspaces—not a compliance-reviewed production ERP. **No API keys or database are required for the local demo.**
 
-The integrated release preserves durable Supabase workspaces, the newer voice/vision/privacy pipeline, and the V4 Turbo provisioning gate. Production HTTP checks pass storage/isolation, evidence withdrawal and save protection. Real vision and LLM compile requests and Scribe token issuance now pass too; the earlier Gateway billing restriction is resolved for those tested calls. Automated keyless flow testing passes, but real spoken timing and human competition acceptance remain outstanding. See `docs/status/B.md` for revision-specific evidence and limits.
+[Live demo](https://tacit-ai-apprentice.vercel.app) · [Quick start](#quick-start-no-api-keys) · [Try the workflow](#try-the-workflow) · [Configuration](#environment-configuration) · [Dependencies](#dependencies) · [Testing](#testing-and-verification) · [Deployment](#storage-and-deployment) · [Contributing](#contributing)
 
-Fresh visitors can use **Load the sample Work Map** on the home page. It creates a private, explicitly scripted example without login and without resetting their ERP or captures. The example is not evidence of live learning.
+## How it works
 
-## Run it
+| Stage | What you do | What Simon produces |
+| --- | --- | --- |
+| **Capture** | Work through cases, explain judgment calls, and answer questions at pauses. | Screen events, transcript, answers, and linked evidence. A deterministic governor controls when questions may be asked. |
+| **Map** | Fill the remaining knowledge gaps, correct the teach-back, and explicitly confirm it. | A Work Map: steps, decisions, verbatim expert quotes, rules, limits, exceptions, and stop-and-ask conditions. |
+| **Teach** | A new hire works through a different queue using the confirmed map. | Before-save guidance, expert evidence replay, and a record of what was mastered versus what required help. |
+
+The map is the shared artifact, not a conversation history. The expert reviews it, a new hire learns from it, and exports can make its confirmed rules available to another agent. Simon must not invent business rules or let a model confirm its own understanding.
+
+```mermaid
+flowchart LR
+    Expert[Expert at work] --> Screen[Screen frames / sandbox ERP events]
+    Expert --> Speech[Transcript and answers]
+    Screen --> Governor[Deterministic question timing]
+    Governor --> Interviewer[Interviewer]
+    Interviewer --> Speech
+    Screen --> Compile[Work Map compiler]
+    Speech --> Compile
+    Compile --> Review[Debrief and expert confirmation]
+    Review --> Map[Confirmed Work Map]
+    Map --> Tutor[New-hire tutor]
+    Map --> Guard[Sandbox save guard]
+    Map --> Export[SOP / agent exports]
+```
+
+### What works without credentials?
+
+| Capability | Keyless local mode | Optional provider-backed mode |
+| --- | --- | --- |
+| Observe work | Exact events from the included ERP (`dom`) | Screen interpretation through Vercel AI Gateway (`vision` or `both`) |
+| Listen and respond | Browser speech where supported; text fallback | ElevenAgents conversations and Scribe v2 Realtime |
+| Compile a map | Deterministic extraction, with limited phrasing coverage | An LLM pass through Vercel AI Gateway |
+| Explore and teach | Synthetic sample maps, debrief, confirmation, tutor, and sandbox guard | The same workflow with configured providers |
+
+Fallbacks are labeled. ERP events are not vision results, seeded examples are not a real expert session, and a passing keyless test does not verify live voice quality.
+
+## Quick start (no API keys)
+
+### Prerequisites
+
+- **Node.js 22 or newer** and **npm**.
+- **Git** to clone the repository.
+- A current desktop **Chrome or Chromium** browser for the full screen-share/microphone workflow. Other browsers may have different speech and capture support.
+- Microphone and screen-sharing permission only when capturing a live session. Use headphones for voice sessions to reduce feedback.
+
+No Docker, database server, Supabase project, or Vercel account is needed for this local checkout.
+
+### Install and run
 
 ```bash
-npm install
-STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session
-STORAGE_BACKEND=local STORE_OWNER_ID=local npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-1. **See a finished Work Map** and try the tutor from the front page. No microphone.
-2. **Run it yourself.** `/capture` is one window: the sandbox ERP on the left, Simon on the right. Tick consent, start, and in the share dialog choose **This tab**. Work the expert queue, then **Done · start the debrief**. Answer the open slots, confirm the teach-back, and open Teach.
-3. **Two windows.** `/capture?layout=companion` plus **Open the ERP window**. Both pages must be the same origin.
-4. **Presenter reset.** `/demo` resets the three queues and disarms the save guard. Sample sessions come back with `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session`.
-
-`?share=0` skips screen sharing. The ERP still reports exact events. Headphones, once voice is on: the apprentice must not hear itself.
-
-The ERP tab is titled **MB-ERP · Accounts payable**. Posting period 12/2025. A normal save commits **posted**.
-
-The explicit local owner lets browser requests read seeded sessions outside Vercel. Production requests remain cookie-scoped even if `STORE_OWNER_ID` is set.
-
-## Keys
-
-Copy `.env.example` to `.env.local`.
-
-| Key | What it unlocks | Where |
-| --- | --- | --- |
-| `ELEVENLABS_API_KEY` | Scribe v2 Realtime transcript (single-use tokens are minted server side), `npm run agents:create` | elevenlabs.io |
-| `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | The two ElevenAgents voices | printed by `npm run agents:create`, or the dashboard |
-| `AI_GATEWAY_API_KEY` | Vision (`/api/vision`) and the LLM compile pass (`/api/compile`) | vercel.com → AI Gateway. `curl https://ai-gateway.vercel.sh/v1/models` lists model slugs for `VISION_MODEL` and `COMPILE_MODEL` |
-| `NEXT_PUBLIC_EVENT_SOURCE` | `vision` (the brief's path), `both` (default: vision stays primary, the ERP's telemetry waits 2.5 s and fills in only what vision missed, each event badged `seen` or `erp`) or `dom` (keyless development, emergency fallback) | |
-
-`npm run agents:create` creates both agents with their client tools (`agents/tools.json`), the `skip_turn` and `language_detection` system tools, Eleven v3 Conversational TTS (Expressive Mode), a 30 s turn timeout, silence end-call disabled, overrides enabled. The prompts live in `agents/interviewer.md` and `agents/tutor.md`; paste them into the dashboard if you prefer clicking.
-
-## How it answers the Apprentice Test
-
-| Question | Mechanism | File |
-| --- | --- | --- |
-| When to ask | The governor fuses four signals every 500 ms (speech silence from Scribe, screen stillness from a 64 x 36 frame diff, no typing pattern, budget and cooldown) and opens a question window only when all four are green and a candidate is worth it. The agent's microphone is muted outside windows, so it cannot interrupt. | `lib/governor.ts`, `lib/framediff.ts`, `components/CaptureClient.tsx` |
-| What to ask | Events are scored for judgment value in plain code (an edit of a prefilled value, a hold, a reroute). Each judgment event yields a why plus sibling probes: counterfactual ("if it had been €4,946?"), limit, stop, who. Templates are filled from the event's own numbers. Narration that already answers a why fills it silently. By the third window a guardrail question is forced. | `lib/curiosity.ts` |
-| When it has understood | A slot ledger: every judgment step needs a reason, every rule a limit or exception, every stop a who. The debrief asks the open slots, the teach-back is generated from the map (not the transcript), marks what it is sure of and what it is guessing, is capped at 130 words, and done means zero open slots plus an explicit yes. Corrections patch the rule and re-read only the changed sentence. | `lib/compile.ts`, `lib/teachback.ts`, `components/MapClient.tsx` |
-| Whether the new hire learned | The same pipeline on the new hire's screen. The matcher evaluates each rule's `when` against the invoice state on every field change, before save. Wrong value: "Sabine would stop here. Why do you think?", then her captured still and her clip. Right value: praise in her words. No rule: quote her debrief answer if she was asked, otherwise say so and flag it; never guess. Then an independent follow-up with the tutor silent and the server-side save guard as the only backstop; help is recorded before each decision and disclosed on the outcome card. | `lib/matcher.ts`, `lib/erp.ts` (`checkSave`), `components/TeachClient.tsx` |
-| Trust | Consent screen before capture. Designated regions are masked before any frame leaves the browser; model-detected PII is blurred before a frame is stored; only frames tied to steps are stored at all. "Scratch that" (voice tool or button) strikes transcript, events, frames and clips in the window, leaves a red tombstone and invalidates anything in flight (a consent epoch). Hold-to-pause stops transmission and hearing. A regex redactor runs over every transcript segment. The ledger counts frames sent, frames kept, entities redacted, seconds struck, and says plainly that the voice provider keeps transcripts and audio per the account's retention settings. | `lib/redact.ts`, `components/useScreenPipeline.ts`, `components/CaptureClient.tsx` |
-
-## Repo map
-
-```
-app/
-  erp/                 sandbox ERP (queue, invoice detail with a Save confirm dialog), seeded from lib/erp-model.ts
-  capture/             1 · Capture
-  map/[sessionId]/     2 · Map: debrief runner + clickable Work Map
-  teach/[sessionId]/   3 · Teach: tutor, replay panel, mastery card, autopilot
-  api/vision           one frame in, screen state out (AI SDK generateText + Output.object, finite provider schema)
-  api/compile          deterministic compile, then an optional validated LLM refinement
-  api/sessions/*       session log, map, slot fill, confirm, audio clips
-  api/export           policy.json · agent prompt · SOP markdown
-  api/autopilot        runs the policy over the routine queue through the ERP's own API
-lib/
-  workmap.ts           the Work Map type, Zod schemas, condition evaluator
-  governor.ts          engine 1: when to ask
-  curiosity.ts         engine 2: what to ask
-  compile.ts           events + transcript + answers -> Work Map, slot filling, corrections
-  teachback.ts         calibrated teach-back under the word cap
-  matcher.ts           Teach: rules against the new hire's screen, mastery, practice cases
-  autopilot.ts         people first, then agents
-  framediff.ts         typing vs scrolling vs still, send-or-skip
-  redact.ts            text redaction, region blur
-  metrics.ts           the numbers for slide 6
-  engines.test.ts      19 tests covering all of the above (npm test)
-components/
-  voice.tsx            ElevenAgents + Scribe with a browser fallback; one API for the pages
-  useScreenPipeline.ts screen share -> diff -> vision or telemetry -> events with screen moments
-agents/                interviewer.md, tutor.md, tools.json
-scripts/               create-agents.ts, seed-session.ts, smoke.mjs (keyless end-to-end with screenshots)
-```
-
-## Demo-day checklist
-
-- `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session` before every local rehearsal; it resets the two demo sessions. `/api/erp/reset?queue=expert` resets a queue.
-- Headphones on both laptops. Share the ERP tab only.
-- Production uses `NEXT_PUBLIC_EVENT_SOURCE=both` (or `vision`); `dom` is for local development only. Degraded ERP telemetry stays explicitly labeled, never presented as vision.
-- If ElevenLabs is down, leave the agent ids empty: the browser voice fallback keeps every beat runnable, including the question windows, the debrief and the interventions.
-- `npm test` and `node scripts/smoke.mjs` (with `npm run dev -- -p 3077` running) before you record the video.
-
-## How this maps to the brief
-
-Module 1 Capture: screen share, a frame to the vision model every 1.5 s (sooner on a visible change, with dropped frames counted and shown as degraded observation when the model falls behind), events not video, the agent in a side panel, quiet while she types, reads or talks, questions at pauses about what is on screen, at least one about a guardrail (the third window prefers one if none was asked), three to five per ten minutes, a "Not now" control that defers to the debrief. Module 2 Map: the spoken debrief asks the open slots including the cases it has not seen, the teach-back is the apprentice explaining the process in its own words, the expert confirms or corrects, every step and guardrail links to a screen moment and her words. Module 3 Teach: the tutor watches the new hire's screen the same way, explains in the expert's words, asks for a prediction, steps in before a guardrail is broken, replays her captured still, then an independent follow-up answers Apprentice Test 4 with help disclosed; the session ends with a task-specific outcome card and what to practice next. Built with ElevenLabs: ElevenAgents plays interviewer and tutor (Eleven v3 Conversational, Expressive Mode), your choice of LLM, Scribe v2 Realtime for the pause signal, and the confirmed Work Map goes into the tutor's knowledge base. Stretch: agent-ready guardrails (`policy.json`, agent prompt, SOP), proven by running the routine queue. Everything else in the repo exists to make those beats reliable on demo day.
-
-The compiler never assumes a policy: a rule exists only when the expert stated its trigger (a number, a month, who it applies to); otherwise the step keeps its gap open and the tutor cannot use it. Change one explanation in the debrief and the tutor changes with it, through the same map id and revision, with nothing re-entered by hand.
-
-## What is deliberately not here yet
-
-German capture → English teaching, MCP guardrail lookup, and two-expert comparison remain **optional stretches**, not required modules. The competition PDF is the authority: it lists Capture, Map and Teach as required. `docs/01-SPEC.md` records the objectives and explicitly excludes account-based auth. Do not expand into stretches before the core live acceptance run passes.
-
-## Competition acceptance: implemented is not the same as verified
-
-This is a requirement-by-requirement status, not an invented judging score.
-
-| Required objective | Baseline gap | Implementation / remaining proof |
-| --- | --- | --- |
-| Capture screen + ElevenLabs interview | Real providers unverified; provider schema used recursive/unsupported shapes | Finite schemas and supported structured-output calls; real screen/voice run still required |
-| At least 3 live questions at natural pauses, including a guardrail | Governor and candidate queue exist | A human must verify timing, interruptions, and the three answers with headphones |
-| At least 3 debrief follow-ups, not already answered | Slot ledger exists; confirmation could bypass open gaps | Confirmation requires completed debrief answers and no open slots; question relevance needs human review |
-| Evidence-linked steps and guardrails | Inline frames and local clips were ephemeral | Private Storage-backed evidence; confirmation rejects missing screen references/reason/guardrail quotes; review evidence against the recording |
-| Expert explicitly confirms teach-back | Stale/draft maps could be confirmed or exported | Revision-bound confirmation; edits invalidate confirmation; draft exports/autopilot rejected |
-| Unseen new-hire case; wrong decision caught before save | Matcher exists; ERP/guard were global local files | Workspace-scoped ERP and guard, confirmed-map teaching; real new-hire interaction still required |
-| Tutor explains using expert reasoning | Shared agent knowledge base mixed visitor maps | Only the current conversation receives its Work Map; no shared knowledge-base mutation |
-| Public, isolated, durable demo without login | Files and process memory on serverless | Supabase PostgreSQL + private Storage; anonymous cookie-scoped workspaces |
-
-The deterministic compiler supports a limited set of explanation patterns. It is a labeled fallback, not proof of general speech understanding. Screen references alone cannot prove evidence quality. Required human acceptance: perform a real expert task, answer three live questions, complete three distinct debrief follow-ups, inspect every evidence link, explicitly confirm, then have a second person attempt a wrong decision on an unseen invoice. Verify the intervention occurs **before save**, quotes the expert accurately, and leaves the wrong change unsaved.
-
-## Deploy on Supabase + Vercel
-
-Supabase **is PostgreSQL**, plus private object storage. No Supabase Auth is needed: the brief requires a no-login judge experience. Visitors receive an unguessable HttpOnly workspace cookie. This is anonymous browser isolation, **not accounts or cross-device recovery**; losing the cookie loses access to that workspace. Use synthetic demo data; this is not a compliance-reviewed production ERP.
-
-### 1. Create the database and private media bucket
-
-Create a new Supabase project and run all checked-in SQL files in `supabase/migrations/` in filename order (including `202610040001_store_contracts.sql`) through the Supabase SQL editor, or link the project and use `supabase db push`.
-
-The migration creates `sessions` and `work_maps` with JSONB payloads, workspace-scoped ERP/guard state and rate counters, atomic map revision/invoice/rate-limit functions, and the private `tacit-media` bucket. All tables enable RLS and deny anon/authenticated access; only server-side service-role calls access data. Media objects are workspace-prefixed and served through workspace-checked routes, not public bucket URLs. The bucket accepts JPEG/PNG frames and WebM clips with a 3 MiB object ceiling; application routes enforce narrower limits and upload quotas.
-
-### 2. Configure secrets
-
-Copy `.env.example` to `.env.local` for local development. Add the following in Vercel Project Settings → Environment Variables (Production, plus Preview if wanted):
-
-| Variable | Purpose |
-| --- | --- |
-| `SUPABASE_URL` | Project API URL |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server-only service-role key; **never** a `NEXT_PUBLIC_` variable |
-| `STORAGE_BACKEND=supabase` | Explicit durable backend |
-| `NEXT_PUBLIC_EVENT_SOURCE=both` | Real vision with visibly labeled sandbox telemetry fallback; `vision` is also supported |
-| `AI_GATEWAY_API_KEY` | Vision/compile access; Vercel OIDC may supply auth on Vercel when Gateway is enabled |
-| `VISION_MODEL`, `COMPILE_MODEL` | Model slugs; defaults are in `.env.example` |
-| `ELEVENLABS_API_KEY` | Server-side Scribe provisioning and agent creation |
-| `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | Public agent identifiers from the next step |
-| `ELEVENLABS_VOICE_ID` | Optional voice selection |
-
-Never commit `.env.local`, service-role credentials, Vercel tokens, recordings or `.data/`. Production fails closed when durable storage is absent or misconfigured; it must not silently switch to local files. Local keyless development can use the documented local backend. Keep sensitive providers' retention settings explicit: deleting application evidence does not claim deletion from provider logs/transcripts.
-
-### 3. Provision ElevenLabs agents
-
-```bash
+git clone https://github.com/Backpacked333/sorcerer-apprentice-.git
+cd sorcerer-apprentice-
 npm ci
-npm run agents:create
+cp .env.example .env.local
 ```
 
-The script reads the server-side ElevenLabs key and agent definitions. Copy the returned public agent IDs into Vercel **before building** (`NEXT_PUBLIC_*` variables are bundled). Follow `docs/02-PLATFORM-FACTS.md` for voice overrides and permissions. Use dedicated tutor/interviewer agents for this app; do not attach other visitors' documents to a shared tutor knowledge base. The confirmed Work Map is supplied as conversation-scoped context.
+In `.env.local`, keep provider keys, agent IDs, and Supabase credentials empty. Use these settings for the local demo:
 
-Without ElevenLabs, the app exposes its browser/text fallback; without Gateway, vision returns a labeled unavailable response and compilation reports deterministic mode. Provider failure is degradation, not successful real-provider verification.
+```dotenv
+NEXT_PUBLIC_EVENT_SOURCE=dom
+STORAGE_BACKEND=local
+STORE_OWNER_ID=local
+```
 
-### 4. Verify and deploy
+Then create the sample sessions and start the app:
+
+```bash
+npm run seed:session -- --if-missing
+npm run dev
+```
+
+Open **http://localhost:3000**. The landing page offers a sample Work Map, the capture workflow, and the tutor. On a fresh workspace, **Load the sample Work Map** creates a scripted example without overwriting your captures or ERP state.
+
+`STORE_OWNER_ID=local` lets the local browser see the workspace used by the seed script; keep it together with `STORAGE_BACKEND=local`. This shared local rehearsal mode is different from the cookie-isolated deployed experience.
+
+> PowerShell: use `Copy-Item .env.example .env.local` instead of `cp`. The application can run on Windows, but the repository's smoke script requires Linux/macOS (or WSL).
+
+The samples are synthetic and deliberately separate from live capture. `--if-missing` preserves existing sample sessions. Running **`npm run seed:session` without that flag resets the demo sessions, ERP queues, and teach guard**; use it only when you intend to reset the demo.
+
+## Try the workflow
+
+### 1. Explore a sample
+
+- `/map/demo_sabine` opens the seeded map with gaps to resolve during debrief.
+- `/map/demo_sabine_confirmed` opens the expert-confirmed sample.
+- `/teach?from=demo_sabine_confirmed` starts a tutor session from that sample.
+
+The demo ERP is titled **MB-ERP · Accounts payable**, with posting period **12/2025**. These are scenario details, not required business rules for the product.
+
+### 2. Capture your own session
+
+1. Open `/capture`. The ERP and Simon share one workspace.
+2. Give consent, start capture, and select the current tab in the browser's sharing dialog.
+3. Work the expert queue. Explain why you make a judgment call; pause naturally for questions.
+4. Choose **Done · start the debrief**. Fill the remaining slots, correct the teach-back, and confirm the map.
+5. Open Teach and try a new-hire case using the confirmed map.
+
+For a telemetry-only run, use `/capture?share=0` with `NEXT_PUBLIC_EVENT_SOURCE=dom`. This skips screen sharing; it does not test visual interpretation. You can also use `/capture?layout=companion` and **Open the ERP window** for a two-window layout. Both windows must use the **same origin**—scheme, host, and port.
+
+### Route guide
+
+| Route | Purpose |
+| --- | --- |
+| `/` | Landing page and sample entry points |
+| `/capture` | Expert capture workspace |
+| `/map` / `/map/<sessionId>` | Map entry point / a session's Work Map and debrief |
+| `/teach` / `/teach?from=<confirmedMapId>` | Tutor entry point / start from a confirmed map |
+| `/erp` | Expert accounts-payable queue |
+| `/erp?queue=newhire` | New-hire queue |
+| `/erp?queue=autopilot` | Agent-demo queue |
+| `/demo` | Presenter controls and sandbox reset; use the seed command to restore samples |
+| `/voice-check` / `/voice-check?role=tutor` | Interviewer / tutor connection diagnostics |
+| `/api/health` | Storage reachability and provider configuration presence; not an end-to-end provider check |
+| `/claims` | Claims workbench sandbox (vision only, no ERP telemetry); capture it with `/capture?app=claims` |
+| `/platform` | Platform pages built from real captured sessions (roles, sessions) |
+| `/demo/companion` / `/platform/demo` | Demo mode with fictional data (see below) |
+
+### Where to look (the Apprentice Test)
+
+| Question | Where to look |
+| --- | --- |
+| When to ask | The companion's glow, and the Governor under Show the mechanism. Timing is code, not a prompt. |
+| What to ask | Candidate questions, under Show the mechanism. It never asks what the screen already shows. |
+| When it has understood | Gaps closed, on the map. Only the expert's words fill a slot, and only an explicit yes locks it. |
+| Whether the new hire learned | The mastery card. Rescued and learned are different labels. |
+| Trust | Struck from the record, and the Privacy ledger. In the workspace, masks are painted before a frame leaves the browser. |
+
+### Product tour / Demo mode
+
+- `/` is the landing page: an animated hero labelled "Illustration" (generic beats, no business rules), the two doors (a finished sample Work Map and tutor, or a live capture), the Apprentice Test and honest limits. The status strip reads `/api/health` and the event source; it reports provider configuration, never a live provider check.
+- `/demo` is the presenter room: reset, launch links, cue card.
+- `/demo/companion` is **demo mode**: every companion state (13 moods, the capsule, ask, teach-back and teach layouts) plus a "Play states" scripted tour over a fake support console. All copy is fictional (Larkspur Telecom, fictional), labelled as demo data, and never imported by the live product. Under reduced motion, Play jumps to the end state.
+- `/platform/demo` shows the platform pages with a fictional company. Everything outside demo mode runs on real session data only.
+
+Screenshots in the submission are taken from these routes.
+
+## Environment configuration
+
+### Configuration files
+
+| File | Purpose | Commit it? |
+| --- | --- | --- |
+| [`.env.example`](.env.example) | Environment template with empty credential fields and example values | Yes |
+| `.env.local` | Your local settings and secrets | **No**; ignored |
+| `.env`, `.env.*` | Optional Next.js environment-specific settings | No; this repository ignores these except `.env.example` |
+| [`package.json`](package.json) / [`package-lock.json`](package-lock.json) | Scripts, direct dependencies, and reproducible dependency resolution | Yes |
+| [`supabase/migrations/`](supabase/migrations/) | Versioned SQL for durable workspaces and private media storage | Yes |
+| [`next.config.ts`](next.config.ts), [`tsconfig.json`](tsconfig.json), [`postcss.config.mjs`](postcss.config.mjs) | Framework, TypeScript, and Tailwind/PostCSS configuration | Yes |
+
+Next.js loads environment files from the repository root. `scripts/create-agents.ts` separately loads `.env.local` and `.env`; the standalone seed script does **not** load them. If you customize `DATA_DIR`, `STORE_OWNER_ID`, or the storage backend, export the same values to the seed process as well as configuring them for the app. The default keyless setup above uses the same `local` owner and `.data` location in both processes.
+
+**Never put secrets in a `NEXT_PUBLIC_*` variable.** Those values may be exposed to the browser and embedded during `next build`. Restart development after changing configuration; rebuild production when public configuration changes. Shell/hosting environment values can take precedence over local files.
+
+### Providers and storage
+
+All provider settings are optional for keyless mode. Defaults below describe the current implementation, not just the labels in the template.
+
+| Variable | Default / example | Used for |
+| --- | --- | --- |
+| `ELEVENLABS_API_KEY` | Empty | Server-side Scribe token issuance and agent administration |
+| `NEXT_PUBLIC_INTERVIEWER_AGENT_ID` | Empty | Interviewer used by Capture and Map |
+| `NEXT_PUBLIC_TUTOR_AGENT_ID` | Empty | Tutor used by Teach |
+| `ELEVENLABS_VOICE_ID` | Provider default if omitted | Optional voice ID applied by `agents:create` |
+| `AGENT_LLM` | `gemini-2.5-flash` | Conversational model applied by `agents:create`; optional, not listed in the template |
+| `AI_GATEWAY_API_KEY` | Empty | Server-side vision and LLM compilation; Vercel OIDC is also supported |
+| `VISION_MODEL` | `anthropic/claude-haiku-4.5` | Gateway model for screen interpretation |
+| `COMPILE_MODEL` | `anthropic/claude-sonnet-4.5` | Gateway model for the compiler's optional LLM pass |
+| `NEXT_PUBLIC_EVENT_SOURCE` | `both` | `dom`: ERP only; `vision`: frames only; `both`: vision plus delayed ERP fallback |
+| `STORAGE_BACKEND` | Template: `local` | `local` filesystem or `supabase`; Vercel always requires Supabase |
+| `SUPABASE_URL` | Empty | Supabase project API URL; required for durable hosting |
+| `SUPABASE_SERVICE_ROLE_KEY` | Empty | **Server-only** service-role credential; never expose to the browser |
+| `SUPABASE_STORAGE_BUCKET` | `tacit-media` | Private evidence bucket; the migrations create the default bucket |
+| `STORE_OWNER_ID` | Template: `local` | Local/script workspace; with an explicit local backend, lets browser requests use the seeded workspace outside Vercel |
+| `DATA_DIR` | `.data` under the working directory | Local storage root for workspace-scoped sessions, maps, ERP state, guards, and media |
+| `PORT` | `3000` in `start:prod` | Production listener port |
+| `ELEVENLABS_PRIVATE_AGENTS` | Template: `1` | **Health-reporting flag only.** Does not enable authenticated agents in the current implementation |
+| `ELEVENLABS_TTS_MODEL` | `eleven_v4_turbo` | Agent provisioning enforces this exact model and rejects other values; health only reports the configured label |
+
+> **Agent authentication limitation:** the current agent script sets `enableAuth: false`, and there is no implemented `/api/agent-token` route. Setting `ELEVENLABS_PRIVATE_AGENTS=1` does not make agents private. The script does enforce `eleven_v4_turbo` on the wire and checks the saved remote configuration; `/api/health` alone proves neither the voice model nor agent authentication. Review the script before updating agents whose existing settings you need to preserve.
+
+### Optional ElevenLabs setup
+
+1. Add `ELEVENLABS_API_KEY` to `.env.local`. Set `ELEVENLABS_VOICE_ID` and `AGENT_LLM` if needed.
+2. Review [`scripts/create-agents.ts`](scripts/create-agents.ts), [`agents/interviewer.md`](agents/interviewer.md), [`agents/tutor.md`](agents/tutor.md), and [`agents/tools.json`](agents/tools.json).
+3. If agents already exist, set their IDs and inspect remote configuration without changing it:
+
+   ```bash
+   npm run agents:create -- --check
+   ```
+
+4. When you intend to **create or update remote agents and shared client tools**, run:
+
+   ```bash
+   npm run agents:create
+   ```
+
+   The script reuses configured IDs or resolves agents by their existing names. Copy the printed interviewer and tutor IDs into `.env.local`, then restart the app. `--force-new` intentionally creates fresh agents; it is not the normal setup path.
+5. Run `npm run agents:create -- --check` again to verify the saved V4 model, voice-flow settings, and prompt consistency. Use `/voice-check` for a connection diagnostic, then verify real Capture, Map, and Teach sessions. A diagnostic connection alone does not validate those workflows.
+
+Use dedicated agents for this app. Each tutor conversation receives only its current confirmed Work Map; the confirmation route does **not** attach visitor maps to a shared agent knowledge base.
+
+Provider requests can incur charges. Review the account's recording and retention settings: the script requests `recordVoice=false` and seven-day retention, but can retry without unsupported privacy settings. Its output must be checked; successful provisioning does not guarantee that both settings were applied. Browser speech is a fallback, not equivalent proof of an ElevenLabs session.
+
+### Optional vision and LLM compilation
+
+Set `AI_GATEWAY_API_KEY` in `.env.local`, choose available Gateway model slugs if overriding the defaults, and set `NEXT_PUBLIC_EVENT_SOURCE=both` or `vision`. Restart the app, grant screen-sharing permission, and start capture.
+
+On Vercel, an enabled AI Gateway can authenticate via Vercel OIDC instead of a static key; local development normally uses the key. Without either credential, use `dom`: the vision route returns a labeled unavailable/degraded response and the compiler keeps its deterministic path. Model availability, quota, permissions, and real response quality require a live check in your account.
+
+<details>
+<summary><strong>Advanced tuning and diagnostic variables</strong></summary>
+
+The governor uses deterministic gates rather than prompt-only timing. These values come from `.env.example`; keep the defaults until you can evaluate actual question timing. Time values are in seconds; counts and scores are noted separately. See [`lib/capture-config.ts`](lib/capture-config.ts) and [`lib/governor.ts`](lib/governor.ts).
+
+| Variable | Template value | Meaning |
+| --- | --- | --- |
+| `NEXT_PUBLIC_SILENCE_SECS` | `2.5` | Silence before a question may open |
+| `NEXT_PUBLIC_STILL_SECS` | `2` | Screen stillness requirement |
+| `NEXT_PUBLIC_COOLDOWN_SECS` | `20` | Spacing between question windows |
+| `NEXT_PUBLIC_MAX_QUESTIONS_PER_10MIN` | `5` | Question budget (count) |
+| `NEXT_PUBLIC_WARMUP_SECS` | `8` | Initial quiet observation period |
+| `NEXT_PUBLIC_READING_SECS` | `5` | Reading grace period |
+| `NEXT_PUBLIC_TYPING_QUIET_SECS` | `3` | Quiet interval after typing |
+| `NEXT_PUBLIC_WINDOW_TIMEOUT_SECS` | `20` | Question-window timeout |
+| `NEXT_PUBLIC_MIN_VALUE` | `0.6` | Minimum candidate-value score |
+| `NEXT_PUBLIC_GRACE_SECS` | `18` | Follow-up grace period |
+| `NEXT_PUBLIC_MAX_CHAINED` | `2` | Maximum chained questions (count) |
+
+Additional optional settings not in the template:
+
+- `NEXT_PUBLIC_SCRIBE_FILTER_BG`: background-audio filtering is enabled unless set to `0`.
+- `NEXT_PUBLIC_COMPILE_LABEL`: display label for the LLM compile pass; does not select a model.
+- `CHROME_PATH`: custom browser executable for screenshot/smoke scripts.
+- `OUT`: screenshot output directory (smoke default: `/tmp/tacit-shots`).
+- `BASE`: origin for `scripts/d-shots.mjs`; the smoke script instead uses fixed port `3077`.
+- `VERCEL_OIDC_TOKEN`: Vercel-managed Gateway authentication, also read by `@vercel/oidc`.
+- `VERCEL`: hosting detection; when set, storage requires Supabase and browser workspaces remain cookie-scoped.
+- `VERCEL_GIT_COMMIT_SHA` / `COMMIT_SHA` / `RAILWAY_GIT_COMMIT_SHA`: revision metadata reported by health.
+
+</details>
+
+## Dependencies
+
+[`package.json`](package.json) defines the supported ranges below. [`package-lock.json`](package-lock.json) records exact installed versions and transitive dependencies; use **`npm ci`** for a reproducible installation.
+
+| Package | Declared range | Purpose |
+| --- | --- | --- |
+| `next` | `^16.3.8` | App Router UI, server rendering, and API routes |
+| `react`, `react-dom` | `^19.2.0` | Client and server UI |
+| `@elevenlabs/react` | `^1.16.0` | Browser voice and transcription integration |
+| `@elevenlabs/elevenlabs-js` | `^2.70.0` | Server-side ElevenLabs SDK |
+| `ai` | `^7.0.127` | Model invocation and structured output |
+| `@ai-sdk/gateway` | `^4.0.103` | Vercel AI Gateway integration |
+| `@supabase/supabase-js` | `^2.117.2` | Server-side durable data and private evidence storage |
+| `@vercel/oidc` | `3.2.0` | Vercel identity token access for Gateway configuration |
+| `zod` | `^4.6.5` | Runtime schemas and validation |
+| `tsx` | `^4` | TypeScript scripts; needed at runtime by production seeding |
+| `typescript` | `^5` | Static type checking |
+| `tailwindcss`, `@tailwindcss/postcss` | `^4.3.3` | Styling and CSS build pipeline |
+| `vitest` | `^5.0.3` | Automated tests |
+| `playwright` | `^1.63.0` | Browser smoke and screenshot scripts |
+| `@types/node` | `^22` | Node.js type definitions |
+| `@types/react`, `@types/react-dom` | `^19` | React type definitions |
+
+Local keyless development uses the filesystem backend. Durable deployment needs a Supabase project; real voice and vision/LLM paths need their respective provider accounts. The Supabase and Vercel CLIs are optional deployment tools, not project dependencies.
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `npm ci` | Install exactly from the lockfile |
+| `npm run dev` | Development server on port 3000; append `-- -p <port>` to choose another |
+| `npm run build` | Production build |
+| `npm start` | Serve an existing production build; does not seed samples |
+| `npm run start:prod` | Seed missing samples, then serve on `PORT` or 3000 (POSIX shell syntax) |
+| `npm run typecheck` | TypeScript checks without emitting code |
+| `npm test` | Run the Vitest suite once |
+| `npm run test:watch` | Vitest watch mode |
+| `npm run smoke` | Isolated keyless production build and browser smoke test |
+| `npm run seed:session -- --if-missing` | Create missing samples without resetting existing demo state |
+| `npm run seed:session` | Reset the demo sessions, ERP queues, and teach guard |
+| `npm run agents:create -- --check` | Read remote agent configuration without mutation; needs credentials |
+| `npm run agents:create` | Create/update remote agents and tools; needs credentials |
+
+There is currently **no lint script or configured linter**. Type checking is not a substitute for linting; do not expect `npm run lint` to work.
+
+## Testing and verification
+
+Run the repository checks before submitting a change:
 
 ```bash
 npm run typecheck
-npm run test
+npm test
 npm run build
-npx vercel link
-npx vercel deploy --prod
 ```
 
-Use Vercel's Next.js framework preset. Select the Supabase project URL/key from step 1, not an unrelated existing database. Run `/api/health` after deployment; verify storage is ready and inspect provider readiness separately. Open two fresh browser contexts: each should start with its own sessions and ERP state. Create a session, upload evidence, refresh, and confirm it survives a new server process/deployment.
+CI runs dependency installation, type checking, tests, and a production build; see [`.github/workflows/ci.yml`](.github/workflows/ci.yml). The suite covers compiler evidence and corpus cases, map confirmation, rule matching, timing/protocol logic, ERP guards, and other contracts without requiring provider credentials.
 
-For a local seeded rehearsal, run both `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session` and `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run dev`. The explicit local owner lets browser requests read the seeded workspace outside Vercel; production remains cookie-scoped. Local `.data/` is not uploaded to Vercel. Production users create their own captures; do not treat a seeded recording as evidence of a live challenge run.
+For the optional browser smoke gate on Linux/macOS or WSL:
 
-Do not connect automatic production deployment to an older `main` revision until this deployment change is merged. This repository's earlier long-running Node hosting recommendation is superseded for this deployment by Supabase + Vercel.
+```bash
+npx playwright install chromium --only-shell
+npm run smoke
+```
 
-## Repo
+The script copies the project to an isolated temporary directory, excludes local environment/data files, clears provider credentials, builds production, seeds its own data, and starts **port 3077**. Do not start a server on that port first. It blocks external browser requests and tests the text-only fallback, not real microphone/audio behavior. Screenshots go to `OUT` or `/tmp/tacit-shots`.
 
-Public repository: [github.com/Backpacked333/sorcerer-apprentice-](https://github.com/Backpacked333/sorcerer-apprentice-).
+Live ElevenLabs/Gateway execution, microphone acoustics, natural interruption timing, and perceived voice quality need separate provider-backed and human verification. Unit tests, sample data, and the smoke gate do not establish those claims.
 
-Team, videos and the live link are on the submission form. The closing frame is [public/moonshot.svg](public/moonshot.svg): People first, then agents, then a living memory.
+## Storage and deployment
+
+All persistence goes through [`lib/store.ts`](lib/store.ts), including ERP state and teach guards. It supports two backends:
+
+| Backend | Intended use | Data location |
+| --- | --- | --- |
+| `local` | Keyless development or one persistent Node.js instance | Workspace-scoped files under `DATA_DIR` |
+| `supabase` | Durable hosting, including Vercel | PostgreSQL records and private Storage objects |
+
+Without an explicit backend, complete Supabase credentials select Supabase; otherwise local files are used. A partial credential pair is an error. **On Vercel, Supabase is always required**, even if `STORAGE_BACKEND=local` is set. Missing or broken durable storage fails closed instead of falling back to ephemeral files.
+
+### Anonymous workspaces
+
+[`proxy.ts`](proxy.ts) issues an unguessable HttpOnly `tacit_ws` cookie. Session, map, media, ERP, and guard access is scoped to that workspace. This is **browser isolation, not accounts or cross-device recovery**: losing the cookie loses access to that workspace. Local `STORAGE_BACKEND=local` plus `STORE_OWNER_ID=local` deliberately shares the seeded workspace for rehearsal; it does not override Vercel's browser isolation.
+
+### Supabase + Vercel
+
+1. **Create a dedicated Supabase project.** Apply every SQL file in [`supabase/migrations/`](supabase/migrations/) in filename order, using the SQL editor or `supabase db push` after linking the intended project. Both the durable-workspace and store-contract migrations are required. They create workspace-scoped tables, atomic update functions, and the private `tacit-media` bucket. RLS is enabled and direct anon/authenticated table access is revoked; the server uses the service-role key. No Supabase Auth setup is required.
+2. **Configure Vercel's Next.js project.** Set `STORAGE_BACKEND=supabase`, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` for the intended environment. Keep the default private bucket or provision an equivalent bucket before overriding `SUPABASE_STORAGE_BUCKET`. Media is served through workspace-checked application routes, not public bucket URLs. Use separate non-production resources for Preview when possible.
+3. **Configure optional providers.** Set the Gateway key or enable OIDC-backed Gateway access, model slugs, and `NEXT_PUBLIC_EVENT_SOURCE=both` (or `vision`). Provision ElevenLabs agents as described above and set their IDs **before building**. Review the agent-authentication limitation before making voice available publicly. Never put a service-role key or provider secret in a `NEXT_PUBLIC_*` setting.
+4. **Verify, then deploy through your approved process.** Run the [repository checks](#testing-and-verification) and use Vercel's Next.js preset with `npm run build`. Do not use the local `start:prod` seeding wrapper as a Vercel build command. A fresh deployed browser can load its own sample from the landing page; local `.data` is not uploaded.
+5. **Check the deployed behavior.** `/api/health` returns 200 only when its storage read succeeds, otherwise 503. Provider fields report configuration presence, not live calls. Check two fresh browser contexts for isolation, create a session and evidence, and confirm persistence across reloads and a new deployment. Validate live voice, vision, and compilation separately.
+
+If you use the Vercel CLI for local configuration, link the correct project before running `vercel env pull .env.local`. That command can replace local settings; preserve any local-only overrides and never commit the downloaded secrets. OIDC tokens expire, so refresh local credentials when authentication fails.
+
+### Local production-style rehearsal
+
+With the keyless `.env.local` settings above:
+
+```bash
+npm run build
+npm run start:prod
+```
+
+`start:prod` seeds only missing samples and starts on `PORT` or 3000. Its seed process still needs explicit environment variables if you use anything other than the default local/script workspace. For filesystem hosting, use **one long-running Node.js process and a writable persistent volume** for `DATA_DIR`; do not rely on local files across serverless invocations or replicas. Use HTTPS for remote microphone and screen access.
+
+Do not commit `.data`, environment secrets, captured media, or local recordings. Use synthetic data for public demos; this prototype is not a compliance-reviewed system for sensitive business records.
+
+## Privacy and current limits
+
+- **Source honesty:** vision events and ERP telemetry remain distinct (`seen` versus `erp`). `dom` cannot observe arbitrary third-party applications.
+- **Evidence, not invention:** quotes must remain the expert's own words. Unknown conditions stay open instead of being guessed. Deterministic extraction has narrower language coverage than a verified LLM-backed flow.
+- **Explicit confirmation:** only expert-confirmed maps may drive Teach and executable exports.
+- **Screen privacy:** the app provides consent, masking, and off-the-record controls. Validate the selected capture surface and masks before sharing sensitive material.
+- **Provider retention:** removing or striking evidence in the app is not a guarantee of deletion from a provider's conversation history or backups. Review provider policies; do not claim zero retention.
+- **Before-save protection:** the included ERP has an application-integrated save guard. On an unrelated third-party application, guidance is only a warning unless an authorized integration can block the action.
+- **Prototype boundaries:** anonymous cookie isolation is not account authentication; local rehearsal mode shares one workspace. Public-agent configuration and synthetic demos are not production security guarantees.
+- **Acceptance still requires people:** run a real expert task, answer at least three live questions and three distinct debrief follow-ups, inspect the evidence, explicitly confirm, then have a second person attempt an unseen wrong decision. Verify that the tutor intervenes before save and quotes the expert accurately. Automated checks alone cannot prove this.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| No sample map on the landing page | Use **Load the sample Work Map**, or run the seed command locally. For local seeded routes, use `STORAGE_BACKEND=local` and `STORE_OWNER_ID=local` in the app and the same owner/data location in the seed process. |
+| Health returns 503 / storage unavailable | Check both Supabase credentials, apply all migrations, and check database access. Vercel never falls back to local files. |
+| Vision is unavailable without a key | Set `NEXT_PUBLIC_EVENT_SOURCE=dom` and restart, or configure `AI_GATEWAY_API_KEY` for real vision. |
+| No microphone or screen-share prompt | Use desktop Chrome/Chromium on localhost or HTTPS; check browser and OS permissions. `?share=0` deliberately skips sharing. |
+| Browser speech is unavailable | Use the text fallback or configure ElevenLabs. Browser speech support varies; a fallback is not a provider failure report. |
+| ElevenLabs is configured but silent | Check the correct agent IDs, account access/quota, permissions, and `/voice-check`. Inspect saved remote configuration with `agents:create -- --check`; health labels alone are insufficient. |
+| Events do not reach Simon from a separate ERP window | Use the same scheme, host, and port in both windows. Avoid mixing `localhost`, `127.0.0.1`, and a tunnel/deployment URL. |
+| Teach refuses a map | Complete the debrief and expert confirmation, or use the confirmed sample. Do not bypass the confirmation gate. |
+| Smoke reports a missing browser | Install Playwright Chromium with the command above, or set `CHROME_PATH` to a compatible executable. |
+| Smoke reports port 3077 occupied | Stop the known process using that port, then rerun. The smoke script manages its own server. |
+| Environment changes have no effect | Check exported process values, restart development, and rebuild production for changed public settings. Standalone seeding does not load `.env.local`. |
+
+## Repository guide
+
+```text
+agents/             Interviewer/tutor prompts and client-tool schemas
+app/                Next.js pages and API routes
+components/         Capture, Map, Teach, voice, ERP, and shared UI
+lib/                Compiler, Work Map, governor, matcher, storage, and tests
+scripts/            Seeding, remote agent administration, smoke, screenshots
+docs/               Product spec, lane plans, contracts, platform research, demo references
+supabase/migrations/ Durable workspace tables, functions, and private media bucket
+public/             Brand and presentation assets
+.github/workflows/  Continuous integration
+.env.example        Environment template (no credentials)
+```
+
+Start with the [documentation index](docs/00-START-HERE.md). The [product specification](docs/01-SPEC.md), [interface contracts](docs/03-CONTRACTS.md), and [demo guide](docs/05-DEMO-AND-SUBMISSION.md) provide deeper context. The specification and platform research also contain historical proposals; this README describes the current checkout.
+
+**Naming:** the product is Simon. Some package names, script output, seeded IDs, and infrastructure identifiers retain the earlier name `tacit` for compatibility.
+
+## Contributing
+
+Read [AGENTS.md](AGENTS.md), the [team protocol](docs/04-TEAM-PROTOCOL.md), and your [lane plan](docs/lanes/) before editing. Follow the existing ownership and coordination rules. Keep changes focused, preserve keyless operation, document configuration changes, and report exactly what you tested. Never commit secrets or silently change remote agents as part of local setup.
+
+## License
+
+Distributed under the [MIT License](LICENSE).
+
+**People first, then agents, then a living memory.**

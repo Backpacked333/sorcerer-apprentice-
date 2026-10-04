@@ -1,4 +1,5 @@
 import { Children, createElement, isValidElement, type ReactNode } from "react";
+import * as React from "react";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -7,7 +8,7 @@ import DemoPage from "@/app/demo/page";
 import { Meter } from "@/components/Meter";
 import { WorkMapView } from "@/components/WorkMapView";
 import { Presence } from "@/components/ui/Presence";
-import { FrameThumb } from "@/components/ui/FrameThumb";
+import { ReplayRow } from "@/components/companion/teach/ReplayRow";
 import type { Decision } from "./governor";
 import { presenceOf, type PresenceInput } from "./ui/presence";
 import { WorkMapSchema } from "./workmap";
@@ -18,6 +19,10 @@ import { redirect } from "next/navigation";
 vi.mock("./store", () => ({ getMap: vi.fn(), listSessions: vi.fn() }));
 vi.mock("./seed", () => ({ seedDemo: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
+vi.mock("react", async (importOriginal) => {
+  const actual = await importOriginal<typeof React>();
+  return { ...actual, useState: vi.fn(actual.useState) };
+});
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -48,19 +53,20 @@ function sampleAction(page: ReactNode): (() => Promise<void>) | undefined {
   }
 }
 
-describe("knowledge-first presentation", () => {
-  it("keeps all entry paths and clearly labels keyless mode and the missing sample", async () => {
+describe("Liquid Glass presentation compatibility", () => {
+  it("keeps Claude's platform and companion entry paths and explicit sample loading", async () => {
     const html = renderToStaticMarkup(await Home());
-    expect(html).toContain('aria-label="Simon home"');
-    expect(html).toContain('aria-label="How Simon works"');
+    expect(html).toContain('aria-label="Main"');
+    expect(html).toContain('class="glass-panel');
+    expect(html).toContain("We know more than we can tell.");
     expect(html).not.toContain("Tacit");
-    for (const path of ["/map", "/capture", "/teach", "/erp"]) expect(html).toContain(`href="${path}"`);
+    for (const path of ["/platform", "/platform/demo", "/capture", "/demo/companion"]) expect(html).toContain(`href="${path}"`);
     expect(html).toMatch(/<button[^>]*type="submit"[^>]*>Load the sample Work Map<\/button>/);
     expect(html).toContain("A scripted example with synthetic evidence, separate from your own captures.");
     expect(seedDemo).not.toHaveBeenCalled();
-    expect(html).toContain("No confirmed sample is available.");
+    expect(html).toContain("No confirmed sample is loaded yet.");
     expect(html).not.toContain("/teach?from=");
-    expect(html).toContain("Keyless mode uses ERP telemetry and browser speech");
+    expect(html).toContain("Only a confirmed map can teach.");
     expect((await DemoPage()).props.sampleMap).toBeUndefined();
   });
 
@@ -80,19 +86,19 @@ describe("knowledge-first presentation", () => {
     expect(sampleAction(page)).toBeUndefined();
     expect(seedDemo).not.toHaveBeenCalled();
     expect(html).toContain('href="/teach?from=demo_latest"');
-    expect(html).toContain("Open a finished Work Map");
-    expect(html).toContain("Explore a confirmed sample");
+    expect(html).toContain("Open the Work Map");
+    expect(html).toContain("Be the new hire");
     expect(html).not.toContain('href="/map/demo_draft"');
     expect((await DemoPage()).props.sampleMap).toBe("demo_latest");
     expect(getMap).not.toHaveBeenCalledWith("real_capture");
     expect(getMap).not.toHaveBeenCalledWith("demo_teach");
   });
 
-  it.each([undefined, map])("does not offer a finished map for missing or draft sample data", async (storedMap) => {
+  it.each([undefined, map, { ...map, confirmedAt: 100, steps: [] }])("does not offer a finished map for missing, draft or empty sample data", async (storedMap) => {
     vi.mocked(listSessions).mockResolvedValue([{ id: "demo_pending", startedAt: 1, mode: "capture", task: map.task, expertName: map.expert.name }]);
     vi.mocked(getMap).mockResolvedValue(storedMap);
     const html = renderToStaticMarkup(await Home());
-    expect(html).toContain("No confirmed sample is available.");
+    expect(html).toContain("No confirmed sample is loaded yet.");
     expect(html).not.toContain('href="/map/demo_pending"');
     expect(html).not.toContain("/teach?from=");
     expect(html).toContain("Load the sample Work Map");
@@ -148,33 +154,32 @@ describe("knowledge-first presentation", () => {
     expect(redirect).toHaveBeenCalledExactlyOnceWith("/map/demo_other");
   });
 
-  it("puts the decision and literal evidence before the screen moment", () => {
+  it("preserves Claude's step rail and detail layout with literal quotes, not quoted paraphrases", () => {
     const html = renderMap();
-    expect(html.indexOf(map.steps[0].decision)).toBeLessThan(html.indexOf("The screen moment"));
+    expect(html).toContain(map.steps[0].decision);
+    expect(html).toContain('data-testid="map-rail-step"');
     expect(html).toContain(`“${map.steps[0].reason!.text}”`);
     expect(html).toContain(`“${map.steps[0].guardrails[0].quote!.text}”`);
     expect(html).not.toContain(`“${map.steps[0].guardrails[0].text}”`);
-    expect(html).toContain("described by the expert; not directly demonstrated");
+    expect(html).toContain("described");
+    expect(html).toContain("debrief");
     expect(html).toContain('aria-current="step"');
   });
 
-  it("reports draft state, counts, missing evidence and read-only controls honestly", () => {
+  it("reports step counts and missing evidence without reintroducing legacy controls", () => {
     const html = renderMap();
-    expect(html).toContain("Draft · awaiting expert confirmation");
-    expect(html).toContain("1 recorded step · 1 explanation");
-    expect(html).toContain("1 guardrail · 1 open follow-up");
-    expect(html).toContain("No screen evidence attached to this step.");
+    expect(html).toContain("1 step · 1 judgment call");
+    expect(html).toContain("No still kept for this step");
     expect(html).not.toContain("delete step");
     expect(html).not.toContain("remove quote");
-    expect(renderMap({ ...map, confirmedAt: 100 })).toContain("Expert-confirmed map");
-    expect(renderMap(map, true)).toContain("delete step");
   });
 
   it("leaves missing explanations and guardrail quotes explicit", () => {
     const html = renderMap({ ...map, steps: [{ ...map.steps[0], reason: undefined,
       guardrails: [{ ...map.steps[0].guardrails[0], quote: undefined }] }] });
     expect(html).toContain("Not yet explained");
-    expect(html).toContain("No expert quote attached.");
+    expect(html).not.toContain(`“${map.steps[0].guardrails[0].text}”`);
+    expect(html).not.toContain(`“${map.steps[0].guardrails[0].quote!.text}”`);
     expect(renderMap({ ...map, steps: [] })).toContain("No steps compiled yet.");
   });
 
@@ -192,13 +197,13 @@ describe("knowledge-first presentation", () => {
       map: translated, sessionId: map.sessionId, onChange: () => {}, editable: false, frames,
     }));
     expect(html).toContain(`src="${url ?? "data:image/png;base64,AAAA"}"`);
-    expect(html).toContain('style="max-width:420px"');
-    expect(html).toContain('width="100" height="100"');
-    expect(html).toContain('class="frame-region"');
+    expect(html).toContain("aspect-ratio:1");
+    expect(html).toContain("calc(min(52vh, 460px) * 1.0000)");
     expect(html).toContain("left:10%;top:20%;width:30%;height:40%");
     expect(html).toContain("Translated explanation");
-    expect(html).toContain("not a live screen");
-    expect(html.indexOf(map.steps[0].decision)).toBeLessThan(html.indexOf("<img"));
+    expect(html).toContain("captured still");
+    expect(html).toContain("1 regions blurred");
+    expect(html.indexOf("<img")).toBeLessThan(html.indexOf(map.steps[0].decision));
   });
 
   it("retains the optional evidence matrix provided by the map controller", () => {
@@ -213,57 +218,64 @@ describe("knowledge-first presentation", () => {
   });
 });
 
-describe("evidence frame geometry", () => {
+describe("Liquid Glass evidence frame geometry", () => {
   it.each([
     [960, 540],
     [540, 960],
     [800, 800],
-  ])("caps the shared image/region wrapper at a 420px-high aspect ratio for %dx%d", (width, height) => {
-    const html = renderToStaticMarkup(createElement(FrameThumb, {
-      src: "/frame.jpg", width, height, size: "lg",
-      region: { x: 0, y: 0.2, w: 0.3, h: 0.4 },
+  ])("keeps Claude's responsive Work Map wrapper aligned with a %dx%d still", (width, height) => {
+    const withFrame = { ...map, steps: [{ ...map.steps[0], screenMoment: { t: 12, frameId: "frame", region: { x: 0, y: 0.2, w: 0.3, h: 0.4 } } }] };
+    const html = renderToStaticMarkup(createElement(WorkMapView, {
+      map: withFrame, frames: [{ id: "frame", t: 12, url: "/frame.jpg", width, height, piiRegionsBlurred: 0 }], sessionId: map.sessionId, editable: false, onChange: () => {},
     }));
-    expect(html).toContain(`<div class="relative" style="max-width:${420 * width / height}px">`);
-    expect(html).toContain(`width="${width}" height="${height}"`);
-    expect(html).toContain('class="frame-region" style="left:0%;top:20%;width:30%;height:40%"');
+    expect(html).toContain(`aspect-ratio:${width / height}`);
+    expect(html).toContain(`calc(min(52vh, 460px) * ${(width / height).toFixed(4)})`);
+    expect(html).toContain("left:0%;top:20%;width:30%;height:40%");
+    expect(html).toContain("block h-full w-full object-contain");
   });
 
-  it("does not impose a mismatched aspect ratio when dimensions are unavailable", () => {
-    const html = renderToStaticMarkup(createElement(FrameThumb, { src: "/frame.jpg", size: "lg" }));
-    expect(html).toContain('<div class="relative">');
-    expect(html).not.toContain("max-width");
-    expect(html).not.toContain("NaN");
+  it.each(["/frame.jpg", "data:image/png;base64,AAAA"])("retains natural sizing and region coordinates in the expanded Teach replay: %s", (src) => {
+    const state = vi.mocked(React.useState).mockReturnValueOnce([true, vi.fn()]);
+    try {
+      const html = renderToStaticMarkup(createElement(ReplayRow, {
+        expert: "Alex", onClose: () => {}, replay: {
+          step: { ...map.steps[0], screenMoment: { t: 12, region: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } } },
+          frame: { id: "frame", t: 12, url: src, width: 960, height: 540, piiRegionsBlurred: 0 }, quote: map.steps[0].reason!.text,
+        },
+      }));
+      expect(html).toContain('aria-label="Shrink the still"');
+      expect(html).toContain('width="960" height="540"');
+      expect(html).toContain(`src="${src}"`);
+      expect(html).toContain('style="display:block;width:100%;height:auto"');
+      expect(html).toContain("left:10%;top:20%;width:30%;height:40%");
+      expect(html).toContain(map.steps[0].reason!.text);
+    } finally {
+      state.mockReset();
+    }
   });
 
-  it("sizes the image naturally within the wrapper without letterboxing or border offsets", () => {
+  it("does not restore the legacy frame height cap that letterboxed the image", () => {
     const css = readFileSync("app/globals.css", "utf8");
-    const frameRule = css.match(/\.frame-sm img, \.frame-lg img \{([^}]+)\}/)?.[1];
-    expect(frameRule).toContain("display: block;");
-    expect(frameRule).toContain("width: 100%;");
-    expect(frameRule).toContain("height: auto;");
-    expect(frameRule).not.toContain("border:");
     expect(css).not.toMatch(/\.frame-lg img\s*\{[^}]*(max-height|object-fit)/);
   });
 });
 
-describe("quiet observation presence", () => {
+describe("Liquid Glass observation presence", () => {
   it.each([
-    [{ holding: true, sharing: true, queued: 0 }, "off-record", "Paused", "Nothing is being sent"],
-    [{ holding: false, sharing: true, queued: 0, struckAgoMs: 1 }, "off-record", "Paused", "Struck from the record"],
+    [{ holding: true, sharing: true, queued: 0 }, "off", "Paused", "Nothing is being sent"],
+    [{ holding: false, sharing: true, queued: 0, struckAgoMs: 1 }, "off", "Paused", "Struck from the record"],
     [{ holding: false, sharing: true, queued: 0, phase: "asking" }, "asking", "Asking", ""],
-    [{ holding: false, sharing: true, queued: 0, phase: "answering" }, "answering", "Listening to your answer", ""],
+    [{ holding: false, sharing: true, queued: 0, phase: "answering" }, "listening", "Listening to your answer", ""],
     [{ holding: false, sharing: false, queued: 0 }, "quiet", "Quiet while you work", "Not watching — no screen shared"],
     [{ holding: false, sharing: true, queued: 1, waitingReason: "typing" }, "quiet", "Quiet while you work", "Waiting — typing"],
   ] satisfies [PresenceInput, string, string, string][])("preserves the capture companion state and privacy copy: %j", (input, state, label, sub) => {
     const html = renderToStaticMarkup(createElement(Presence, presenceOf(input)));
     expect(html).toContain('data-testid="capture-presence"');
-    expect(html).toContain(`data-state="${state}"`);
-    expect(html).toContain('class="presence-dot"');
+    expect(html).toContain(`data-mood="${state}"`);
     expect(html).toContain('aria-live="polite"');
     expect(html).toContain(label);
     if (sub) expect(html).toContain(sub);
-    expect(html).not.toContain("pulse");
-    expect(html).not.toContain("presence-mark");
+    expect(html).not.toContain('class="presence-dot"');
   });
 
   it("does not invent a listening state before receiving a decision", () => {
@@ -274,15 +286,19 @@ describe("quiet observation presence", () => {
     expect(html).not.toContain("listening");
   });
 
-  it.each(["listening", "waiting", "asking", "answering"] as const)("reflects %s without decorative activity", (state) => {
+  it.each(["listening", "waiting", "asking", "answering"] as const)("reflects the real %s governor state inside the mechanism sheet", (state) => {
     const decision: Decision = { state, interruptible: false, boundaryBonus: 0, reasons: [],
       lights: { silence: false, still: false, notTyping: false, notReading: false, budget: true } };
     const html = renderToStaticMarkup(createElement(Meter, { decision, questions: 1, budget: 3 }));
     expect(html).toContain(`data-state="${state}"`);
     expect(html).toContain("1/3 questions · 10 min");
-    expect(html).toContain("<details");
-    expect(html).not.toMatch(/<details[^>]*\sopen/);
-    expect(html).not.toContain("pulse");
+    expect(html).toContain("Governor");
     expect(html).toContain('aria-live="polite"');
+  });
+
+  it("keeps the redesign's global reduced-motion rule", () => {
+    const css = readFileSync("app/globals.css", "utf8");
+    expect(css).toContain("@media (prefers-reduced-motion:reduce)");
+    expect(css).toContain("animation-iteration-count:1!important");
   });
 });

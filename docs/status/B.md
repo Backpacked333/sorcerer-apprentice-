@@ -1,9 +1,21 @@
 # Lane B status
 
 ## Roy-authorized memory integration (C1/N2)
+- Reused platform PR #44's request-scoped OIDC detection pattern and pinned its already
+  installed `@vercel/oidc` 3.2.0 dependency; no provider-specific SDKs were added.
+- Gemini 3.8 Flash perception uses supported low reasoning and a 2,048-token output budget,
+  still capped at 8 seconds with no retries. Live synthetic checks found truncated output
+  with the old 500-token budget; wrapped SDK timeouts now correctly return sanitized 504.
+  Supplier familiarity requires an explicit label, not merely a visible company name.
+  Corrected route samples passed in 3.4s and 2.7s on Oct 4; these are not p95/accuracy claims.
+  Existing masking, sampling and sequence handling are unchanged. No human validation.
+- `getMap` revalidates profile source quotes against the current session. Persistence still
+  uses the checked-in store boundary; this work does not replace the platform's Supabase rollout.
 - Added Gateway reasoning model/mode settings, no dependencies. Stateless same-origin
   endpoint bounds streamed input at 128 KiB and generation at 25 seconds; failures sanitized.
 - Same-origin is not authentication: retain deployment access controls and Gateway budgets.
+- Automated after live-discovered fixes: typecheck, 483 tests, production build, keyless
+  production smoke and diff check pass. No deployment or saved-agent changes.
 
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
 

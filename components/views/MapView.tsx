@@ -41,6 +41,7 @@ export function MapView({ vm }: { vm: MapVM }) {
         <main className="grid-bg mx-auto max-w-xl px-6 py-24 text-center">
           <p className="panel-title">2 · Map</p>
           <p className="mt-4 t-h2">{vm.compiling ? "Compiling the Work Map from events, transcript and answers…" : "Loading session…"}</p>
+          {!vm.compiling && vm.note && <><p role="alert" className="mt-4">{vm.note}</p><Button className="mt-4" disabled={locked} onClick={() => void run(() => vm.recompile(true))}>Retry compilation</Button></>}
         </main>
       </AppShell>
     );

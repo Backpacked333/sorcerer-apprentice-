@@ -33,6 +33,11 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 |---|---|---|
 | `lib/memory.ts`, `lib/memory.test.ts` | **C** | bounded application-owned memory, evidence validation and cancellable reasoning handoffs; Roy authorized this cross-lane integration |
 | `lib/reasoning.ts`, `lib/reasoning.test.ts`, `lib/prepared-question.ts`, `app/api/reason/` | **C** | bounded high-reasoning model call and freshness-checked question packets |
+| `lib/role-profile.ts`, `lib/role-profile.test.ts`, `lib/compile.gateway.test.ts` | **C** | profile compile/provenance replay and flat Gateway compiler boundary |
+| `lib/agent-model.ts` | **A** | V4 wire override reused from platform PR #44; saved-model verification |
+| `lib/gateway-auth.ts` | **B** | shared Gateway key/environment/request-scoped OIDC detection |
+| `lib/compile.conflict.test.ts` | **C** | compile conflict and recoverable empty-map view regression |
+| `lib/compile.operators.test.ts` | **C** | live-discovered equality grammar regression; invalid operators remain rejected |
 | `components/voice.tsx` | **A** | `VoiceApi` is a contract: additive only |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |
@@ -42,6 +47,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
 | `lib/vision-schema.ts`, `lib/vision-schema.test.ts`, `lib/vision-route.test.ts` | **B** | flat vision wire schema, normalization and mocked route/schema regressions (#28) |
+| `lib/vision.gateway.test.ts` | **B** | live-discovered Gateway reasoning budget and wrapped timeout regressions |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
 | `lib/visiondiff.ts`, `lib/visiondiff.test.ts`, `lib/vision-pipeline.test.ts` | **B** | pure visual diff, normalized identities and mocked capture lifecycle regressions (#33) |
 | `lib/events.contract.test.ts`, `lib/store.fs.test.ts`, `lib/workspace.ts` | **B** | WB-4 event/hello and filesystem regressions; local-only workspace resolver stub |

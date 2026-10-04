@@ -7,6 +7,7 @@ import type { SessionLog } from "./events";
 import { WorkMapSchema, type WorkMap } from "./workmap";
 import type { Invoice } from "./erp-model";
 import { currentWorkspace } from "./workspace";
+import { currentProfile } from "./role-profile";
 
 export function dataDir(): string { return process.env.DATA_DIR ?? path.join(process.cwd(), ".data"); }
 const dir = (sub: string) => path.join(dataDir(), sub);
@@ -82,7 +83,13 @@ export async function listSessions(): Promise<Pick<SessionLog, "id" | "mode" | "
 
 export async function getMap(sessionId: string): Promise<WorkMap | undefined> {
   const raw = await readJson<unknown>(path.join(dir("maps"), `${validId(sessionId)}.json`));
-  return raw === undefined ? undefined : WorkMapSchema.parse(raw);
+  if (raw === undefined) return undefined;
+  const map = WorkMapSchema.parse(raw);
+  if (map.roleProfile) {
+    const session = await getSession(sessionId);
+    map.roleProfile = session ? currentProfile(session, map.roleProfile) : undefined;
+  }
+  return map;
 }
 
 export async function saveMap(map: WorkMap): Promise<void> {

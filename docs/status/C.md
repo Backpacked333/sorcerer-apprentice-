@@ -1,10 +1,27 @@
 # Lane C status
 
 ## Background inference integration (Roy-authorized; C1/C3/M2)
+- Added proposed, evidence-linked role profiles compiled alongside rules and persisted in
+  WorkMap. Read-time revalidation removes withdrawn/changed sources. Profiles are visible
+  for review but do not become tutor rules upon map confirmation.
+- Migrated rule inference to AI SDK 7 structured output with flat wire schema, local JSON
+  condition validation, high reasoning, bounded timeout and finalized expert-only quotes.
+- Live synthetic Gateway checks on Oct 4: proposed relationships/questions in 4.4s and
+  grounded rule compilation in 4.9s after explicitly documenting equality as `==`.
+  Earlier calls emitted invalid `=` and their rules were safely rejected; no parser
+  relaxation or automatic policy repair was added. Gateway generation metadata verified
+  Sonnet 5.5/provider identity; high reasoning was requested, not independently measured.
+  Held-out semantic accuracy, multilingual coverage, live voice and human acceptance
+  remain unverified. These few samples establish integration, not general reliability.
 - Sonnet 5.5 high reasoning through Gateway; single-flight Capture analysis, shadow default,
   opt-in live packets with exact-state/expiry validation at voice dispatch.
 - Keyless/failure paths preserve deterministic Capture. Mocked route and packet tests pass.
-- Next: profile persistence/Map visibility; no live provider or human timing acceptance yet.
+- Adversarial fixes preserve multi-span answer/audio provenance and recover from compile
+  conflicts without replacing the displayed map with an absent result. Late finalization
+  during clip upload remains attributable; withdrawal is checked through the final span.
+- Automated after live-discovered fixes: typecheck, 483 tests, production build, keyless
+  production smoke and diff check pass. Next: platform admission/spend gates, ElevenLabs
+  saved-agent verification, human timing acceptance and held-out semantic evaluation.
 
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
 

@@ -8,7 +8,7 @@
 - WA-5 foundations: deterministic governor/curiosity/Capture-loop engines plus safe environment/URL tuning parsing (PRs #17, #20). Capture controller adoption remains blocked on the D seam.
 - WA-11: safe tutor knowledge-base sync with verbatim debrief notes and rollback verification (PRs #13, #15); no shared-agent mutation was run.
 - Scribe token route: provider failures are contained as truthful, non-cacheable fallback responses instead of HTTP 500 (PR #31).
-- Fresh branch gate: `npm run typecheck`, 225/225 tests, and `git diff --check` passed. Headless keyless `/voice-check?keyless=1&role=interviewer&stt=off` proved fallback speech held through its end into listening, typed resolution, no-listen resolution, cancellation, and final idle/mic-muted/gate-closed state with no page errors. Earlier keyless seed/smoke completed with `question window opened: true`, `intervened: true`, `guard held the independent miss: true`, and `independent success recorded: true`.
+- Fresh branch gate after rebasing current `origin/main`: `npm run typecheck`, 286/286 tests, and `git diff --check` passed. Headless keyless `/voice-check?keyless=1&role=interviewer&stt=off` proved fallback speech held through its end into listening, typed resolution, no-listen resolution, cancellation, and final idle/mic-muted/gate-closed state with no page errors. The full seeded smoke passed Capture (`question window opened: true`) but then timed out on C's Map debrief typed input; routed to lane C as issue #42. An earlier merged-main smoke had completed all four predicates.
 
 ### Verified live by a human (who, when, what they did)
 
@@ -33,6 +33,7 @@
 - Lane B, H10, issue #38: no deployed/current real-vision event has been handed to Lane A for HT-5.
 - Lane B, environment contract, issue #19 / PR #26: the complete governor defaults are not yet in `.env.example`/deploy configuration.
 - Lane C, M1, issue #39: no real-key LLM compile evidence from a live session is available.
+- Lane C, keyless smoke, issue #42: after Capture passes, the Map debrief no longer exposes the typed-answer input expected by `scripts/smoke.mjs:82` within 15 seconds.
 - Lane B → A → C, H6 / P-15: `SessionLog.deferred` is not on main, so deferred Capture candidates cannot be persisted/consumed.
 
 ### Next 3 things

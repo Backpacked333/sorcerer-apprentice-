@@ -5,6 +5,10 @@ import { CLAIMS_VISION_PROMPT, ClaimsVisionWire, fromClaimsWire, fromWire, Visio
 import { gatewayConfigured } from "@/lib/model-contracts";
 
 export const maxDuration = 30;
+const VISION_TIMEOUT_MS = 8000;
+const VISION_MAX_RETRIES = 0;
+const VISION_MAX_OUTPUT_TOKENS = 500;
+const VISION_FRAME_PROMPT = "Report the current state of this frame.";
 const RequestBody = z.object({
   seq: z.number().int().nonnegative(),
   image: z.string().max(4 * 1024 * 1024),
@@ -23,43 +27,31 @@ export async function POST(req: Request) {
   const started = Date.now();
   const model = process.env.VISION_MODEL ?? "anthropic/claude-haiku-4.5";
   try {
-    const messages = [
-      {
+    const generation = {
+      model,
+      timeout: { totalMs: VISION_TIMEOUT_MS },
+      maxRetries: VISION_MAX_RETRIES,
+      maxOutputTokens: VISION_MAX_OUTPUT_TOKENS,
+      messages: [{
         role: "user" as const,
         content: [
-          { type: "text" as const, text: "Report the current state of this frame." },
+          { type: "text" as const, text: VISION_FRAME_PROMPT },
           { type: "file" as const, data: image, mediaType: "image/jpeg" },
         ],
-      },
-    ];
+      }],
+    };
     if (body.app === "claims") {
       const { output } = await generateText({
-        model,
+        ...generation,
         instructions: CLAIMS_VISION_PROMPT,
         output: Output.object({ schema: ClaimsVisionWire }),
-        timeout: { totalMs: 8000 },
-        maxRetries: 0,
-        maxOutputTokens: 500,
-        messages,
       });
       return NextResponse.json({ seq: body.seq, ...fromClaimsWire(output), model, latencyMs: Date.now() - started });
     }
     const { output } = await generateText({
-      model,
+      ...generation,
       instructions: VISION_PROMPT,
       output: Output.object({ schema: VisionWire }),
-      timeout: { totalMs: 8000 },
-      maxRetries: 0,
-      maxOutputTokens: 500,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Report the current state of this frame." },
-            { type: "file", data: image, mediaType: "image/jpeg" },
-          ],
-        },
-      ],
     });
     return NextResponse.json({ seq: body.seq, ...fromWire(output), model, latencyMs: Date.now() - started });
   } catch (err) {

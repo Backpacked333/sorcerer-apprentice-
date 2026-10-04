@@ -37,6 +37,7 @@ const turn = (partial: Partial<TurnResult>): TurnResult => ({
   heard: "",
   via: "timeout",
   askedAt: 12,
+  answeredAt: 15,
   sentAt: 11,
   closedAt: 20,
   ...partial,

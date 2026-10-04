@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, shouldPersistAgentSpokenText, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
+import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, shouldPersistAgentSpokenText, turnCommitEvidenceEligible, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
 import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
 import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
 import { COST_CENTERS } from "@/lib/erp-model";
@@ -118,10 +118,19 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       if (holdingRef.current) return;
       setPartial("");
       const at = start ?? nowSecs();
-      pushTranscript(text, "expert", at, end);
+      const committedAt = end ?? at;
+      const activeWindow = activeWindowId.current
+        ? log.current.windows.find((window) => window.id === activeWindowId.current)
+        : undefined;
+      if (!turnCommitEvidenceEligible(activeWindow, committedAt)) return;
       const clean = redactText(text).text;
-      expertSpeech.current.push({ at: end ?? at, words: clean.split(/\s+/u).filter(Boolean).length });
-      if (activeWindowId.current) activeHeard.current = [activeHeard.current, clean].filter(Boolean).join(" ");
+      if (activeWindow) {
+        // The turn reducer remains authoritative; persist only the answer it ultimately accepts.
+        activeHeard.current = [activeHeard.current, clean].filter(Boolean).join(" ");
+        return;
+      }
+      pushTranscript(text, "expert", at, end);
+      expertSpeech.current.push({ at: committedAt, words: clean.split(/\s+/u).filter(Boolean).length });
       queue.current.fillNarration(clean, at, pipelineRef.current?.currentState.current.invoice);
       for (const threshold of extractThresholds(clean)) if (!ctx.current.knownThresholds.includes(threshold)) ctx.current.knownThresholds.push(threshold);
       if (OFF_RECORD.test(text)) strikeRef.current();
@@ -206,6 +215,13 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     const mapped = windowOutcome(effectiveResult);
 
     if (result.spokenText && shouldPersistAgentSpokenText(mapped)) pushTranscript(result.spokenText, "agent", result.spokeAt ?? result.sentAt, result.askedAt);
+    if (mapped.outcome === "answered" && mapped.answerText?.trim()) {
+      const answerAt = result.answeredAt ?? result.closedAt;
+      const answerStart = result.answerStartedAt ?? answerAt;
+      pushTranscript(mapped.answerText, "expert", answerStart, answerAt);
+      expertSpeech.current.push({ at: answerAt, words: mapped.answerText.split(/\s+/u).filter(Boolean).length });
+      for (const threshold of extractThresholds(mapped.answerText)) if (!ctx.current.knownThresholds.includes(threshold)) ctx.current.knownThresholds.push(threshold);
+    }
     if (mapped.outcome === "remove") {
       session.windows = session.windows.filter((window) => window.id !== windowId);
     } else if (questionWindow) {
@@ -216,7 +232,9 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       questionWindow.answerText = mapped.answerText ?? "";
       questionWindow.logged = mapped.logged;
       questionWindow.answerAudioId = mapped.answerAudioId;
-      if (mapped.outcome === "answered") questionWindow.answeredAt = result.answeredAt ?? result.closedAt;
+      if (mapped.outcome === "answered") {
+        questionWindow.answeredAt = result.answeredAt ?? result.closedAt;
+      }
     }
 
     loop.current.applyOutcome(action.candidate, mapped, result.closedAt);

@@ -496,6 +496,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const controls = useConversationControls();
   const conversationStatus = useConversationStatus();
   const conversationMode = useConversationMode();
+  const transportStatusRef = useRef<string>(conversationStatus.status);
   const micMutedRef = useRef(true);
   const gateHoldUntilRef = useRef(0);
   const sessionStartRef = useRef<number | undefined>(undefined);
@@ -708,7 +709,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       emit("agent", "disconnect", details);
     },
     onError: (message, context) => emit("agent", "error", { message, context }),
-    onStatusChange: (data) => emit("agent", "status", data),
+    onStatusChange: (data) => {
+      transportStatusRef.current = data.status;
+      turnConnectedRef.current = configuredMode === "agent" && !voiceError && data.status === "connected";
+      emit("agent", "status", data);
+    },
     onModeChange: handleAgentMode,
     onMessage: (m) => {
       if (m.role === "agent") {
@@ -1075,7 +1080,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const nowTurn = useCallback(() => sessionStartRef.current === undefined ? Date.now() / 1_000 : Math.max(0, (Date.now() - sessionStartRef.current) / 1_000), []);
   nowTurnRef.current = nowTurn;
-  turnConnectedRef.current = configuredMode === "agent" && !voiceError && conversationStatus.status === "connected";
+  turnConnectedRef.current = configuredMode === "agent" && !voiceError && transportStatusRef.current === "connected";
   const stopClip = useCallback(async (upload: boolean, audioId?: string) => {
     const recorder = clipRecorderRef.current;
     clipRecorderRef.current = null;
@@ -1197,7 +1202,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         await active.promise;
         return;
       }
-      if (conversationStatus.status === "connected") return;
+      if (transportStatusRef.current === "connected") return;
       setVoiceError(undefined);
       const attempt = lifecycle.current!.start(Boolean(opts?.firstMessage));
       if (attempt.isNew) {
@@ -1267,7 +1272,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       }
       await attempt.promise;
     },
-    [activateFallback, agentId, authorizeSpeech, configuredMode, controls, conversationStatus.status, reassertGate, speakFallback],
+    [activateFallback, agentId, authorizeSpeech, configuredMode, controls, reassertGate, speakFallback],
   );
   connectAgentRef.current = connectAgent;
   const connect = useCallback<VoiceApi["connect"]>((opts) => connectAgent(opts, false), [connectAgent]);
@@ -1314,14 +1319,14 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         configuredMode,
         hasVoiceError: Boolean(voiceError),
         sessionRequested: sessionRequestedRef.current,
-        status: conversationStatus.status,
+        status: transportStatusRef.current,
       })) {
         emit("agent", "message_suppressed_reconnecting", { tag, reconnecting: reconnectingRef.current });
         return;
       }
       authorizeSpeech(line);
       reassertGate();
-      if (configuredMode === "fallback" || voiceError || conversationStatus.status !== "connected") {
+      if (configuredMode === "fallback" || voiceError || transportStatusRef.current !== "connected") {
         void speakFallback(line).finally(() => authorization.current!.finish());
         return;
       }
@@ -1334,7 +1339,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         void speakFallback(line).finally(() => authorization.current!.finish());
       }
     },
-    [activateFallback, authorizeSpeech, configuredMode, controls, conversationStatus.status, emit, reassertGate, voiceError, speakFallback],
+    [activateFallback, authorizeSpeech, configuredMode, controls, emit, reassertGate, voiceError, speakFallback],
   );
 
   const setMicMuted = useCallback(
@@ -1348,7 +1353,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const sendContext = useCallback(
     (text: string) => {
-      if (configuredMode === "agent" && !voiceError && conversationStatus.status === "connected") {
+      if (configuredMode === "agent" && !voiceError && transportStatusRef.current === "connected") {
         try {
           controls.sendContextualUpdate(text);
         } catch (error) {
@@ -1357,7 +1362,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         }
       }
     },
-    [activateFallback, configuredMode, controls, conversationStatus.status, voiceError],
+    [activateFallback, configuredMode, controls, voiceError],
   );
 
   const getId = useCallback(() => {

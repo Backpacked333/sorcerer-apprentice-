@@ -4,6 +4,7 @@ import { buildAgentReconnectOptions, createAgentReconnectPolicy, shouldSuppressA
 describe("agent reconnect policy", () => {
   it("suppresses tagged speech while an agent session is requested but its transport is down", () => {
     expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: false, sessionRequested: true, status: "disconnected" })).toBe(true);
+    expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: false, sessionRequested: true, status: "disconnecting" })).toBe(true);
     expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: false, sessionRequested: true, status: "connecting" })).toBe(true);
     expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: false, sessionRequested: true, status: "connected" })).toBe(false);
     expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: true, sessionRequested: true, status: "disconnected" })).toBe(false);

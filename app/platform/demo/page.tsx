@@ -4,7 +4,7 @@ import { PlatformShell } from "@/components/platform/PlatformShell";
 import { demoPlatform } from "@/lib/platform/demo-data";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Company map (demo) · Tacit" };
+export const metadata: Metadata = { title: "Company map (demo) · Simon" };
 
 export default async function DemoPlatformPage({ searchParams }: { searchParams: Promise<{ role?: string | string[] }> }) {
   const sp = await searchParams;

@@ -69,7 +69,7 @@ export function CaptureView({ vm }: { vm: CaptureVM }) {
     waitingReason: vm.decision?.reasons[0],
   });
   const lastUnderstood = vm.understood?.at(-1);
-  const lastHeard = vm.reasonHeard?.at(-1);
+  const lastHeard = vm.reasonHeardItems?.at(-1);
   const watching = vm.pipeline.sharing || (app.telemetry && vm.started);
   const card = cardState({
     started: vm.started,

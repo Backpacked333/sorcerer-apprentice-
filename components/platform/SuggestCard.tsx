@@ -24,7 +24,7 @@ export function SuggestCard({ items, onFocusRole, defaultOpen = true }: { items:
         style={{ display: "inline-flex", alignItems: "center", gap: 9, height: 44, padding: "0 14px 0 8px", borderRadius: 22, border: 0, fontSize: 14, fontWeight: 600, color: "#1d1d1f", transition: "scale .25s var(--ease-press)" }}
       >
         <Orb mood={list.length ? "asking" : "quiet"} size={30} follow={false} />
-        Tacit suggests
+        Simon suggests
         {list.length ? (
           <span style={{ minWidth: 20, height: 20, padding: "0 6px", borderRadius: 10, background: "#8f7bff", color: "#fff", fontSize: 11.5, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{list.length}</span>
         ) : null}
@@ -36,7 +36,7 @@ export function SuggestCard({ items, onFocusRole, defaultOpen = true }: { items:
     <section
       data-panel=""
       data-scroll=""
-      aria-label="Tacit suggests"
+      aria-label="Simon suggests"
       style={{
         position: "relative",
         width: 300,
@@ -57,7 +57,7 @@ export function SuggestCard({ items, onFocusRole, defaultOpen = true }: { items:
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Orb mood={list.length ? "asking" : "quiet"} size={30} follow={false} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 14.5, fontWeight: 600 }}>Tacit suggests</div>
+          <div style={{ fontSize: 14.5, fontWeight: 600 }}>Simon suggests</div>
           <div style={{ fontSize: 12, color: "#6e6e73" }}>From the sessions so far</div>
         </div>
         <button type="button" onClick={() => setOpen(false)} aria-label="Collapse suggestions" style={{ width: 28, height: 28, borderRadius: 14, border: 0, background: "transparent", color: "#6e6e73", cursor: "pointer", fontSize: 13 }}>

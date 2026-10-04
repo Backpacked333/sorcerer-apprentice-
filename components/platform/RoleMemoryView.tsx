@@ -119,12 +119,12 @@ function Synopsis({ role, t, playing, isNew }: { role: RoleMemory; t: number; pl
   const s = role.synopsis;
   const visible = s.sentences.filter((x) => x.at <= t && !(x.until != null && x.until <= t));
   return (
-    <section style={{ ...card, padding: 24 }} aria-label="What Tacit understands about this role">
+    <section style={{ ...card, padding: 24 }} aria-label="What Simon understands about this role">
       <IridescentRim radius={28} colors={PASTEL} opacity={0.55} speed={14} />
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
         <Orb mood={playing ? "reading" : visible.length ? "understood" : "quiet"} size={34} follow={false} />
         <div>
-          <h2 style={h2}>What Tacit understands about this role</h2>
+          <h2 style={h2}>What Simon understands about this role</h2>
           <div style={{ fontSize: 12.5, color: "#6e6e73" }}>Rewritten after every session · underlined = new since the last one</div>
         </div>
       </div>
@@ -408,7 +408,7 @@ export function RoleEmpty({ title, href }: { title: string; href: string }) {
       <div style={{ ...card, marginTop: 40, textAlign: "center", padding: 32 }}>
         <div style={{ display: "flex", justifyContent: "center" }}><Orb mood="quiet" size={38} follow={false} /></div>
         <h1 style={{ margin: "14px 0 6px", fontSize: 22, fontWeight: 700 }}>{title}</h1>
-        <p style={{ margin: "0 0 16px", fontSize: 14, color: "#6e6e73", lineHeight: 1.5 }}>Only roles Tacit has captured or heard named appear here.</p>
+        <p style={{ margin: "0 0 16px", fontSize: 14, color: "#6e6e73", lineHeight: 1.5 }}>Only roles Simon has captured or heard named appear here.</p>
         <Link href={href} style={topPill}>Back to the company map</Link>
       </div>
     </div>

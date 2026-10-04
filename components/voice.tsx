@@ -7,8 +7,9 @@
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe, type ScribeCallbacks } from "@elevenlabs/react";
-import { composedVoiceGateState, initialTurnState, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
+import { composedVoiceGateState, initialTurnState, withAnswerConfirmation, withVoiceQualityWindow, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
 import { stopAndClearMediaStream, VoiceTurnAdapter } from "@/lib/voice-turn-adapter";
+import { uploadRecordingWithConsent } from "@/lib/recording-consent";
 export type { TurnOptions, TurnPhase, TurnResult } from "@/lib/voice-turn";
 import { AgentSpeechTimeline, type VoiceCommand } from "@/lib/voice-protocol";
 import {
@@ -514,6 +515,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const clipStreamRef = useRef<MediaStream | null>(null);
   const clipChunksRef = useRef<Blob[]>([]);
   const clipSessionRef = useRef<string | undefined>(undefined);
+  const clipConsentRef = useRef<{ epoch: number; current: () => number; onError?: (error: unknown) => void } | undefined>(undefined);
   const gateChangedRef = useRef<() => void>(() => {});
   const authorizationTimeoutRef = useRef<() => void>(() => {});
   const definitiveSpeechEndRef = useRef<() => void>(() => {});
@@ -1084,17 +1086,23 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const stopClip = useCallback(async (upload: boolean, audioId?: string) => {
     const recorder = clipRecorderRef.current;
     clipRecorderRef.current = null;
+    const sessionId = clipSessionRef.current;
+    const chunks = clipChunksRef.current;
+    const consent = clipConsentRef.current;
+    clipSessionRef.current = undefined;
+    clipChunksRef.current = [];
+    clipConsentRef.current = undefined;
     if (!recorder) return;
     if (recorder.state !== "inactive") await new Promise<void>((resolve) => { recorder.onstop = () => resolve(); recorder.stop(); });
-    const sessionId = clipSessionRef.current;
-    clipSessionRef.current = undefined;
     if (!upload || !audioId || !sessionId) return;
-    const blob = new Blob(clipChunksRef.current, { type: "audio/webm" });
+    const blob = new Blob(chunks, { type: "audio/webm" });
     if (blob.size < 2_000) return;
-    const form = new FormData();
-    form.append("audioId", audioId);
-    form.append("file", blob, `${audioId}.webm`);
-    await fetch(`/api/sessions/${sessionId}/clips`, { method: "POST", body: form }).catch(() => undefined);
+    try {
+      await uploadRecordingWithConsent(sessionId, audioId, blob, consent?.epoch ?? 0, consent?.current ?? (() => 0));
+    } catch (error) {
+      consent?.onError?.(error);
+      throw error;
+    }
   }, []);
   turnCleanupRef.current = () => {
     turnAdapterRef.current!.disconnect();
@@ -1133,22 +1141,27 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
           onEnd: () => { turnAdapterRef.current!.dispatchForGeneration(generation, { type: "SPEAK_END", at: nowTurn() }); },
         });
       } else if (effect.type === "CLIP_START") {
+        const options = turnAdapterRef.current!.snapshot().options?.recordClip;
+        const currentEpoch = options?.consentEpoch ?? (() => 0);
+        const consent = { epoch: currentEpoch(), current: currentEpoch, onError: options?.onError };
         try {
           let stream = clipStreamRef.current;
           if (!stream) {
             const acquired = await navigator.mediaDevices.getUserMedia({ audio: localStorage.getItem("tacit.micDeviceId") ? { deviceId: { exact: localStorage.getItem("tacit.micDeviceId")! } } : true });
-            if (generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase !== "listening") {
+            if (generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase !== "listening" || consent.epoch !== currentEpoch()) {
               acquired.getTracks().forEach((track) => track.stop());
               return;
             }
             stream = acquired;
             clipStreamRef.current = acquired;
           }
-          if (generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase !== "listening") return;
-          clipChunksRef.current = [];
+          if (generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase !== "listening" || consent.epoch !== currentEpoch()) return;
+          const chunks: Blob[] = [];
+          clipChunksRef.current = chunks;
           clipSessionRef.current = effect.sessionId;
+          clipConsentRef.current = consent;
           const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
-          recorder.ondataavailable = (event) => { if (event.data.size) clipChunksRef.current.push(event.data); };
+          recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
           recorder.start(250);
           clipRecorderRef.current = recorder;
         } catch { clipRecorderRef.current = null; }
@@ -1164,7 +1177,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, [nowTurn, turnState.phase]);
 
   const turn = useCallback<VoiceApi["turn"]>((opts) => {
-    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, opts);
+    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, withAnswerConfirmation(withVoiceQualityWindow(opts)));
   }, []);
   const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
   const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => turnAdapterRef.current!.submitTyped(text), []);

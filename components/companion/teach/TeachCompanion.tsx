@@ -132,6 +132,9 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
             <Link className="underline" href={`/map/${map.sessionId}`}>Open the map</Link>
           </p>
         ) : null}
+        {vm.syncError ? (
+          <p role="alert" style={{ fontSize: 12.5, color: "#8a5200", margin: "0 2px", padding: "8px 10px", borderRadius: 12, background: "rgba(245,166,35,.14)" }}>{vm.syncError}</p>
+        ) : null}
       </CompanionCard>
     );
   }
@@ -168,7 +171,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
             <GlassButton variant="amber" size={34} style={{ width: "100%" }} data-testid="teach-end" onClick={() => { setEndError(null); vm.endSession().catch(() => setEndError("Could not save; try again")); }}>
               End session · show the mastery card
             </GlassButton>
-            {endError ? <p role="alert" style={{ fontSize: 12, color: "#8a5200", textAlign: "center", margin: 0 }}>{endError}</p> : null}
+            {endError || vm.syncError ? <p role="alert" style={{ fontSize: 12, color: "#8a5200", textAlign: "center", margin: 0 }}>{endError ?? vm.syncError}</p> : null}
           </div>
         )
       }

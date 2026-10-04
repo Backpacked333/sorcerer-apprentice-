@@ -19,8 +19,8 @@ const RISE = "tc-rise .45s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both";
 /** Honest paint-out claim: Tacit's own surfaces are painted out only on a verified self-tab capture. */
 function ledgerOccluderLine(vm: CaptureVM): string {
   if (!vm.pipeline.sharing) return "No screen is being captured right now, so no frame leaves the browser.";
-  if (vm.pipeline.selfCapture) return "Tacit's own card and this sheet are painted out of every captured frame.";
-  return "This shared surface is not this tab, so Tacit's own card is not painted out of its frames.";
+  if (vm.pipeline.selfCapture) return "Simon's own card and this sheet are painted out of every captured frame.";
+  return "This shared surface is not this tab, so Simon's own card is not painted out of its frames.";
 }
 
 export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: boolean; floating: boolean }) {

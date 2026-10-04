@@ -304,7 +304,7 @@ export function createTurnHubSubscriber({
   now: () => number;
   dispatch: (event:
     | { type: "HUMAN_PARTIAL"; at: number; text: string }
-    | { type: "HUMAN_COMMIT"; at: number; text: string; source: "scribe" }
+    | { type: "HUMAN_COMMIT"; at: number; startedAt?: number; text: string; source: "scribe" }
     | { type: "COMMAND"; at: number; command: "off_record" | "not_now" }) => void;
   noteHumanSpeech: (at: number) => void;
 }): VoiceHubSubscriber {
@@ -315,10 +315,10 @@ export function createTurnHubSubscriber({
       noteHumanSpeech(at);
       if (turnActive) dispatch({ type: "HUMAN_PARTIAL", at, text });
     },
-    onCommitted: (text, _startSecs, endSecs) => {
+    onCommitted: (text, startSecs, endSecs) => {
       const at = endSecs ?? now();
       noteHumanSpeech(at);
-      if (turnActive) dispatch({ type: "HUMAN_COMMIT", at, text, source: "scribe" });
+      if (turnActive) dispatch({ type: "HUMAN_COMMIT", at, ...(startSecs === undefined ? {} : { startedAt: startSecs }), text, source: "scribe" });
     },
     onCommand: (command) => {
       if (turnActive && (command === "off_record" || command === "not_now")) dispatch({ type: "COMMAND", at: now(), command });

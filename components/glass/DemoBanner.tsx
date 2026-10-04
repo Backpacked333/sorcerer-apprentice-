@@ -5,7 +5,7 @@ import Link from "next/link";
 export type DemoBannerProps = { text?: string; href?: string };
 
 /** Persistent label on every demo-mode page: fictional data, never presented as learned. */
-export function DemoBanner({ text = "Demo data — fictional. Nothing here was learned by Tacit.", href = "/" }: DemoBannerProps) {
+export function DemoBanner({ text = "Demo data — fictional. Nothing here was learned by Simon.", href = "/" }: DemoBannerProps) {
   return (
     <div
       role="note"

@@ -26,11 +26,12 @@ export interface TurnOptions {
   listen?: boolean;
   timeoutSecs?: number;
   maxSecs?: number;
-  recordClip?: { sessionId: string };
+  recordClip?: { sessionId: string; consentEpoch?: () => number; onError?: (error: unknown) => void };
   abortOnHumanSpeech?: boolean;
   watchdogSecs?: number;
   silenceCloseSecs?: number;
   ackMaxSecs?: number;
+  answerTool?: ToolName;
   onPhase?: (phase: TurnPhase, at: number) => void;
 }
 
@@ -41,6 +42,7 @@ export interface TurnResult {
   tool?: { name: ToolName; params: Record<string, unknown> };
   audioId?: string;
   askedAt: number;
+  answerStartedAt?: number;
   answeredAt?: number;
   sentAt: number;
   spokeAt?: number;
@@ -52,12 +54,23 @@ export interface TurnResult {
   abortReason?: "resumed" | "user" | "superseded" | "paused" | "disconnected" | "silent";
 }
 
+export function withVoiceQualityWindow(options: TurnOptions): TurnOptions {
+  return { ...options, watchdogSecs: options.watchdogSecs ?? 8 };
+}
+
+export function withAnswerConfirmation(options: TurnOptions): TurnOptions {
+  if (options.listen && (options.tag === "ASK" || options.tag === "DEBRIEF")) {
+    return { ...options, answerTool: options.answerTool ?? "log_answer" };
+  }
+  return options;
+}
+
 export type TurnEvent =
   | { type: "SEND"; at: number; options: TurnOptions; agentConnected?: boolean; audioId?: string }
   | { type: "SPEAK_START"; at: number; source?: "agent" | "fallback" }
   | { type: "SPEAK_END"; at: number }
   | { type: "HUMAN_PARTIAL"; at: number; text: string }
-  | { type: "HUMAN_COMMIT"; at: number; text: string; source?: "scribe" | "agent_asr" }
+  | { type: "HUMAN_COMMIT"; at: number; startedAt?: number; text: string; source?: "scribe" | "agent_asr" }
   | { type: "TOOL"; at: number; name: ToolName; params: Record<string, unknown> }
   | { type: "TYPED"; at: number; text: string }
   | { type: "COMMAND"; at: number; command: "off_record" | "not_now" }
@@ -100,6 +113,9 @@ export interface TurnState {
   scribeText: string;
   agentAsrText: string;
   partial: string;
+  provisionalCommit: string;
+  answerStartedAt?: number;
+  answerAudioEligible: boolean;
   lastPartialAt: number;
   lastHumanSpeechAt: number;
   lastAgentSpeechEnd: number;
@@ -118,6 +134,8 @@ export const initialTurnState: TurnState = {
   scribeText: "",
   agentAsrText: "",
   partial: "",
+  provisionalCommit: "",
+  answerAudioEligible: true,
   lastPartialAt: Number.NEGATIVE_INFINITY,
   lastHumanSpeechAt: Number.NEGATIVE_INFINITY,
   lastAgentSpeechEnd: Number.NEGATIVE_INFINITY,
@@ -171,6 +189,21 @@ function heard(state: TurnState): Pick<TurnClose, "heard" | "heardSource"> {
   return { heard: "" };
 }
 
+function requiresAnswerTool(state: TurnState): boolean {
+  return Boolean(state.options?.answerTool && state.spokenBy === "agent");
+}
+
+function acceptedAnswer(state: TurnState, tool?: TurnResult["tool"]): Pick<TurnClose, "heard" | "heardSource"> {
+  if (!requiresAnswerTool(state)) return heard(state);
+  if (!tool || tool.name !== state.options?.answerTool) return { heard: "" };
+  if (tool.name !== "log_answer") return heard(state);
+  const reason = typeof tool.params.reason === "string" ? tool.params.reason.trim() : "";
+  // The tool selects the answer, but only a literal transcript match is evidence.
+  if (reason && state.scribeText.includes(reason)) return { heard: reason, heardSource: "scribe" };
+  if (reason && state.agentAsrText.includes(reason)) return { heard: reason, heardSource: "agent_asr" };
+  return { heard: "" };
+}
+
 function resultFrom(state: TurnState, close: TurnClose, closedAt: number): TurnResult {
   const askedAt = state.askedAt ?? state.sentAt ?? closedAt;
   const spoke = state.spokeAt !== undefined && (state.askedAt !== undefined || audibleFor(state, closedAt) + EPSILON >= 1);
@@ -179,8 +212,11 @@ function resultFrom(state: TurnState, close: TurnClose, closedAt: number): TurnR
     heard: close.heard,
     via: close.via,
     ...(close.tool ? { tool: close.tool } : {}),
-    ...(state.audioId && close.heard ? { audioId: state.audioId } : {}),
+    ...(state.audioId && close.heard && state.answerAudioEligible && state.answerStartedAt !== undefined && state.answerStartedAt >= askedAt
+      ? { audioId: state.audioId }
+      : {}),
     askedAt,
+    ...(state.answerStartedAt !== undefined ? { answerStartedAt: state.answerStartedAt } : {}),
     ...(close.answeredAt !== undefined ? { answeredAt: close.answeredAt } : {}),
     sentAt: state.sentAt ?? closedAt,
     ...(state.spokeAt !== undefined ? { spokeAt: state.spokeAt } : {}),
@@ -234,7 +270,16 @@ function enterClosing(state: TurnState, close: TurnClose): TurnTransition {
 
 function finishSpeech(state: TurnState, at: number): TurnTransition {
   const askedAt = at;
-  const base = { ...state, askedAt, speechEndCandidateAt: undefined, lastAgentSpeechEnd: at };
+  const base = {
+    ...state,
+    askedAt,
+    speechEndCandidateAt: undefined,
+    lastAgentSpeechEnd: at,
+    // Pre-listening recognition is interruption evidence only. It cannot leak into the answer.
+    partial: "",
+    provisionalCommit: "",
+    lastPartialAt: Number.NEGATIVE_INFINITY,
+  };
   if (state.options?.listen ?? false) {
     return {
       state: { ...base, phase: "listening" },
@@ -250,7 +295,7 @@ function finishSpeech(state: TurnState, at: number): TurnTransition {
 }
 
 function closeListening(state: TurnState, at: number, via: TurnClose["via"], extra: Partial<TurnClose> = {}): TurnTransition {
-  const captured = heard(state);
+  const captured = acceptedAnswer(state, extra.tool);
   const answeredAt = captured.heard && Number.isFinite(state.lastHumanSpeechAt) ? state.lastHumanSpeechAt : undefined;
   return enterClosing(state, {
     via,
@@ -332,6 +377,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
       partial: event.text.trim(),
       lastPartialAt: event.at,
       lastHumanSpeechAt: event.at,
+      ...(state.phase === "listening" && state.answerStartedAt === undefined ? { answerStartedAt: event.at } : {}),
     };
     const beforeQuestion = state.phase === "sending" || state.phase === "waiting_for_speech" || state.phase === "speaking";
     if (
@@ -353,18 +399,34 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
     ) {
       return { state, effects: [] };
     }
+    const answerEligible = state.phase === "listening" || state.phase === "closing";
+    if (!answerEligible) {
+      return {
+        state: {
+          ...state,
+          provisionalCommit: append(state.provisionalCommit, event.text),
+          partial: "",
+          lastHumanSpeechAt: event.at,
+        },
+        effects: [],
+      };
+    }
+    const answerStartedAt = event.startedAt ?? event.at;
+    const askedAt = state.askedAt ?? Number.POSITIVE_INFINITY;
     const next: TurnState = {
       ...state,
       scribeText: source === "scribe" ? append(state.scribeText, event.text) : state.scribeText,
       agentAsrText: source === "agent_asr" ? append(state.agentAsrText, event.text) : state.agentAsrText,
       partial: "",
       lastHumanSpeechAt: event.at,
+      answerStartedAt: state.answerStartedAt === undefined ? answerStartedAt : Math.min(state.answerStartedAt, answerStartedAt),
+      answerAudioEligible: state.answerAudioEligible && answerStartedAt >= askedAt,
     };
     if (state.phase === "closing" && state.close) {
-      const captured = heard(next);
+      const captured = acceptedAnswer(next, state.close.tool);
       next.close = {
         ...state.close,
-        ...(state.close.via === "timeout" ? { via: "scribe" as const } : {}),
+        ...(state.close.via === "timeout" && captured.heard ? { via: "scribe" as const } : {}),
         ...captured,
         answeredAt: captured.heard ? event.at : state.close.answeredAt,
       };
@@ -391,6 +453,15 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
 
   if (event.type === "TOOL") {
     const tool = { name: event.name, params: event.params };
+    if (requiresAnswerTool(state)) {
+      if (event.name !== state.options?.answerTool) return { state, effects: [] };
+      if (state.phase === "closing" && state.close) {
+        if (state.close.via === "typed" || state.close.via === "aborted" || state.close.via === "spoken") return { state, effects: [] };
+        const captured = acceptedAnswer(state, tool);
+        const answeredAt = captured.heard && Number.isFinite(state.lastHumanSpeechAt) ? state.lastHumanSpeechAt : undefined;
+        return { state: { ...state, close: { ...state.close, via: "tool", tool, ...captured, answeredAt } }, effects: [] };
+      }
+    }
     if (state.phase === "listening") return closeListening(state, event.at, "tool", { tool });
     if (state.phase === "closing" && state.close) {
       return { state: { ...state, close: { ...state.close, tool } }, effects: [] };
@@ -517,6 +588,16 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
 
   if (state.phase === "listening") {
     const askedAt = state.askedAt ?? state.sentAt ?? event.at;
+    if (requiresAnswerTool(state)) {
+      const maxSecs = state.options?.maxSecs ?? 60;
+      const timeoutSecs = state.options?.timeoutSecs ?? 12;
+      const anchor = Math.max(askedAt, state.lastHumanSpeechAt, state.lastAgentSpeechEnd);
+      const freshPartial = Boolean(state.partial) && event.at - state.lastPartialAt < 3;
+      if (event.at - askedAt + EPSILON >= maxSecs || (!freshPartial && event.at - anchor + EPSILON >= timeoutSecs)) {
+        return closeListening(state, event.at, "timeout");
+      }
+      return { state, effects: [] };
+    }
     const silenceCloseSecs = state.options?.silenceCloseSecs ?? 2.5;
     const effectiveSilence = Number.isFinite(state.lastAgentSpeechEnd) && state.lastAgentSpeechEnd > askedAt ? 8 : silenceCloseSecs;
     const captured = heard(state);

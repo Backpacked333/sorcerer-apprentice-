@@ -5,7 +5,7 @@ import { loadPlatform } from "@/lib/platform/load";
 import { listSessions } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Sessions · Tacit" };
+export const metadata: Metadata = { title: "Sessions · Simon" };
 
 export default async function SessionsPage() {
   const data = await loadPlatform();

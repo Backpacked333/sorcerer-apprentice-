@@ -128,7 +128,7 @@ describe("VoiceHubRouter attribution", () => {
     hub.commit("turn answer", 15_000);
     expect(lastHumanSpeechAt).toBe(9);
     expect(dispatched).toHaveBeenCalledTimes(1);
-    expect(dispatched).toHaveBeenCalledWith({ type: "HUMAN_COMMIT", at: 3, text: "turn answer", source: "scribe" });
+    expect(dispatched).toHaveBeenCalledWith({ type: "HUMAN_COMMIT", at: 3, startedAt: 3, text: "turn answer", source: "scribe" });
   });
 
   it("delivers each WebSpeech partial and commit exactly once through hub subscribers", () => {

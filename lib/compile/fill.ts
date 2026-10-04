@@ -5,6 +5,7 @@ import { UNSEEN_CASES } from "./slots";
 export function fillSlot(map: WorkMap, slotId: string, quote: Quote): WorkMap {
   const slot = map.slots.find((s) => s.id === slotId);
   if (!slot) return map;
+  delete map.confirmedAt;
   slot.status = "filled";
   slot.filledBy = quote;
   if (slot.kind === "novel") {

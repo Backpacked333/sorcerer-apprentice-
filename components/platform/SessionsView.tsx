@@ -14,7 +14,7 @@ export function SessionsView({ sessions, failed }: { sessions: Row[]; failed: bo
         <span style={{ fontSize: 13, color: "#6e6e73" }}>Library › Sessions</span>
       </div>
       <h1 style={{ margin: "22px 0 4px", fontSize: "clamp(26px,3.2vw,36px)", fontWeight: 700, letterSpacing: "-.03em" }}>Sessions</h1>
-      <p style={{ margin: "0 0 18px", fontSize: 14, color: "#6e6e73" }}>Every capture and teach session Tacit has stored. Times are UTC.</p>
+      <p style={{ margin: "0 0 18px", fontSize: 14, color: "#6e6e73" }}>Every capture and teach session Simon has stored. Times are UTC.</p>
       {failed ? <p style={{ fontSize: 13.5, color: "#a35f00" }}>Some session files could not be read and are left out.</p> : null}
       {sessions.length === 0 ? (
         <div style={{ padding: 20, borderRadius: 24, background: "rgba(255,255,255,.8)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.07)", fontSize: 14, color: "#6e6e73" }}>

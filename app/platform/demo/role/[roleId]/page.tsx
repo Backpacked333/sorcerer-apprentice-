@@ -5,7 +5,7 @@ import { RoleMemoryView } from "@/components/platform/RoleMemoryView";
 import { demoRole } from "@/lib/platform/demo-data";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Role memory (demo) · Tacit" };
+export const metadata: Metadata = { title: "Role memory (demo) · Simon" };
 
 export default async function DemoRolePage({ params }: { params: Promise<{ roleId: string }> }) {
   const { roleId } = await params;

@@ -38,7 +38,7 @@ export function AppShell({
       >
         <span className="inline-flex items-center gap-2">
           <span className="mark" aria-hidden style={{ width: 12, height: 12, borderRadius: 3, background: "#f5a623", boxShadow: "0 0 8px rgba(245,166,35,.45)" }} />
-          <span className="text-[15px] font-semibold tracking-[-.01em] text-[#1d1d1f]">Tacit</span>
+          <span className="text-[15px] font-semibold tracking-[-.01em] text-[#1d1d1f]">Simon</span>
         </span>
         <Stepper current={step} sessionId={sessionId} confirmed={confirmed} />
         <span className="ml-auto flex min-w-0 items-center gap-2 text-[#6e6e73]">

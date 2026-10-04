@@ -60,7 +60,7 @@ export function PlatformShell({
   return (
     <Ctx.Provider value={ctx}>
       <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: "#f4f4f7", color: "#1d1d1f", overflow: "hidden" }}>
-        {data.mode === "demo" ? <DemoBanner text={`Demo data — ${data.company.name}. Nothing here was learned by Tacit.`} href="/platform" /> : null}
+        {data.mode === "demo" ? <DemoBanner text={`Demo data — ${data.company.name}. Nothing here was learned by Simon.`} href="/platform" /> : null}
         <div style={{ position: "relative", flex: 1, minHeight: 0 }}>
           <div aria-hidden style={{ position: "absolute", inset: 0, background: WASH[active.page], pointerEvents: "none" }} />
           <div
@@ -185,7 +185,7 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 8px" }}>
         <Link href="/" onClick={onNavigate} style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#1d1d1f", textDecoration: "none" }}>
           <span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, background: "#f5a623" }} />
-          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-.01em" }}>Tacit</span>
+          <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-.01em" }}>Simon</span>
           <span style={{ fontSize: 15, color: "#6e6e73" }}>Platform</span>
         </Link>
         {data.mode === "demo" ? (
@@ -211,7 +211,7 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
 
         <div style={{ margin: "16px 10px 6px", fontSize: 11, fontWeight: 600, color: "#6e6e73" }}>Roles</div>
         {roles.length === 0 ? (
-          <p style={{ margin: "0 10px", fontSize: 12.5, color: "#6e6e73", lineHeight: 1.45 }}>Only roles Tacit has captured or heard named appear here.</p>
+          <p style={{ margin: "0 10px", fontSize: 12.5, color: "#6e6e73", lineHeight: 1.45 }}>Only roles Simon has captured or heard named appear here.</p>
         ) : null}
         {shown.map((r) => {
           const isActive = r.id === active.roleId;

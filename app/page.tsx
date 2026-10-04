@@ -8,6 +8,8 @@ import { Orb } from "@/components/glass";
 import { HeroIllustration } from "@/components/landing/HeroIllustration";
 import { CyclingOrb } from "@/components/landing/CyclingOrb";
 import { PlatformMiniMap, type MiniMapData } from "@/components/landing/PlatformMiniMap";
+import { seedDemo } from "@/lib/seed";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -32,8 +34,8 @@ const LIMITS: { lead: string; text: string }[] = [
 ];
 
 const STEPS = [
-  { mood: "asking" as const, tag: "01 · Capture", color: "#a35f00", title: "It asks why at the pauses.", body: "The expert shares their screen and works a real task. Tacit stays quiet while they type, read or talk, and asks one short question at a natural pause — about something visible on screen.", foot: "Read by the expert, who confirms it." },
-  { mood: "understood" as const, tag: "02 · Map", color: "#7a5cff", title: "It explains it back until it's right.", body: "A short spoken debrief closes the gaps. Then Tacit explains the whole process in its own words until the expert says: yes, that is how it works. Every step links to a screen moment and the expert's words.", foot: "Read by the new hire, who is tutored from it." },
+  { mood: "asking" as const, tag: "01 · Capture", color: "#a35f00", title: "It asks why at the pauses.", body: "The expert shares their screen and works a real task. Simon stays quiet while they type, read or talk, and asks one short question at a natural pause — about something visible on screen.", foot: "Read by the expert, who confirms it." },
+  { mood: "understood" as const, tag: "02 · Map", color: "#7a5cff", title: "It explains it back until it's right.", body: "A short spoken debrief closes the gaps. Then Simon explains the whole process in its own words until the expert says: yes, that is how it works. Every step links to a screen moment and the expert's words.", foot: "Read by the new hire, who is tutored from it." },
   { mood: "step" as const, tag: "03 · Teach", color: "#b4501f", title: "It steps in before the save.", body: "The new hire works a case on their own screen. The tutor stays quiet and catches a wrong decision when the field changes, before it is saved — in the expert's own words.", foot: "Read by an agent that loads the same rules." },
 ];
 
@@ -88,7 +90,7 @@ export default async function Home() {
       <div className="sticky top-3 z-20 px-4">
         <nav aria-label="Main" className="glass-nav mx-auto flex max-w-[1120px] items-center gap-x-6 gap-y-1" style={{ minHeight: 52, padding: "6px 6px 6px 18px", borderRadius: 26 }}>
           <a href="#top" className="flex items-center gap-2" style={{ fontSize: 16, fontWeight: 600, color: "#1d1d1f" }}>
-            <span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, background: "#f5a623" }} />Tacit
+            <span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, background: "#f5a623" }} />Simon
           </a>
           <div className="hidden flex-wrap gap-x-5 gap-y-1 md:flex" style={{ fontSize: 14 }}>
             <a href="#how" className="text-[#3a3a3c] hover:text-[#a35f00]">How it works</a>
@@ -104,10 +106,10 @@ export default async function Home() {
       <section id="top" className="relative mx-auto grid max-w-[1120px] scroll-mt-20 grid-cols-1 items-center gap-x-12 gap-y-7 lg:gap-y-10 px-6 pt-8 pb-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.04fr)] lg:pt-12">
         <div className="flex min-w-0 flex-col gap-4 lg:gap-5">
           <BrowserCheck />
-          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, letterSpacing: ".08em", color: "#a35f00" }}>TACIT · THE AI APPRENTICE</p>
+          <p style={{ margin: 0, fontSize: 13, fontWeight: 600, letterSpacing: ".08em", color: "#a35f00" }}>SIMON · THE AI APPRENTICE</p>
           <h1 style={{ margin: 0, fontSize: "clamp(42px,5.6vw,76px)", lineHeight: 1, fontWeight: 700, letterSpacing: "-.04em", textWrap: "balance" }}>We know more than we can tell.</h1>
           <p style={{ margin: 0, maxWidth: 520, fontSize: "clamp(16px,1.5vw,19px)", lineHeight: 1.5, color: "#3a3a3c", textWrap: "pretty" }}>
-            Tacit sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
+            Simon sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
           </p>
         </div>
         <div className="order-3 min-w-0 pt-3 pb-6 lg:order-none lg:pt-0 lg:pb-0">
@@ -123,7 +125,19 @@ export default async function Home() {
                 <Link className={LIFT} style={glassLink} href={`/teach?from=${sample}`}>Be the new hire</Link>
               </div>
             ) : (
-              <p style={{ margin: "8px 0 0", fontSize: 14, color: "#6e6e73" }}>No sample is loaded. Run npm run seed:session, then reload.</p>
+              <form
+                className="mt-2 flex flex-col gap-2"
+                action={async () => {
+                  "use server";
+                  await seedDemo({ ifMissing: true });
+                  redirect("/map/demo_sabine_confirmed");
+                }}
+              >
+                <p style={{ margin: 0, fontSize: 14, color: "#6e6e73" }}>A scripted example with synthetic evidence, separate from your own captures.</p>
+                <div className="flex flex-wrap gap-2">
+                  <button type="submit" className={LIFT} style={{ ...amberLink, border: 0, cursor: "pointer" }}>Load the sample Work Map</button>
+                </div>
+              </form>
             )}
           </section>
           <section className="glass-panel relative flex flex-col gap-2 p-5 lg:p-6" style={{ borderRadius: 26 }}>
@@ -194,7 +208,7 @@ export default async function Home() {
             <H2>A living memory of every role.</H2>
           </div>
           <p style={{ margin: 0, fontSize: 17, lineHeight: 1.55, color: "#3a3a3c", textWrap: "pretty" }}>
-            Every capture adds to what Tacit knows about a role — its decisions, the reasons in the expert&apos;s words, the guardrails and who to ask. Roles appear on the company map as experts mention them, so you can see whose knowledge is captured and whose isn&apos;t yet.
+            Every capture adds to what Simon knows about a role — its decisions, the reasons in the expert&apos;s words, the guardrails and who to ask. Roles appear on the company map as experts mention them, so you can see whose knowledge is captured and whose isn&apos;t yet.
           </p>
           <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8, fontSize: 15 }}>
             {[["#f5a623", "Company map: roles, people and the rules between them"], ["#8f7bff", "Role memory: what it knows, and when it learned it"], ["#3b82f6", "Ontology: the data a role works with, growing over time"]].map(([c, t]) => (
@@ -239,7 +253,7 @@ export default async function Home() {
       </section>
 
       <footer className="relative mx-auto flex max-w-[1120px] flex-wrap items-center gap-x-6 gap-y-2 px-6 pt-7 pb-10" style={{ borderTop: ".5px solid rgba(0,0,0,.08)", fontSize: 13, color: "#6e6e73" }}>
-        <span className="flex items-center gap-2" style={{ fontWeight: 600, color: "#1d1d1f" }}><span aria-hidden style={{ width: 10, height: 10, borderRadius: 2.5, background: "#f5a623" }} />Tacit</span>
+        <span className="flex items-center gap-2" style={{ fontWeight: 600, color: "#1d1d1f" }}><span aria-hidden style={{ width: 10, height: 10, borderRadius: 2.5, background: "#f5a623" }} />Simon</span>
         <span>Built for the AI Apprentice challenge · Hack-Nation × ElevenLabs</span>
         <a className="ml-auto hover:text-[#a35f00]" style={{ color: "#6e6e73" }} href={REPO}>Repository ↗</a>
       </footer>

@@ -381,7 +381,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
           <div data-panel="" className="glass-panel" style={{ pointerEvents: "auto", maxWidth: 380, margin: "0 16px", padding: "22px 24px", borderRadius: 24, textAlign: "center", animation: "tc-rise .5s var(--ease-rise) both" }}>
             <div style={{ display: "flex", justifyContent: "center" }}><Orb mood="quiet" size={38} follow={false} /></div>
             <h2 style={{ margin: "12px 0 6px", fontSize: 18, fontWeight: 700 }}>{data.empty.title}</h2>
-            <p style={{ margin: "0 0 14px", fontSize: 13.5, color: "#6e6e73", lineHeight: 1.45 }}>Only roles Tacit has captured or heard named appear here.</p>
+            <p style={{ margin: "0 0 14px", fontSize: 13.5, color: "#6e6e73", lineHeight: 1.45 }}>Only roles Simon has captured or heard named appear here.</p>
             <Link href={data.empty.cta.href} style={{ display: "inline-flex", alignItems: "center", height: 40, padding: "0 18px", borderRadius: 20, fontSize: 14, fontWeight: 600, color: "#6b3f00", textDecoration: "none", background: "linear-gradient(180deg,rgba(255,222,160,.9),rgba(255,196,95,.62))" }}>
               {data.empty.cta.label}
             </Link>

@@ -110,7 +110,7 @@ export function ErpShell({
           <span className="erp-period">Posting period 12/2025</span>
           <span className="erp-help" aria-disabled="true" title="Help">?</span>
           <span className="erp-avatar" role="img" title={avatar.label} aria-label={`Signed in as ${avatar.label}`}>{avatar.initials}</span>
-          <Link href="/" className="erp-external-nav">Tacit</Link>
+          <Link href="/" className="erp-external-nav">Simon</Link>
         </header>
 
         <main className="erp-main">{children}</main>

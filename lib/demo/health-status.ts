@@ -7,7 +7,8 @@ export interface HealthItem { label: string; tone: HealthTone }
 interface HealthBody {
   keys?: { elevenlabs?: unknown; gateway?: unknown };
   agents?: { interviewer?: unknown; tutor?: unknown };
-  sample?: { present?: unknown } | unknown;
+  integrations?: { voice?: { configured?: unknown }; gateway?: { configured?: unknown } };
+  storage?: { configured?: unknown; reachable?: unknown; backend?: unknown };
 }
 
 export type EventSource = "vision" | "dom" | "both";
@@ -16,29 +17,35 @@ export function normalizeSource(raw: string | undefined | null): EventSource {
   return raw === "vision" || raw === "dom" || raw === "both" ? raw : "both";
 }
 
+// P-10: provider presence is "configured"/"degraded", never a live provider check — the
+// labels say "configured", not "live". Storage reachability replaces the old sample flag.
 export function healthItems(body: unknown, source: EventSource): HealthItem[] {
   if (!body || typeof body !== "object") return [{ label: "Status unavailable", tone: "neutral" }];
   const b = body as HealthBody;
   const key = !!b.keys?.elevenlabs;
   const interviewer = !!b.agents?.interviewer;
   const tutor = !!b.agents?.tutor;
+  const voiceConfigured = b.integrations?.voice?.configured !== undefined ? !!b.integrations.voice.configured : key && interviewer && tutor;
 
   let voice: HealthItem;
-  if (key && interviewer && tutor) voice = { label: "Voice: ElevenAgents live", tone: "green" };
-  else if (key && (interviewer || tutor)) voice = { label: `Voice: ElevenAgents for ${interviewer ? "capture" : "teach"} only, browser fallback elsewhere`, tone: "amber" };
+  if (voiceConfigured) voice = { label: "Voice: ElevenLabs configured", tone: "green" };
+  else if (key && (interviewer || tutor)) voice = { label: `Voice: ElevenLabs configured for ${interviewer ? "capture" : "teach"} only, browser fallback elsewhere`, tone: "amber" };
   else if (key) voice = { label: "Voice: browser fallback (no agent ids)", tone: "amber" };
   else voice = { label: "Voice: browser fallback", tone: "amber" };
 
-  const gateway = !!b.keys?.gateway;
+  const gateway = b.integrations?.gateway?.configured !== undefined ? !!b.integrations.gateway.configured : !!b.keys?.gateway;
   let vision: HealthItem;
   if (source === "dom") vision = { label: "Vision: off · ERP telemetry only", tone: "amber" };
-  else if (!gateway) vision = { label: source === "vision" ? "Vision: no model key" : "Vision: no model key · ERP telemetry only", tone: "amber" };
-  else if (source === "vision") vision = { label: "Vision: live model", tone: "green" };
-  else vision = { label: "Vision: live model + ERP telemetry", tone: "green" };
+  else if (!gateway) vision = { label: source === "vision" ? "Vision: Gateway not configured" : "Vision: Gateway not configured · ERP telemetry only", tone: "amber" };
+  else if (source === "vision") vision = { label: "Vision: Gateway configured", tone: "green" };
+  else vision = { label: "Vision: Gateway configured + ERP telemetry", tone: "green" };
 
-  const sampleRaw = b.sample;
-  const present = typeof sampleRaw === "object" && sampleRaw !== null ? !!(sampleRaw as { present?: unknown }).present : sampleRaw === true;
-  const sample: HealthItem = present ? { label: "Sample data: present", tone: "green" } : { label: "Sample data: missing", tone: "amber" };
+  const st = b.storage;
+  let storage: HealthItem;
+  if (!st || typeof st !== "object") storage = { label: "Storage: unknown", tone: "neutral" };
+  else if (!st.configured) storage = { label: "Storage: not configured", tone: "amber" };
+  else if (!st.reachable) storage = { label: "Storage: unreachable", tone: "amber" };
+  else storage = { label: `Storage: ${typeof st.backend === "string" ? st.backend : "ready"}`, tone: "green" };
 
-  return [voice, vision, sample];
+  return [voice, vision, storage, { label: "Configuration is not a live provider check", tone: "neutral" }];
 }

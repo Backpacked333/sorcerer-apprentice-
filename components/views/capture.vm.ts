@@ -4,6 +4,7 @@ import type { Candidate } from "@/lib/curiosity";
 import type { QuestionWindow, ScreenEvent, TranscriptSegment } from "@/lib/events";
 import type { Decision } from "@/lib/governor";
 import type { CaptureAppInfo, Evidence } from "@/lib/ui/capture-copy";
+import type { TurnPhase } from "@/lib/voice-turn";
 
 /** P-23 crop / paint-out handles. Optional so older pipelines compile. */
 export type CropHandle = {
@@ -49,7 +50,10 @@ export interface CaptureVM {
   sessionId: string;
   source: EventSource;
   voice: Pick<VoiceApi, "mode" | "connected" | "status" | "isSpeaking"> & { degraded?: boolean; lastError?: string };
+  turnPhase: TurnPhase;
+  gateOpen: boolean;
   sttEngine: "scribe" | "webspeech" | "none";
+  stt: { engine: "scribe" | "webspeech" | "none"; connected: boolean };
   pipeline: Pick<
     ReturnType<typeof useScreenPipeline>,
     "videoRef" | "sharing" | "start" | "activity" | "framesSeen" | "framesSent" | "dropped" | "visionLatency" | "visionError" | "masks" | "addMask" | "clearMasks" | "paused"
@@ -72,6 +76,8 @@ export interface CaptureVM {
   askedCount: number;
   guardrailAsked: boolean;
   toDebrief: number;
+  deferred: { kind: string; question: string; stepRef: string }[];
+  deferredCount: number;
   events: ScreenEvent[];
   candidateFor(eventId: string): Candidate | undefined;
   transcript: TranscriptSegment[];
@@ -82,8 +88,15 @@ export interface CaptureVM {
   setHolding(b: boolean): void;
   submitTypedAnswer(text: string): void;
   synced: number | null;
-  /** Narration already gave the reason: verbatim (redacted) segment, the question is dropped. */
-  reasonHeard?: { stepRef: string; quote: string; t: number; at?: number; about?: string | null }[];
+  syncError?: string | null;
+  /** Set by lane A when narration already filled the reason (latest heard quote). */
+  reasonHeard?: string;
+  /** Narration already gave the reason: verbatim (redacted) segment, the question is dropped.
+   *  `at` (epoch ms) and `about` (field label) are presentation extras for the companion. */
+  reasonHeardItems: { stepRef: string; quote: string; t: number; at?: number; about?: string | null }[];
+  noisy: boolean;
+  chainedCount: number;
+  forced: boolean;
 
   // ---- companion redesign (all optional)
   app?: CaptureAppInfo;

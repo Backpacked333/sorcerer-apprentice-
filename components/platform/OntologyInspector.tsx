@@ -47,7 +47,7 @@ export function OntologyInspector({ ont, t, node, rule, onPickNode, onTrace, onC
         {rule ? <RuleMode ont={ont} rule={rule} t={t} nodeName={nodeName} onPickNode={onPickNode} onTrace={onTrace} /> : node ? (
           <NodeMode ont={ont} node={node} t={t} nodeName={nodeName} onPickNode={onPickNode} onTrace={onTrace} />
         ) : (
-          <p style={{ margin: 0, fontSize: 14, color: "#6e6e73", lineHeight: 1.5 }}>{ont.empty ?? "Pick a class, or a decision path, to see what Tacit knows about it."}</p>
+          <p style={{ margin: 0, fontSize: 14, color: "#6e6e73", lineHeight: 1.5 }}>{ont.empty ?? "Pick a class, or a decision path, to see what Simon knows about it."}</p>
         )}
       </div>
     </aside>

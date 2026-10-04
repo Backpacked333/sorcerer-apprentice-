@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Frame, QuestionWindow, ScreenEvent, SessionLog } from "@/lib/events";
 import { describeEvent } from "@/lib/events";
 import { Matcher, type TutorDecision } from "@/lib/matcher";
+import { createSessionSync } from "@/lib/session-sync";
 import { type InvoiceState, type WorkMap, uid } from "@/lib/workmap";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
 import { VoiceProvider, useTranscriber, useVoice, type ToolHandlers } from "./voice";
@@ -32,6 +33,7 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
   const [ended, setEnded] = useState(false);
   const [startedAt, setStartedAt] = useState<number | null>(null);
   const [lastReplay, setLastReplay] = useState<TeachReplay | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const matcher = useRef<Matcher | null>(null);
   const logRef = useRef<SessionLog | null>(null);
   const pending = useRef<{ decision: TutorDecision; windowId: string } | null>(null);
@@ -40,6 +42,8 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
   const mapRef = useRef<WorkMap | null>(null);
   mapRef.current = map;
   const expertRef = useRef<SessionLog | null>(null);
+  const sync = useRef<ReturnType<typeof createSessionSync> | null>(null);
+  const contextRevision = useRef<string | null>(null);
   expertRef.current = expertLog;
 
   const rerender = () => setTick((t) => t + 1);
@@ -60,6 +64,17 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
       }
     })();
   }, [sessionId]);
+
+  useEffect(() => {
+    if (!voice.connected || !map?.confirmedAt) {
+      contextRevision.current = null;
+      return;
+    }
+    const key = `${map.sessionId}:${map.revision}`;
+    if (contextRevision.current === key) return;
+    contextRevision.current = key;
+    voice.sendContext(`[WORK MAP] ${JSON.stringify(map)}`);
+  }, [map, voice.connected, voice.sendContext]);
 
   const showReplay = useCallback((stepId?: string, ruleTitle?: string) => {
     const m = mapRef.current;
@@ -130,6 +145,16 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
   const pipelineState = pipeline.currentState;
 
   useEffect(() => {
+    if (!started) return;
+    const interval = window.setInterval(() => {
+      const L = logRef.current;
+      if (L && sync.current) void sync.current.sync(L).catch(() => setSyncError("Could not save this teach session."));
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [started]);
+
+  // mark when the tutor actually started speaking (intervention latency)
+  useEffect(() => {
     const p = pending.current;
     const L = logRef.current;
     if (!p || !L) return;
@@ -161,8 +186,13 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     if (!L) return;
     L.endedAt = Date.now();
     L.mastery = matcher.current?.ledger.map((m) => ({ ruleId: m.ruleId, outcome: `${m.outcome} (${m.phase}${m.helpBefore ? ", help before the decision" : ""})`, t: m.t })) ?? [];
+    try {
+      if (sync.current) await sync.current.sync(L);
+    } catch {
+      setSyncError("Could not save this teach session.");
+      return;
+    }
     await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disarm" }) }).catch(() => {});
-    await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) });
     voice.disconnect();
     pipeline.stop();
     setEnded(true);
@@ -207,16 +237,37 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     const sharing = share ? pipeline.start({ mode: opts?.workspace ? "workspace" : "tab", app: "erp", queue: "newhire" }).catch(() => {}) : Promise.resolve();
     L.startedAt = Date.now();
     L.sourceMapRevision = map?.revision;
-    const armed = map?.confirmedAt
-      ? fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "arm", mapSessionId: map.sessionId, teachSessionId: L.id }) }).then(() => {}, () => {})
-      : Promise.resolve();
+    setSyncError(null);
+    sync.current ??= createSessionSync(L.id);
+    const syncRef = sync.current;
+    const fail = (message: string) => {
+      pipeline.stop();
+      setSyncError(message);
+    };
     return (async () => {
+      try {
+        await syncRef.sync(L);
+      } catch {
+        fail("Could not save this teach session. Try again.");
+        return;
+      }
+      if (!map?.confirmedAt) {
+        fail("A confirmed Work Map is required to start.");
+        return;
+      }
       // the save guard is armed before the session counts as started (no unguarded save in the first ms)
-      await armed;
+      const armed = await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "arm", mapSessionId: map.sessionId, teachSessionId: L.id }) }).catch(() => null);
+      if (!armed?.ok) {
+        fail("Could not arm the teach guard. Reload the confirmed Work Map.");
+        return;
+      }
       setStartedAt(L.startedAt);
       setStarted(true);
       await sharing;
-      await voice.connect({ firstMessage: `I'll watch while you work. I only speak when ${map?.expert.name ?? "the expert"} would.` });
+      await voice.connect({
+        firstMessage: `I'll watch while you work. I only speak when ${map.expert.name} would.`,
+        dynamicVariables: { expert_name: map.expert.name, newhire_name: L.expertName, task: L.task },
+      });
       voice.setMicMuted(true);
     })();
   };
@@ -263,6 +314,7 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     events,
     start,
     endSession,
+    syncError,
   };
   return <TeachView vm={vm} />;
 }

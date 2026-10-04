@@ -79,7 +79,7 @@ export function CaptureCompanion(p: {
       mood={card.mood}
       mode={cardMode}
       floating={floating}
-      label="Tacit, the apprentice"
+      label="Simon, the apprentice"
       testId="capture-card"
       header={ask ? <AskHeader vm={vm} card={card} ripple={ripple} /> : <CompanionHeader mood={card.mood} title={card.title} sub={card.sub} startedAt={vm.startedAt ?? null} frozen={vm.holding} rippleKey={ripple} />}
       footer={<RunningFooter vm={vm} card={card} mechOpen={p.mechOpen} onToggleMech={p.onToggleMech} />}
@@ -199,7 +199,7 @@ function Notices({ vm }: { vm: CaptureVM }) {
 
 function CapsuleBody({ vm, card }: { vm: CaptureVM; card: CardState }) {
   const understood = (vm.understood ?? []).slice(-3);
-  const heard = (vm.reasonHeard ?? []).slice(-2);
+  const heard = (vm.reasonHeardItems ?? []).slice(-2);
   const empty = understood.length === 0 && heard.length === 0;
   return (
     <>
@@ -315,7 +315,7 @@ function RunningFooter({ vm, card, mechOpen, onToggleMech }: { vm: CaptureVM; ca
       >
         Done · start the debrief
       </GlassButton>
-      {saveError && <p role="alert" style={{ fontSize: 12, color: "#8a5200", textAlign: "center", padding: "0 2px" }}>{saveError}</p>}
+      {(saveError || vm.syncError) && <p role="alert" style={{ fontSize: 12, color: "#8a5200", textAlign: "center", padding: "0 2px" }}>{saveError ?? vm.syncError}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px" }}>
         <button
           type="button"

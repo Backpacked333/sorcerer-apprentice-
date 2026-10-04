@@ -241,7 +241,7 @@ export function InvoiceForm({
           {locked && (
             <div className="erp-banner erp-banner-ok">
               <p data-testid="erp-posted-banner">POSTED · INV-{inv.id} · cost center {inv.costCenter} · {routeLabel}</p>
-              {!nextId && <p className="erp-banner-sub">Queue complete. Return to the Tacit panel to finish.</p>}
+              {!nextId && <p className="erp-banner-sub">Queue complete. Return to the Simon panel to finish.</p>}
             </div>
           )}
           {error && <p className="erp-banner erp-banner-blocked" data-testid="erp-error" role="alert">{error}</p>}

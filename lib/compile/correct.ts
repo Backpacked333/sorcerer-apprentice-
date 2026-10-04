@@ -3,6 +3,7 @@ import type { Quote, WorkMap } from "../workmap";
 import { monthCondOf } from "./fill";
 
 export function applyCorrection(map: WorkMap, text: string, t: number): WorkMap {
+  delete map.confirmedAt;
   map.corrections.push({ t, text });
   const quote: Quote = { text, t, source: "debrief" };
   const low = text.toLowerCase();

@@ -406,7 +406,7 @@ export function derivePlatform(input: PlatformInput): PlatformData {
       openGaps: 0, learners: 0, topRules: mr.chips, risk: null, plannedAt: null,
       x: layout.outer[i].x, y: layout.outer[i].y, r: 42,
       memoryHref: null, ontologyHref: null, captureHref: "/capture",
-      note: "Tacit knows when work goes here — not yet how this role decides.",
+      note: "Simon knows when work goes here — not yet how this role decides.",
     });
     for (const l of mr.links) {
       edges.push({ id: `${l.from}->${id}`, from: l.from, to: id, label: `stop and ask · ${l.titles.join(" · ")}`, prov: l.said ? "said" : "teachback", ruleIds: l.ruleIds, at: l.at });
@@ -415,15 +415,15 @@ export function derivePlatform(input: PlatformInput): PlatformData {
 
   const timeline = timelineFor(beadsFor(groups), now);
   const departments: Department[] = roles.length ? [{
-    id: "seen", name: "Seen by Tacit", color: "#6e6e73", cloudA: "rgba(215,218,228,.6)", cloudB: "rgba(235,236,242,.3)",
+    id: "seen", name: "Seen by Simon", color: "#6e6e73", cloudA: "rgba(215,218,228,.6)", cloudB: "rgba(235,236,242,.3)",
     x: cx, y: cy, rx: layout.cloud.rx, ry: layout.cloud.ry,
   }] : [];
 
   return {
     mode: "real",
-    company: { name: "Sandbox workspace", sub: "Roles Tacit has watched or heard about" },
+    company: { name: "Sandbox workspace", sub: "Roles Simon has watched or heard about" },
     departments,
-    orgNote: "Org structure isn't connected. Tacit only shows roles it has watched or heard about.",
+    orgNote: "Org structure isn't connected. Simon only shows roles it has watched or heard about.",
     roles, edges,
     mainRoleId: groups[0]?.id ?? null,
     timeline,
@@ -1029,7 +1029,7 @@ export function deriveOntology(input: PlatformInput, roleId: string): { data: Pl
     ontology: {
       roleId: g.id, roleTitle: g.task, expertName: p ? expert : null, people: peopleOf(g), confirmed: !!p?.m.confirmedAt, timeline: tl,
       classes, concepts, edges, rules: ontRules, saidLabel: `said by ${expert}`,
-      empty: classes.length || concepts.length ? null : "Nothing observed yet. Classes appear once Tacit has watched a case.",
+      empty: classes.length || concepts.length ? null : "Nothing observed yet. Classes appear once Simon has watched a case.",
     },
   };
 }

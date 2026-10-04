@@ -1,7 +1,56 @@
+## Oct 4 · False-quote evidence integrity [P-12]
+
+- Pre-listening transcriber commits are now provisional interruption signals only: they are cleared at listen-open and cannot populate the accepted turn text, Capture transcript, or `QuestionWindow.answerText`. Post-listening accepted answers are persisted once from the turn result.
+- `answeredAt < askedAt` and missing evidence clocks are rejected by deterministic and LLM compile evidence selection. Narration fallback now uses the existing invoice/value/field-grounded matcher rather than proximity alone, so narration naming invoice 9002 cannot satisfy invoice 9001.
+- `TurnResult.answerStartedAt` is an additive P-12 contract field. A clip id is returned only when the accepted answer interval began after recording/listening opened; text spanning the boundary may remain human-attributed evidence but cannot claim an uncovered clip.
+- Automated evidence: exact 34.587–44.592 agent-speech reproduction through the production `log_answer` path, the 36.644–37.650 pre-listening false commit, a real answer beginning at 51.434+, invalid/missing answer-clock rejection, nearest one-to-one cross-invoice narration isolation, pre-listening transcript corpus exclusion, and clip interval rejection. Typecheck, 546 passed / 1 skipped tests, production build, and isolated keyless Capture → Map → confirmation → tutor → guard smoke passed. Fresh independent review completed with no findings.
+- Not human-verified: repeat the original Capture → Map flow; remain silent while the question is spoken, answer only after the UI enters answering/listening, then require teach-back to quote only that post-listening answer. The exact script is in the PR handoff.
+
+## Oct 4 · Active-exchange presence [C1-C3, M1-M3]
+
+- Both live agents now distinguish connection/repeat/time requests from unrelated background speech while a tagged question is pending. Warm, brief acknowledgments are allowed; `log_answer` speaks before saving (`pre_tool_speech=force`, `execution_mode=post_tool_speech`) and still awaits the result. No acknowledgment may claim the answer is correct or already saved. Idle/background silence and V4 Turbo remain unchanged.
+- Read-back verified exact prompts and preserved unrelated configuration, knowledge-base, privacy and model settings. Provisioning `--check` now fails on prompt, skip policy or answer-acknowledgment drift. 512 tests, typecheck, build and diff checks passed before live testing.
+- Real production Capture test on frontend `4d76c20`: an unsaved ERP route change triggered a grounded question; "Can you hear me?" received "Yes, I can hear you." in ~856ms sampled waveform latency with no answer tool or browser speech. Both generated turns in `conv_8201m42dqsr6eths3ezkz9nbey94` reported `eleven_v4_turbo`. Controlled synthetic input is not human naturalness acceptance.
+- Blocking app findings: the legacy Capture controller persisted that human commit as `speaker:agent` because the agent had begun replying, and uploaded a timeout clip despite no accepted answer. Stopped before legitimate-answer acknowledgment ordering and tutor checks. Earlier diagnostic-only checks did not establish real Capture/Map/Teach integration; those screens still used legacy `say()` at the tested production revision.
+- Next: correct the real controller path, repeat with an actual task answer and slow clip persistence, then obtain a human listening pass. Map/Teach integration remains a Lane C coordination item.
+
+## Oct 4 · Background speech and conversational flow [C1, M1-M3, S1]
+
+- Roy's post-deploy listening feedback: voice sounds okay, but nearby voices trigger it and responses feel hesitant. This is not acceptance of the full voice experience.
+- Saved remote configs had `background_voice_detection=false`, patient turn eagerness, and no Gemini thinking budget. Provisioning now sends background detection through the SDK wire override (the installed SDK otherwise drops the VAD field), normal turn eagerness, and `thinking_budget=0` only for Gemini 2.5 Flash. Tools, knowledge bases, privacy, voice identity, V4 Turbo, and structural mic/output gates are preserved.
+- Both prompts now explicitly permit the immediate spoken answer to a tagged question; previously their tagged-only rules conflicted with answer handling. Delivery asks for direct, steady phrases, not fillers or invented confidence. Interviewer no longer suggests the `thoughtful` audio tag.
+- Historical diagnostic turns from the same saved agent version include provider metrics labeled `eleven_v3`; the latest inspected human call reports `eleven_v4_turbo`. The source of mixed telemetry is unresolved. Saved configuration alone is not proof of the model used for every generated turn.
+- Both live agents were narrowly updated and read back with the exact expected configuration; tools, knowledge bases, privacy and voice identity are unchanged. Production interviewer diagnostic `conv_5901m42aza0vfvebj5skzb0zke4n` produced four speech turns, all reporting actual `eleven_v4_turbo`. Questions started in 585/739ms with no browser speech; a legitimate answer reached `log_answer`.
+- The same single-mic synthetic test failed background handling: unrelated speech caused a repeat request and Scribe-only answer completion. This is not a spatial/real-room test. The prompt now explicitly distinguishes unrelated speech (silent `skip_turn`) from a clearly directed but unclear answer (one clarification).
+- Added `TurnOptions.answerTool`; `VoiceApi.turn()` requires `log_answer` for real-agent listening ASK/DEBRIEF turns. Unconfirmed transcript/partial text times out empty rather than filling a slot or uploading a clip. Only a literal transcript match of the logged reason becomes answer evidence; unrelated text in the window is excluded. Typed, keyless/browser fallback, other tags, eight-second watchdog and late-response quarantine are preserved. This additional safeguard requires a website deploy.
+- All 502 tests, typecheck, production build, CI and diff checks passed. Production deployment `dpl_39Asz1G4XAYbenvMke5ZE9fjm22H` reached READY at runtime commit `4d76c20`; public health confirms the revision and reachable Supabase.
+- Final production single-mic tests passed: unrelated speech caused `skip_turn`/empty timeout; unrelated then legitimate speech accepted only the legitimate reason. Three questions on one connection began in 610/684/618ms; tutor PRAISE/PREDICT and `record_prediction` passed. No browser speech or unexpected disconnect, closed output gates stayed muted. All nine speech-generating entries across `conv_2401m42bt6yjfdfs0q1z74kggd36` / `conv_4701m42bzvr7ecbrqdgsxebay7j6` reported `eleven_v4_turbo`.
+- Human naturalness/real-room acceptance remains pending; provider acknowledgment latency reached 3.979s. Automated audio analysis is not human approval. Actual clip-upload suppression was unit-tested, not exercised by diagnostic turns; typed/keyless UI was not repeated in the final run. Runtime-log access remains denied (403).
+- Human 2-minute check after reconnect: with a nearby conversation playing, stay silent for 20 seconds; require no false answer. Answer one short and one multi-clause question with a mid-sentence pause; require that your words are retained and Tacit waits for completion without an awkward extra delay. Repeat once with the tutor. Stop/off-record commands must still work.
+
+## Oct 4 · Voice-quality timeout correction [M1-M3, S1]
+
+- Live diagnostic reproduction: both roles disconnected themselves after roughly four seconds without detected speech and invoked browser TTS. `FALLBACK_SPEAK` called `endSession()`, so the SDK's `user` disconnect reason did not mean a human clicked Disconnect. Subsequent tutor turns remained on browser speech. Audible fallback quality was not human-verified.
+- Configured-agent turns now wait eight seconds by default before the existing labeled timeout fallback. This preserves V4 for the 6.867 s and 7.231 s live responses observed in local browser retesting while retaining transport-failure recovery and the existing late-response quarantine. New regressions cover delayed real speech, the full timeout window, and keyless speech.
+- Both tested sessions negotiated PCM/Opus at 48 kHz; the saved 16 kHz setting is not proof of the browser transport rate. Some remote TTS usage reported `eleven_v4_turbo`; the subsequent audit above found mixed historical per-turn model labels. No voice/model/provider settings changed in that timeout fix.
+- Human listening remains required. Tutor greeting/authorization overlap and duplicated responses were observed in diagnostics but are separate, unresolved investigations, not claimed as the cause of Roy's original complaint.
+
+## Oct 4 · V4 Turbo release correction [S1]
+
+Both remote agents were updated and read back with `ttsModel: eleven_v4_turbo`, `expressiveMode: true`, `llm: gemini-2.5-flash`, matching prompt hashes, `recordVoice: false`, and seven-day retention. Their IDs are configured in Vercel production. The source now enforces the V4 wire model despite SDK 2.70's stale enum and rejects a different saved model on provisioning or `--check`. Initial local verification: typecheck and 223 tests passed. Human audio/timing and browser acceptance remain unverified.
+
+The checkpoint below is historical; its missing-key/provisioning blockers have been superseded by this live API verification.
+
 ## Checkpoint M1 — 8:02 PM ET
+
+### Ready for independent review (not merged)
+
+- WA-4/WA-5 Capture integration is on `a/wa45-capture-integration`: Capture now drives `CaptureLoop` through P-12 `VoiceApi.turn()`, rechecks freshness, records phase/app-clock evidence, persists deferred questions, exposes cadence diagnostics, and keeps keyless typed fallback operational. Automated gates pass, including the isolated production smoke; HT-5/HT-6 remain human-only and unverified.
+- Issue #40 / P-12 is merged on `main` at `ee41948`. The WA-4/WA-5 branch is based on that commit and does not modify `components/voice.tsx`, `lib/voice-turn*`, `lib/voice-hub*`, or `app/voice-check/*`.
 
 ### Done and merged (WP ids)
 
+- WA-9 tone polish (pending this PR): grounded status, approval-route, and cost-center candidates now use short coworker language while retaining the exact invoice and material values; hold-to-active follows the existing status-candidate path, unknown fields are humanized, and retro questions name the invoice once. Existing candidate scores/order and governor timing are unchanged. Automated evidence: `lib/curiosity.tone.test.ts`; post-rebase typecheck and 465 passed / 1 skipped tests; isolated keyless production smoke passed Capture, Map, confirmation, tutor, independent guard, and page-error checks at 11:03 PM ET.
 - WA-1 recovery hardening: restored a fully local dependency tree after macOS offloaded 23,677 package files, then added bounded ElevenAgents WebRTC auto-reconnect with a 10-second stability reset, suppressed stale tagged speech during recovery, no duplicate greeting, preserved app-clock/session metadata, and browser fallback only after recovery is exhausted (this PR).
 - WA-1: generic prompts/tools, idempotent provisioning/check script, awaited connection/fallback contract, debug tap, and keyed/keyless `/voice-check` diagnostics (PRs #2, #3, #7).
 - WA-2: client-side ElevenLabs output gate, idle heartbeat, persistent late-speech squelch, and soak counters (PR #22).
@@ -17,6 +66,7 @@
 
 ### Not verified yet (and the script to verify)
 
+- HT-5 WA-9 tone follow-up — 2 minutes: open `http://localhost:3000/capture?share=0` beside the expert ERP; start Capture, open INV-4474, take it from hold to active, then stop typing and pause. Require one grounded question about INV-4474 that says “took … off hold” or an equally natural coworker phrase; it must not say “changed status from hold to active.” Repeat once by sending an invoice for second approval or changing its cost center; require the exact invoice and any material code/number to remain audible. Report the exact sentence heard; this remains NEEDS-HUMAN because phrasing quality is auditory.
 - HT-1 male ElevenLabs recovery — 2 minutes: hard-refresh `http://localhost:3000/voice-check?role=interviewer`; click **Request / refresh microphone**, allow access, then click **Connect**. Require `Mode: agent`, `Status: connected`, and a `conv_…` conversation id. Click **Send [ASK] sample** once; require the male ElevenLabs interviewer to say the sample exactly once and the mode to remain `agent` (never `fallback: browser speech`). If `reconnect_scheduled` appears in Raw events, require `reconnect_attempt` followed by a new `connect` and then repeat **Send [ASK] sample** once. Report the first row or audible result that differs.
 - HT-1 real round trip — 2 minutes: open `http://localhost:3000/voice-check?role=interviewer`; confirm agent id and Scribe token rows are green; allow the mic; click **Connect** and require connected/id/no sound; click **Send [ASK] sample** and require one sentence with 9001, 1000, 2000; click **Open mic**, say “Because that item belongs to the other department, testing one two three,” then require live partials, one exact Scribe commit, `tool log_answer stepRef=9001:code`, and a four-word-or-shorter acknowledgement. Report the first missing line.
 - HT-2 structural silence — the checkpoint explicitly requires 3 minutes, so no honest 2-minute script can verify it: on `/voice-check?role=interviewer`, connect with gate **CLOSED**, click **Silence soak**; spend 60 seconds silent, 60 seconds typing elsewhere, and 60 seconds reading aloud; require no audible agent speech, automated PASS, `audible unsolicited: 0`, no disconnect, and heartbeat delta at least 15. Record gated utterances separately.
@@ -46,6 +96,7 @@
 
 ### Risks I see for the demo
 
+- WA-9’s generated text is deterministic and green, but the ElevenLabs agent may still paraphrase `phrase=natural`; the exact spoken sentence and perceived tone remain human-only HT-5/HT-11 checks.
 - Automated recovery is green, but the actual male voice and WebRTC reconnect remain human-audibility checks; do not mark the hotfix live-verified until HT-1 above passes.
 - M1 is missed: real ElevenAgents + real Scribe + real vision + real compile have not completed one end-to-end session.
 - P-12 is implemented and automatically verified, but keyed speech timing, audibility, echo behavior, and microphone coexistence still require the human HT-1/HT-3/HT-4 runs before they can be called live-verified.

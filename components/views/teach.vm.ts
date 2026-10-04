@@ -69,6 +69,7 @@ export interface TeachVM {
   endSession(): Promise<void>;
   /** WP4: re-open the last replay after it was closed. Undefined when there is none to re-open. */
   reopenReplay?: () => void;
+  syncError?: string | null;
   /** Lane C. The view never infers listening from silence. */
   tutorState?: "watching" | "speaking" | "listening";
   practice?: (ruleId: string) => void;

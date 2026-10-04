@@ -1,5 +1,6 @@
 node_modules
 .next
+.vercel
 .data
 .worktrees/
 *.tsbuildinfo

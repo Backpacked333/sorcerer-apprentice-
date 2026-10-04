@@ -23,6 +23,8 @@ const env = {
   ELEVENLABS_API_KEY: "", AI_GATEWAY_API_KEY: "", VERCEL_OIDC_TOKEN: "",
   NEXT_PUBLIC_INTERVIEWER_AGENT_ID: "", NEXT_PUBLIC_TUTOR_AGENT_ID: "",
   NEXT_PUBLIC_EVENT_SOURCE: "dom", DATA_DIR: dataDir, NEXT_TELEMETRY_DISABLED: "1",
+  STORAGE_BACKEND: "local", STORE_OWNER_ID: "local", VERCEL: "",
+  SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "",
 };
 const run = (args, cwd = projectDir) => new Promise((resolve, reject) => {
   const child = spawnSmoke(process.execPath, args, { env, cwd, stdio: "inherit" });
@@ -189,8 +191,9 @@ await shot(map, "12-map-corrected");
 const confirmedResponse = map.waitForResponse((response) => response.url().endsWith("/api/sessions/demo_sabine/confirm") && response.request().method() === "POST");
 await (await sel(map, "map-confirm", "text=Yes, that is how it works")).click();
 const confirmed = await confirmedResponse;
-assert.ok(confirmed.ok(), "Teach-back confirmation request must succeed");
-assert.ok((await confirmed.json()).map.confirmedAt, "Teach-back confirmation must persist");
+const confirmationResult = await confirmed.json();
+assert.ok(confirmed.ok(), `Teach-back confirmation request must succeed: ${JSON.stringify(confirmationResult.issues ?? confirmationResult.error)}`);
+assert.ok(confirmationResult.map.confirmedAt, "Teach-back confirmation must persist");
 await map.waitForTimeout(500);
 await shot(map, "13-map-confirmed");
 

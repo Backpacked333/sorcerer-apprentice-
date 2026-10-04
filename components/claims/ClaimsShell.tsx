@@ -35,7 +35,7 @@ export function ClaimsShell({ crumbs, q, children }: { crumbs: { label: string; 
             <input className="clm-search" type="search" name="q" defaultValue={q} placeholder="Search claims, policies, parties" aria-label="Search claims" />
           </form>
           <Link href="/claims" className="clm-queue-pill">My queue · {CLAIMS.length}</Link>
-          <a href="/" className="clm-external-nav">Tacit ↗</a>
+          <a href="/" className="clm-external-nav">Simon ↗</a>
           <span className="clm-avatar" aria-label="Signed in as adjuster A">A</span>
         </header>
         <div className="clm-crumbs">

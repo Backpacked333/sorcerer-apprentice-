@@ -29,7 +29,7 @@ export default async function ErpQueue({ searchParams }: { searchParams: Promise
       </div>
       {done && (
         <div className="erp-banner-slot">
-          <p className="erp-banner erp-banner-ok">Queue complete. Return to the Tacit panel to finish.</p>
+          <p className="erp-banner erp-banner-ok">Queue complete. Return to the Simon panel to finish.</p>
         </div>
       )}
       <QueueTable invoices={invoices} />

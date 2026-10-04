@@ -420,7 +420,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
         <div style={{ position: "absolute", left: 0, right: narrow ? 0 : inspW + 32, top: "36%", display: "flex", justifyContent: "center", pointerEvents: "none" }}>
           <div className="glass-panel" style={{ pointerEvents: "auto", maxWidth: 380, margin: "0 16px", padding: "22px 24px", borderRadius: 24, textAlign: "center" }}>
             <div style={{ display: "flex", justifyContent: "center" }}><Orb mood="quiet" size={38} follow={false} /></div>
-            <p style={{ margin: "12px 0 0", fontSize: 14, color: "#3a3a3c", lineHeight: 1.5 }}>{ont.empty ?? "No classes yet. The ontology grows from what Tacit sees and hears in a capture."}</p>
+            <p style={{ margin: "12px 0 0", fontSize: 14, color: "#3a3a3c", lineHeight: 1.5 }}>{ont.empty ?? "No classes yet. The ontology grows from what Simon sees and hears in a capture."}</p>
           </div>
         </div>
       ) : null}

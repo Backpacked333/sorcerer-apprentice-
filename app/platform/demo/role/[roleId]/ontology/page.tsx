@@ -5,7 +5,7 @@ import { PlatformShell } from "@/components/platform/PlatformShell";
 import { demoOntology } from "@/lib/platform/demo-data";
 
 export const dynamic = "force-dynamic";
-export const metadata: Metadata = { title: "Ontology (demo) · Tacit" };
+export const metadata: Metadata = { title: "Ontology (demo) · Simon" };
 
 export default async function DemoOntologyPage({ params, searchParams }: { params: Promise<{ roleId: string }>; searchParams: Promise<{ rule?: string | string[] }> }) {
   const [{ roleId }, sp] = await Promise.all([params, searchParams]);

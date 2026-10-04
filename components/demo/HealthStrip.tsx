@@ -9,7 +9,7 @@ const DOT: Record<HealthItem["tone"], { bg: string; fg: string; dot: string }> =
   neutral: { bg: "rgba(0,0,0,.05)", fg: "#6e6e73", dot: "#aeaeb2" },
 };
 
-/** Honest runtime status: voice, vision (honours the event source) and sample data. */
+/** Honest runtime status (P-10): voice and vision configuration (honours the event source) and storage reachability. */
 export function HealthStrip({ className }: { className?: string }) {
   const [items, setItems] = useState<HealthItem[]>([{ label: "Checking status…", tone: "neutral" }]);
   useEffect(() => {

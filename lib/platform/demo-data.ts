@@ -47,7 +47,7 @@ const RANGE_END = d(152);
 
 export const DEMO_COMPANY = "Larkspur Telecom (fictional)";
 export const DEMO_ROLE_ID = "tier-2-escalation-lead";
-export const DEMO_BANNER = "Demo data — a fictional telecom. Nothing here was learned by Tacit.";
+export const DEMO_BANNER = "Demo data — a fictional telecom. Nothing here was learned by Simon.";
 
 const EXPERT = "Robin";
 const NEWHIRE = "Kit";
@@ -247,7 +247,7 @@ function role(partial: Omit<RoleNode, "coverage" | "rules" | "sessions" | "menti
     topRules: rulesTo(partial.id).map(chip), statusLabel: statusLabel[partial.status],
     // demo users never get sent into the real capture flow from the sample company
     captureHref: null,
-    note: partial.status === "captured" ? null : m.length ? "Tacit knows when work goes here — not yet how this role decides." : null,
+    note: partial.status === "captured" ? null : m.length ? "Simon knows when work goes here — not yet how this role decides." : null,
     ...partial,
   };
 }
@@ -516,7 +516,7 @@ const CONCEPTS: OntConcept[] = [
   { id: "retention", kind: "role", name: "Retention desk", x: 160, y: 300, at: d(95.5), prov: "said", def: "Takes customers who say they will cancel." },
   { id: "field", kind: "role", name: "Field engineer", x: 160, y: 1050, at: d(95.5), prov: "described", def: "Visits a line with repeat faults." },
   { id: "fraud", kind: "role", name: "Fraud analyst", x: 900, y: 120, at: d(39.5), prov: "teachback", def: "Reviews a possible account takeover before any change." },
-  { id: "am", kind: "role", name: "Business account manager", x: 1680, y: 300, at: d(95.5), prov: "inferred", def: "May need to hear about P1 tickets on a four-hour SLA. Tacit inferred this; nobody has said it yet.", alsoIn: ["Business accounts"] },
+  { id: "am", kind: "role", name: "Business account manager", x: 1680, y: 300, at: d(95.5), prov: "inferred", def: "May need to hear about P1 tickets on a four-hour SLA. Simon inferred this; nobody has said it yet.", alsoIn: ["Business accounts"] },
 ];
 
 const e = (id: string, from: string, to: string, verb: string, card: string | null, prov: OntEdge["prov"], day: number, ruleIds: string[] = []): OntEdge =>

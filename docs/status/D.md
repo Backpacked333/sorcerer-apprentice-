@@ -1,6 +1,19 @@
 # Lane D status
 
+## Simon branding · WD-2 / WD-5 / WD-10 / WD-12 / P1
+
+- Done: renamed visible product branding to Simon in page metadata, landing copy, shared app header, ERP return links/completion banners, README, demo/submission copy and moonshot frame.
+- Scope: technical identifiers, infrastructure names, team references and voice-agent configuration remain unchanged.
+- Verification: `npm run typecheck`, `npm test` (462 tests) and `npm run build` passed. Agent visual spot-check of the production build confirmed Simon on the landing page/tab title, Capture header, ERP return link and moonshot frame. No lint script is configured.
+- Verified live by a human: not yet.
+- Next: review and merge the branding PR; no deployment or external submission changes are included.
+- Blocked on: none for the copy change.
+
+## Liquid Glass redesign
+
 Updated on branch `claude/clever-pasteur-449llv` (Liquid Glass redesign). Nothing below is a live human verification unless it says who and when.
+
+Merged with `origin/main` (CaptureLoop voice turns, durable store, Simon branding): main's logic kept, the glass companion renders main's new state (sync errors). Visible product name is Simon throughout, including the redesign's new pages.
 
 ## Done on this branch
 
@@ -24,7 +37,7 @@ NOT YET.
 
 ## Not verified yet: 2-minute human script (needs real Chrome, mic, headphones)
 
-1. **Self-tab capture, card painted out:** open `/capture` at 1440 wide, consent, Start, choose **This tab**. Open "Show the mechanism". The "What I see" preview should show the companion card area and the contact/IBAN fields black. The ledger should say Tacit's card is painted out.
+1. **Self-tab capture, card painted out:** open `/capture` at 1440 wide, consent, Start, choose **This tab**. Open "Show the mechanism". The "What I see" preview should show the companion card area and the contact/IBAN fields black. The ledger should say Simon's card is painted out.
 2. **Governor still asks with the card on screen:** re-code 4471 4711 → 0400, then stop talking and typing. The companion should go quiet → pausing → asking, and the question should name the invoice and the change. Record the pause-to-first-word time.
 3. **Wrong surface:** start again but share a different window. The UI should say the surface is not this tab, and the network tab should show no `/api/vision` requests in workspace mode.
 4. **Mechanism toggle keeps vision alive:** during a real share, toggle "Show/Hide the mechanism" three times. The preview should keep updating.

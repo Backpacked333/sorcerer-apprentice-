@@ -28,7 +28,7 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
   const [phase, setPhase] = useState<MapPhase>("idle");
   const [current, setCurrent] = useState<Slot | null>(null);
   const [heard, setHeard] = useState("");
-  const [teachback, setTeachback] = useState<{ text: string; sure: string[]; unsure: string[] } | null>(null);
+  const [teachback, setTeachback] = useState<{ text: string; sure: string[]; unsure: string[]; revision?: number } | null>(null);
   const [rounds, setRounds] = useState(0);
   const [debriefOn, setDebriefOn] = useState(false);
   const [autopilot, setAutopilot] = useState<AutopilotStep[] | null>(null);
@@ -130,8 +130,13 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
 
   const confirmMap = useCallback(
     async (confirmed: boolean, text?: string) => {
-      const res = await fetch(`/api/sessions/${sessionId}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmed, correction: text, t: (Date.now() - startedAt.current) / 1000 }) });
+      const res = await fetch(`/api/sessions/${sessionId}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmed, correction: text, revision: teachback?.revision, t: (Date.now() - startedAt.current) / 1000 }) });
       const data = await res.json();
+      if (!res.ok) {
+        setNote(data.error ?? "Confirmation failed. Please retry.");
+        if (data.map) setMap(data.map);
+        return;
+      }
       setMap(data.map);
       if (confirmed) {
         setKnowledge(!!data.knowledge?.synced);
@@ -141,7 +146,7 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
         return;
       }
       const prev = teachback?.text ?? "";
-      const next = data.teachback as { text: string; sure: string[]; unsure: string[] };
+      const next = { ...data.teachback, revision: data.map.revision } as { text: string; sure: string[]; unsure: string[]; revision: number };
       setTeachback(next);
       setRounds((r) => r + 1);
       const changed = diffSentences(prev, next.text);

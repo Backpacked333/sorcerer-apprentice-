@@ -160,8 +160,8 @@ describe("curiosity: claim events use claim wording, invoices unchanged", () => 
       expect(c.questionRetro).toMatch(/^On claim CLM-1 a moment ago/);
     }
   });
-  it("invoice wording is unchanged", () => {
+  it("invoice wording matches the naturalized invoice templates", () => {
     const inv: ScreenEvent = { id: "e2", t: 3, source: "dom", kind: "field_changed", invoice: "4471", field: "costCenter", from: "4711", to: "0400" };
-    expect(templates(inv).why).toBe("You moved invoice 4471 from 4711 to 0400 on the cost center. What made you do that?");
+    expect(templates(inv).why).toBe("You re-coded invoice 4471 from 4711 to 0400. What made you choose 0400?");
   });
 });

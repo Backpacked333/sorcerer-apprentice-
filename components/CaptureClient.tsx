@@ -58,6 +58,8 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   const [lastStrike, setLastStrike] = useState<CaptureVM["lastStrike"]>();
   const [lastDeferred, setLastDeferred] = useState<CaptureVM["lastDeferred"]>();
   const startingRef = useRef(false);
+  /** A session created by a start whose screen share was then cancelled; reused by the next start with the same task. */
+  const pendingSession = useRef<{ key: string; session: SessionLog } | null>(null);
   /** per window: quiet before it opened and where the change came from */
   const windowMeta = useRef(new Map<string, { pauseSecs?: number; evidence?: Evidence }>());
 
@@ -490,20 +492,43 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     setStartError(null);
     setSyncError(null);
     // The share prompt first, synchronously inside the click, in parallel with the session POST.
-    const share = share0 ? null : pipeline.start({ mode: opts?.mode ?? "tab", app: app.id, ...(app.id === "erp" ? { queue: "expert" } : {}) }).catch(() => undefined);
+    // A real share that is cancelled/denied aborts a pending POST and keeps the page in pre-start.
+    const post = new AbortController();
+    const share = share0
+      ? null
+      : pipeline.start({ mode: opts?.mode ?? "tab", app: app.id, ...(app.id === "erp" ? { queue: "expert" } : {}) }).then(
+          () => true,
+          () => { post.abort(); return false; },
+        );
+    const shareCancelled = () => {
+      pipeline.stop();
+      startingRef.current = false;
+      setStarting(false);
+      setStartError("Screen share was cancelled — start again to share this tab.");
+    };
     let session: SessionLog;
     try {
-      const response = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });
-      if (!response.ok) throw new Error("session creation failed");
-      ({ session } = await response.json());
-      if (!session?.id) throw new Error("session creation failed");
+      // a session created by an earlier attempt whose share was cancelled is kept and reused, not created twice
+      const key = JSON.stringify([task, expertName.trim()]);
+      const kept = pendingSession.current?.key === key ? pendingSession.current.session : null;
+      if (kept) session = kept;
+      else {
+        const response = await fetch("/api/sessions", { method: "POST", signal: post.signal, headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });
+        if (!response.ok) throw new Error("session creation failed");
+        ({ session } = await response.json());
+        if (!session?.id) throw new Error("session creation failed");
+        pendingSession.current = { key, session };
+      }
     } catch {
+      if (post.signal.aborted) return shareCancelled();
       pipeline.stop();
       startingRef.current = false;
       setStarting(false);
       setStartError("Could not create a capture session.");
       return;
     }
+    if (share && !(await share)) return shareCancelled();
+    pendingSession.current = null;
     log.current = session;
     sync.current = createSessionSync(session.id);
     log.current.startedAt = Date.now();
@@ -512,7 +537,6 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     voiceRef.current.setSessionStart(log.current.startedAt);
     pipeline.signals.current = { lastScreenChangeAt: -Infinity, lastTypingAt: -Infinity, lastBoundaryAt: -Infinity, lastInvoiceOpenedAt: -Infinity, activity: "still" };
     setStarted(true);
-    await share;
     await voiceRef.current.connect({
       firstMessage: "",
       sessionStartMs: log.current.startedAt,

@@ -8,8 +8,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { describeEvent, type Frame, type ScreenEvent } from "@/lib/events";
 import { classifyActivity, diffGray, toGray, worthSending, DIFF_H, DIFF_W, type Activity, type DiffResult } from "@/lib/framediff";
 import { blurRegions, type PiiRegion } from "@/lib/redact";
-import { decideSelfCapture, drawFrame, frameSize, iframeContentBox, OccluderHistory, piiToCss, planFrame, type FrameSpec, type Rect, type Size, type Surface } from "@/lib/capture-frame";
-import { collectPiiRects, piiSourceId, subscribePiiRects, type PiiRectsMessage } from "@/lib/pii-masks";
+import { decideCapture, drawFrame, pixelTypingSource, frameSize, iframeContentBox, OccluderHistory, piiToCss, planFrame, type FrameSpec, type PiiSource, type Rect, type Size, type Surface } from "@/lib/capture-frame";
+import { collectPiiRects, PiiChannelUnion, piiSourceId, subscribePiiRects } from "@/lib/pii-masks";
 import { subscribeTelemetry, type TelemetryMessage } from "@/lib/telemetry";
 import type { InvoiceState } from "@/lib/workmap";
 import { diffVision, normalizeInvoiceId, normalizeVisionState, type VisionFrame } from "@/lib/visiondiff";
@@ -131,7 +131,10 @@ export function useScreenPipeline(opts: PipelineOptions) {
   const lastSentTimer = useRef<number | null>(null);
   const [piiMode, setPiiModeState] = useState<PiiMode>("manual-only");
   const piiModeRef = useRef<PiiMode>("manual-only");
-  const channelPii = useRef<PiiRectsMessage | null>(null);
+  /** Paired channel rects, one entry per publishing tab; painted as the union of fresh entries. */
+  const channelPii = useRef(new PiiChannelUnion(PII_FRESH_MS));
+  /** Which DOM-PII sources the surface decision trusts (see decideCapture). */
+  const piiSourcesRef = useRef<PiiSource[]>([]);
   const optsRef = useRef(opts);
   optsRef.current = opts;
 
@@ -175,11 +178,12 @@ export function useScreenPipeline(opts: PipelineOptions) {
     let trackHandle: string | null | undefined;
     const trackHandleApi = typeof track.getCaptureHandle === "function";
     try { trackHandle = trackHandleApi ? track.getCaptureHandle?.()?.handle ?? null : undefined; } catch { trackHandle = null; }
-    const self = decideSelfCapture({
+    const { self, piiSources } = decideCapture({
       surface: settings.displaySurface, videoW: vw, videoH: vh, viewport: viewport(),
       mode: startOpts.current.mode, ownHandle: captureHandle.current, trackHandleApi, trackHandle,
     });
     selfRef.current = self;
+    piiSourcesRef.current = piiSources;
     setSelfCapture(self);
     const s = settings.displaySurface;
     surfaceRef.current = s === "browser" || s === "window" || s === "monitor" ? s : undefined;
@@ -232,6 +236,12 @@ export function useScreenPipeline(opts: PipelineOptions) {
     const vp = viewport();
     let cropCss: Rect | null = null, occludersCss: Rect[] = [], piiCss: (Rect & { kind: string })[] = [], piiFrame: PiiRegion[] = [];
     let mode: PiiMode = "manual-only";
+    const sources = piiSourcesRef.current;
+    if (selfRef.current !== undefined && sources.includes("channel") && (!self || vp)) {
+      // heuristic self: also the paired tabs' rects (a same-aspect sibling sandbox tab stays masked); non-self: only these
+      const union = channelPii.current.rects(Date.now());
+      if (union) { piiFrame = union; mode = "dom"; }
+    }
     if (self && vp) {
       const t = Date.now();
       sampleOccluders(t);
@@ -241,11 +251,10 @@ export function useScreenPipeline(opts: PipelineOptions) {
         const r = target.getBoundingClientRect();
         if (r.width > 0 && r.height > 0) cropCss = { x: r.left, y: r.top, w: r.width, h: r.height };
       }
-      const dom = readIframePii();
-      if (dom) { piiCss = dom; mode = "dom"; }
-    } else if (selfRef.current === false && surfaceRef.current === "browser") {
-      const m = channelPii.current;
-      if (m && Date.now() - m.at <= PII_FRESH_MS) { piiFrame = m.rects; mode = "dom"; }
+      if (sources.includes("dom")) {
+        const dom = readIframePii();
+        if (dom) { piiCss = dom; mode = "dom"; }
+      }
     }
     setPiiMode(mode);
     return planFrame({ videoW: v.videoWidth, videoH: v.videoHeight, viewport: vp, self, cropCss, occludersCss, piiCss, manual: masksRef.current, piiFrame });
@@ -406,9 +415,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
           signals.current.lastTypingAt = t;
           if (t - (recent.current.get("typing") ?? -Infinity) > 4) {
             recent.current.set("typing", t);
-            // Labelled "dom" for historical reasons although it comes from the pixel diff; consumers filter
-            // `kind: "typing"` out of the feed and compile, so the label never reaches a badge (no behaviour change).
-            optsRef.current.onEvent({ id: uid("ev"), t, source: "dom", kind: "typing", invoice: state.current.invoice, uiActivity: "typing" });
+            optsRef.current.onEvent({ id: uid("ev"), t, source: pixelTypingSource(startOpts.current.app, optsRef.current.source), kind: "typing", invoice: state.current.invoice, uiActivity: "typing" });
           }
         }
       }
@@ -432,8 +439,9 @@ export function useScreenPipeline(opts: PipelineOptions) {
     const origin = typeof location !== "undefined" ? location.origin : "";
     if (!origin || origin === "null") return;
     const { app, queue } = startOpts.current;
-    channelPii.current = null;
-    return subscribePiiRects(piiSourceId({ origin, app, queue: queue ?? (app === "erp" ? "expert" : undefined) }), (m) => { channelPii.current = m; });
+    const union = channelPii.current;
+    union.clear();
+    return subscribePiiRects(piiSourceId({ origin, app, queue: queue ?? (app === "erp" ? "expert" : undefined) }), (m) => union.put(m));
   }, [sharing]);
 
   // ---- ERP telemetry over BroadcastChannel (exact events, keyless) ----
@@ -470,6 +478,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
     streamRef.current?.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
     selfRef.current = undefined;
+    piiSourcesRef.current = [];
     degradedRef.current = null;
     surfaceRef.current = undefined;
     setDegraded(null);

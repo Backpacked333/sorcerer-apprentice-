@@ -52,7 +52,8 @@ export function compileDeterministic(log: SessionLog): WorkMap {
           const to = e.to ?? "";
           const from = e.from ?? "";
           const fl = labelField(e.field);
-          addStep({ title: `Set ${fl} on claim ${claim}`, screenMoment: moment, action: { field: e.field ?? "field", from, to }, decision: from && from !== to ? `Changed ${fl} from ${from} to ${to}` : `Set ${fl} to ${to}`, judgment: from !== to && to !== "" }, stepRefOf(e));
+          const claimStep = addStep({ title: `Set ${fl} on claim ${claim}`, screenMoment: moment, action: { field: e.field ?? "field", from, to }, decision: from && from !== to ? `Changed ${fl} from ${from} to ${to}` : `Set ${fl} to ${to}`, judgment: from !== to && to !== "" }, stepRefOf(e));
+          evidenceEventByStepId.set(claimStep.id, e);
           break;
         }
         const from = e.from ?? "";

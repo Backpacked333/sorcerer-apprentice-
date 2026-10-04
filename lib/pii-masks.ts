@@ -3,7 +3,9 @@ import type { PiiRegion } from "./redact";
 export const PII_CHANNEL = "tacit-erp-pii";
 const kinds = new Set(["name", "email", "iban", "phone"]);
 export interface CaptureRect { x: number; y: number; w: number; h: number }
-export interface PiiRectsMessage { sourceId: string; at: number; rects: PiiRegion[] }
+/** `instanceId` identifies one publishing tab, so two sandbox tabs paired by the same sourceId never replace
+ * each other's rects at the receiver (see PiiChannelUnion). */
+export interface PiiRectsMessage { sourceId: string; at: number; rects: PiiRegion[]; instanceId?: string }
 
 function validRect(r: CaptureRect): boolean {
   return [r.x, r.y, r.w, r.h].every(Number.isFinite) && r.w > 0 && r.h > 0;
@@ -19,11 +21,12 @@ function clip(r: PiiRegion): PiiRegion | undefined {
 /** sourceId must uniquely pair this ERP document with its capture subscriber (e.g. a shared UUID).
  * Rects are local to the publishing document's viewport, including inside a same-origin iframe.
  */
-export function publishPiiRects(sourceId: string, doc?: Document): PiiRectsMessage | undefined {
+export function publishPiiRects(sourceId: string, doc?: Document, instanceId?: string, project?: (rects: PiiRegion[]) => PiiRegion[] | undefined): PiiRectsMessage | undefined {
   if (!sourceId?.trim()) throw new Error("PII publisher identity required");
-  const rects = collectPiiRects(doc);
+  const collected = collectPiiRects(doc);
+  const rects = collected && project ? project(collected) : collected;
   if (!rects) return;
-  const message = { sourceId, at: Date.now(), rects };
+  const message: PiiRectsMessage = { sourceId, at: Date.now(), rects, ...(instanceId ? { instanceId } : {}) };
   if (typeof BroadcastChannel !== "undefined") {
     const channel = new BroadcastChannel(PII_CHANNEL);
     try { channel.postMessage(message); } finally { channel.close(); }
@@ -86,9 +89,36 @@ export function subscribePiiRects(sourceId: string, handler: (message: PiiRectsM
   channel.onmessage = ({ data }) => {
     if (!data || data.sourceId !== sourceId || !Number.isFinite(data.at) || data.at < 0 || !Array.isArray(data.rects)) return;
     if (!data.rects.every((r: PiiRegion | null) => r && kinds.has(r.kind) && validRect(r))) return;
-    handler({ sourceId, at: data.at, rects: data.rects.map(clip).filter((r: PiiRegion | undefined) => r !== undefined) });
+    const rects = data.rects.map(clip).filter((r: PiiRegion | undefined) => r !== undefined);
+    handler({ sourceId, at: data.at, rects, ...(typeof data.instanceId === "string" && data.instanceId ? { instanceId: data.instanceId } : {}) });
   };
   return () => channel.close();
+}
+
+/** Receiver-side store of paired PII rects: one entry per publishing tab (instanceId), and `rects(now)` is the
+ * UNION of every entry fresher than `freshMs`. Two sandbox tabs on the same app+queue both stay masked; a closed tab
+ * expires. Over-masking is acceptable, under-masking is not. */
+export class PiiChannelUnion {
+  private entries = new Map<string, { rects: PiiRegion[]; at: number }>();
+  constructor(readonly freshMs = 3000) {}
+  put(m: Pick<PiiRectsMessage, "at" | "rects" | "instanceId">): void {
+    const key = m.instanceId ?? "";
+    const prev = this.entries.get(key);
+    if (prev && prev.at > m.at) return; // out-of-order delivery from the same tab
+    this.entries.set(key, { rects: m.rects, at: m.at });
+  }
+  /** Union of fresh entries; undefined when no entry is fresh (no paired publisher alive). */
+  rects(now: number): PiiRegion[] | undefined {
+    let any = false;
+    const out: PiiRegion[] = [];
+    for (const [key, e] of this.entries) {
+      if (now - e.at > this.freshMs) { this.entries.delete(key); continue; }
+      any = true;
+      out.push(...e.rects);
+    }
+    return any ? out : undefined;
+  }
+  clear(): void { this.entries.clear(); }
 }
 
 /** viewport = publisher's content box in captured-tab CSS pixels (iframe borders excluded).

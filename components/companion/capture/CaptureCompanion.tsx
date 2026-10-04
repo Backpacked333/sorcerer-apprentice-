@@ -84,8 +84,25 @@ export function CaptureCompanion(p: {
       header={ask ? <AskHeader vm={vm} card={card} ripple={ripple} /> : <CompanionHeader mood={card.mood} title={card.title} sub={card.sub} startedAt={vm.startedAt ?? null} frozen={vm.holding} rippleKey={ripple} />}
       footer={<RunningFooter vm={vm} card={card} mechOpen={p.mechOpen} onToggleMech={p.onToggleMech} />}
     >
+      {floating && vm.started && !vm.share0 && !vm.pipeline.sharing && <ShareAgain vm={vm} />}
       {ask ? <AskBody vm={vm} card={card} /> : <CapsuleBody vm={vm} card={card} />}
     </CompanionCard>
+  );
+}
+
+/** Workspace: the share ended (stopped from the browser bar, expired, or the picker was dismissed) while the session runs. */
+function ShareAgain({ vm }: { vm: CaptureVM }) {
+  const app = vm.app ?? captureApp("erp");
+  return (
+    <GlassButton
+      size={34}
+      data-testid="capture-share-again"
+      style={{ width: "100%" }}
+      // synchronous call inside the click: the share prompt needs the user activation
+      onClick={() => void vm.pipeline.start({ mode: "workspace", app: app.id, ...(app.id === "erp" ? { queue: "expert" } : {}) }).catch(() => undefined)}
+    >
+      Share this tab again
+    </GlassButton>
   );
 }
 

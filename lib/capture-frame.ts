@@ -103,8 +103,35 @@ export interface SelfCaptureInput {
  * browser reports none for a self-capture) the aspect heuristic is trusted only for a workspace (preferCurrentTab)
  * share; a plain tab-mode share is never self. */
 export function decideSelfCapture(i: SelfCaptureInput): boolean {
-  if (i.trackHandleApi && i.trackHandle) return i.surface === "browser" && !!i.ownHandle && i.trackHandle === i.ownHandle;
-  return i.mode === "workspace" && isSelfCapture(i.surface, i.videoW, i.videoH, i.viewport);
+  return decideCapture(i).self;
+}
+
+export type PiiSource = "dom" | "channel";
+export interface CaptureDecision {
+  self: boolean;
+  /** Which DOM-PII sources to paint: "dom" = this tab's own (iframe) DOM rects, "channel" = fresh rects paired over
+   * the PII channel (other tabs, sourceId match). */
+  piiSources: PiiSource[];
+}
+
+/** decideSelfCapture plus the PII sources to trust. Only a decisive own handle uses this tab's DOM PII alone. When
+ * self is only the aspect guess (no handle on the track), the capture might be a same-aspect sibling sandbox tab, so
+ * the paired channel rects are painted too, unioned with this tab's DOM rects: a sibling's personal fields are masked
+ * either way. A non-self browser surface uses the channel; other surfaces get none (manual masks only). */
+export function decideCapture(i: SelfCaptureInput): CaptureDecision {
+  if (i.trackHandleApi && i.trackHandle) {
+    const self = i.surface === "browser" && !!i.ownHandle && i.trackHandle === i.ownHandle;
+    return { self, piiSources: self ? ["dom"] : i.surface === "browser" ? ["channel"] : [] };
+  }
+  const self = i.mode === "workspace" && isSelfCapture(i.surface, i.videoW, i.videoH, i.viewport);
+  return { self, piiSources: self ? ["dom", "channel"] : i.surface === "browser" ? ["channel"] : [] };
+}
+
+/** Source label of the pixel-diff "typing" event. It is derived from the shared screen's pixels, so a session with no
+ * DOM telemetry (the claims sandbox, or a vision-only source) labels it "vision"; the ERP keeps its historical "dom"
+ * label (consumers filter `kind: "typing"` out of the feed and compile, so it never reaches a badge there). */
+export function pixelTypingSource(app: "erp" | "claims", source: "vision" | "dom" | "both"): "vision" | "dom" {
+  return app === "claims" || source === "vision" ? "vision" : "dom";
 }
 
 /** Timestamped ring buffer of occluder rects (CSS px). `rects(now)` is, per occluder, the bounding union of
@@ -167,7 +194,8 @@ export interface FrameInput {
   piiCss?: readonly (Rect & { kind?: string })[];
   /** Manual masks, normalized to the full video frame. */
   manual?: readonly PiiRegion[];
-  /** DOM PII published by another tab (two-window mode), normalized to that tab's viewport = the full frame. */
+  /** DOM PII published over the channel (two-window mode), normalized to the publisher's viewport = the full frame.
+   * Painted whenever given (also on a heuristic self capture, unioned with `piiCss`); callers pass it only when trusted. */
   piiFrame?: readonly PiiRegion[];
 }
 
@@ -182,7 +210,7 @@ export function planFrame(i: FrameInput): FrameSpec {
     crop,
     occluders: fromCss(i.occludersCss, "occluder"),
     masks: fromFrame(i.manual),
-    pii: [...fromCss(i.piiCss, "pii"), ...(self ? [] : fromFrame(i.piiFrame))],
+    pii: [...fromCss(i.piiCss, "pii"), ...fromFrame(i.piiFrame)],
   };
 }
 

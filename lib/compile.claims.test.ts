@@ -26,4 +26,17 @@ describe("claims in the Work Map (M4)", () => {
     expect(map.steps[0].invoice).toBe("4471");
     expect(stepRefOf(log.events[0])).toBe("4471:costCenter");
   });
+  it("a narrated claim edit gets its reason filled by narration, under the same window as invoices", () => {
+    const log = emptySession("claims-narr", "capture", "Triage claims", "Expert");
+    log.events = [claimEdit("CLM-30412", "flood", 5)];
+    log.transcript = [{ id: "tr_claim", t: 8, text: "I set this to flood because the photos show standing water.", speaker: "expert", final: true }];
+    const step = compileDeterministic(log).steps[0];
+    expect(step.reason).toMatchObject({ text: log.transcript[0].text, t: 8, source: "narration" });
+    expect(step.confidence).toBe("low");
+
+    const far = emptySession("claims-narr-far", "capture", "Triage claims", "Expert");
+    far.events = [claimEdit("CLM-30412", "flood", 5)];
+    far.transcript = [{ id: "tr_far", t: 60, text: "I set this to flood because the photos show standing water.", speaker: "expert", final: true }];
+    expect(compileDeterministic(far).steps[0].reason).toBeUndefined();
+  });
 });

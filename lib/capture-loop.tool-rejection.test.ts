@@ -59,6 +59,38 @@ describe("Capture tool rejection", () => {
     expect(dispatch).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { stepRef: "invoice:route::window:old", reason: "This needs a second reviewer." },
+    { stepRef: currentRef, reason: "A model-written answer that was never spoken." },
+  ])("never uploads a clip or fills a slot for an unconfirmed call: %s", async (params) => {
+    const stopClip = vi.fn();
+    const adapter = new VoiceTurnAdapter({
+      now: () => 10, agentConnected: () => true,
+      applyEffect: (effect) => { if (effect.type === "CLIP_STOP") stopClip(effect.upload); },
+    });
+    const result = adapter.turn(withAnswerConfirmation({
+      tag: "ASK", text: active.question, listen: true, timeoutSecs: 12,
+      recordClip: { sessionId: "test-session" },
+    }));
+    adapter.tick(10);
+    adapter.dispatch({ type: "SPEAK_START", at: 11, source: "agent" });
+    adapter.dispatch({ type: "SPEAK_END", at: 13 });
+    adapter.tick(13.6);
+    adapter.dispatch({ type: "HUMAN_COMMIT", at: 14, text: "This needs a second reviewer." });
+    await dispatchClientTool(
+      () => captureAnswerToolRejection(active, params.stepRef) ?? "logged", params,
+      () => adapter.dispatch({ type: "TOOL", at: 15, name: "log_answer", params }),
+    );
+    adapter.tick(30);
+    adapter.tick(34);
+    const outcome = await result;
+    expect(outcome).toMatchObject({ via: params.stepRef === currentRef ? "tool" : "timeout", heard: "" });
+    expect(outcome.audioId).toBeUndefined();
+    expect(windowOutcome(outcome)).toMatchObject({ candidateStatus: "debrief" });
+    expect(windowOutcome(outcome).answerText ?? "").toBe("");
+    expect(stopClip).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
   it("preserves tool lifecycle dispatch when a legacy handler fails", async () => {
     const dispatch = vi.fn();
     await expect(dispatchClientTool(() => { throw new Error("failed"); }, {}, dispatch)).rejects.toThrow("failed");

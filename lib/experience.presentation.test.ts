@@ -9,6 +9,8 @@ import { Meter } from "@/components/Meter";
 import { WorkMapView } from "@/components/WorkMapView";
 import { Presence } from "@/components/ui/Presence";
 import { ReplayRow } from "@/components/companion/teach/ReplayRow";
+import { TeachCompanion } from "@/components/companion/teach/TeachCompanion";
+import type { TeachVM } from "@/components/views/teach.vm";
 import type { Decision } from "./governor";
 import { presenceOf, type PresenceInput } from "./ui/presence";
 import { WorkMapSchema } from "./workmap";
@@ -43,6 +45,44 @@ const renderMap = (value = map, editable = false) => renderToStaticMarkup(create
   map: value, frames: [], sessionId: value.sessionId, editable, onChange: () => {},
 }));
 
+const endedTeachVM = (syncError: string | null): TeachVM => ({
+  log: {
+    id: "presentation-teach",
+    mode: "teach",
+    task: map.task,
+    expertName: "New hire",
+    startedAt: 0,
+    events: [],
+    transcript: [],
+    windows: [],
+    frames: [],
+    offRecord: [],
+  },
+  map: { ...map, confirmedAt: 1 },
+  started: true,
+  ended: true,
+  phase: "coached",
+  source: "dom",
+  decisions: [],
+  replay: null,
+  closeReplay: () => {},
+  card: [],
+  missed: [],
+  flaggedCount: 0,
+  voice: { mode: "fallback", connected: false, status: "fallback: off", isSpeaking: false },
+  pipeline: {
+    videoRef: { current: null },
+    sharing: false,
+    start: async () => {},
+    activity: "still",
+    visionLatency: null,
+  },
+  events: [],
+  start: async () => {},
+  endSession: async () => {},
+  syncError,
+});
+
 function sampleAction(page: ReactNode): (() => Promise<void>) | undefined {
   const nodes = Children.toArray(page);
   while (nodes.length) {
@@ -54,6 +94,22 @@ function sampleAction(page: ReactNode): (() => Promise<void>) | undefined {
 }
 
 describe("Liquid Glass presentation compatibility", () => {
+  it("keeps a failed teach guard disarm warning visible after the session ends", () => {
+    const warning = "Session ended, but the teach guard could not be cleared.";
+    const renderTeach = (syncError: string | null) => renderToStaticMarkup(createElement(TeachCompanion, {
+      vm: endedTeachVM(syncError),
+      presenter: false,
+      panel: false,
+      workspace: false,
+      state: { mood: "quiet", active: false },
+    }));
+
+    const failed = renderTeach(warning);
+    expect(failed).toContain('role="alert"');
+    expect(failed).toContain(warning);
+    expect(renderTeach(null)).not.toContain('role="alert"');
+  });
+
   it("keeps Claude's platform and companion entry paths and explicit sample loading", async () => {
     const html = renderToStaticMarkup(await Home());
     expect(html).toContain('aria-label="Main"');

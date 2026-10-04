@@ -192,7 +192,9 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
       setSyncError("Could not save this teach session.");
       return;
     }
-    await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disarm" }) }).catch(() => {});
+    const disarmed = await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disarm" }) }).catch(() => null);
+    if (!disarmed?.ok) console.warn("Teach guard disarm failed", disarmed?.status);
+    setSyncError(disarmed?.ok ? null : "Session ended, but the teach guard could not be cleared.");
     voice.disconnect();
     pipeline.stop();
     setEnded(true);

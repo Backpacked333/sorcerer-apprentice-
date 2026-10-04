@@ -161,7 +161,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
       label="Tutor"
       header={head}
       footer={
-        vm.ended ? null : (
+        vm.ended ? (vm.syncError ? <p role="alert" style={{ fontSize: 12, color: "#8a5200", textAlign: "center", margin: 0 }}>{vm.syncError}</p> : null) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {vm.reopenReplay || (vm.replay && !replay.visible) ? (
               <GlassButton size={30} variant="ghost" style={{ alignSelf: "flex-start" }} onClick={vm.replay ? replay.restore : vm.reopenReplay}>

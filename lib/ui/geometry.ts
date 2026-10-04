@@ -30,6 +30,34 @@ export function relativeRect(el: Element, root: Element | null): Rect {
   return { x: a.left - b.left, y: a.top - b.top, w: a.width, h: a.height };
 }
 
+/** Structural equality for (nullable) rects; lets measure loops skip no-op state updates. */
+export function rectsEqual(a: Rect | null, b: Rect | null): boolean {
+  return a === b || (!!a && !!b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h);
+}
+
+export function roundRect(r: Rect): Rect {
+  return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) };
+}
+
+/** The ERP's `[data-erp-target]` hook for `key` in `doc`, reusing `cached` while it is still attached there. */
+export function findErpTarget(doc: Document | null | undefined, key: string, cached: Element | null): Element | null {
+  if (cached && cached.isConnected && cached.ownerDocument === doc) return cached;
+  return doc?.querySelector(`[data-erp-target="${CSS.escape(key)}"]`) ?? null;
+}
+
+/**
+ * Rounded rect of `el` (inside `iframe`'s document) relative to `root` (viewport when null), or null when
+ * the element is empty or lies entirely outside the iframe's viewport on either axis.
+ */
+export function iframeTargetRect(el: Element, iframe: Element, root: Element | null): Rect | null {
+  const r = el.getBoundingClientRect();
+  const f = iframe.getBoundingClientRect();
+  const visible = r.width > 0 && r.height > 0 && r.left + r.width > 0 && r.top + r.height > 0 && r.left < f.width && r.top < f.height;
+  if (!visible) return null;
+  const o = root ? root.getBoundingClientRect() : { left: 0, top: 0 };
+  return roundRect({ x: r.left + f.left - o.left, y: r.top + f.top - o.top, w: r.width, h: r.height });
+}
+
 /**
  * Connector cable from a field to the companion card (design §6.6):
  * starts 7 px right of the field, at min(h/2, 22) down; ends 1 px left of the card, 34 px down

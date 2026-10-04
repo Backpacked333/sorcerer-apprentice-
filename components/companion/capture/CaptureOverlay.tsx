@@ -6,10 +6,7 @@ import { useEffect, useState, type RefObject } from "react";
 import { ConnectorCurve, FieldHighlight, NoticedChip } from "@/components/glass";
 import { useWorkspaceFrame } from "@/components/ui/Workspace";
 import type { OrbMood } from "@/lib/ui/moods";
-import type { Rect } from "@/lib/ui/geometry";
-
-const same = (a: Rect | null, b: Rect | null) => a === b || (!!a && !!b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h);
-const round = (r: DOMRect | { left: number; top: number; width: number; height: number }): Rect => ({ x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) });
+import { findErpTarget, iframeTargetRect, rectsEqual, relativeRect, roundRect, type Rect } from "@/lib/ui/geometry";
 
 export function CaptureOverlay(p: {
   /** data-erp-target key of the attended field, or null */
@@ -37,24 +34,15 @@ export function CaptureOverlay(p: {
     const measure = () => {
       let next: Rect | null = null;
       try {
-        const doc = iframe.contentDocument;
-        if (!el || !el.isConnected || el.ownerDocument !== doc) el = doc?.querySelector(`[data-erp-target="${CSS.escape(target)}"]`) ?? null;
-        if (el) {
-          const r = el.getBoundingClientRect();
-          const fr = frame.getBoundingClientRect();
-          const ir = iframe.getBoundingClientRect();
-          const box = { left: r.left + ir.left - fr.left, top: r.top + ir.top - fr.top, width: r.width, height: r.height };
-          const visible = box.width > 0 && box.height > 0 && box.top + box.height > 0 && box.top < fr.height && box.left < fr.width;
-          next = visible ? round(box) : null;
-        }
+        el = findErpTarget(iframe.contentDocument, target, el);
+        next = el ? iframeTargetRect(el, iframe, frame) : null;
       } catch {
         next = null; // not same-origin (should not happen): no halo
       }
-      setRect((prev) => (same(prev, next) ? prev : next));
-      const c = cardRef.current?.getBoundingClientRect();
-      const fr = frame.getBoundingClientRect();
-      const nextCard = c ? round({ left: c.left - fr.left, top: c.top - fr.top, width: c.width, height: c.height }) : null;
-      setCard((prev) => (same(prev, nextCard) ? prev : nextCard));
+      setRect((prev) => (rectsEqual(prev, next) ? prev : next));
+      const c = cardRef.current;
+      const nextCard = c ? roundRect(relativeRect(c, frame)) : null;
+      setCard((prev) => (rectsEqual(prev, nextCard) ? prev : nextCard));
       raf = requestAnimationFrame(measure);
     };
     measure();

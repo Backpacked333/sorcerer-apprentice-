@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { connectorPath, expandRect, mmss, relativeRect, unionRects } from "./geometry";
+import { connectorPath, expandRect, findErpTarget, iframeTargetRect, mmss, rectsEqual, relativeRect, roundRect, unionRects } from "./geometry";
 
 const fakeEl = (left: number, top: number, width: number, height: number) =>
   ({ getBoundingClientRect: () => ({ left, top, width, height }) }) as unknown as Element;
@@ -32,6 +32,53 @@ describe("relativeRect", () => {
   });
   it("uses the viewport when root is null", () => {
     expect(relativeRect(fakeEl(12, 34, 5, 6), null)).toEqual({ x: 12, y: 34, w: 5, h: 6 });
+  });
+});
+
+describe("rectsEqual / roundRect", () => {
+  it("compares by value and treats null as equal only to null", () => {
+    expect(rectsEqual({ x: 1, y: 2, w: 3, h: 4 }, { x: 1, y: 2, w: 3, h: 4 })).toBe(true);
+    expect(rectsEqual({ x: 1, y: 2, w: 3, h: 4 }, { x: 1, y: 2, w: 3, h: 5 })).toBe(false);
+    expect(rectsEqual(null, null)).toBe(true);
+    expect(rectsEqual({ x: 0, y: 0, w: 0, h: 0 }, null)).toBe(false);
+  });
+  it("rounds every side", () => {
+    expect(roundRect({ x: 1.4, y: 2.5, w: 3.6, h: 0.4 })).toEqual({ x: 1, y: 3, w: 4, h: 0 });
+  });
+});
+
+describe("findErpTarget", () => {
+  const doc = (found: Element | null) =>
+    ({ querySelector: (sel: string) => (sel === '[data-erp-target="total"]' ? found : null) }) as unknown as Document;
+  it("reuses an attached cached element from the same document and re-queries otherwise", () => {
+    (globalThis as { CSS?: unknown }).CSS ??= { escape: (s: string) => s };
+    const fresh = { isConnected: true } as unknown as Element;
+    const d = doc(fresh);
+    const cached = { isConnected: true, ownerDocument: d } as unknown as Element;
+    expect(findErpTarget(d, "total", cached)).toBe(cached);
+    expect(findErpTarget(d, "total", { isConnected: false, ownerDocument: d } as unknown as Element)).toBe(fresh);
+    expect(findErpTarget(d, "total", { isConnected: true, ownerDocument: doc(null) } as unknown as Element)).toBe(fresh);
+    expect(findErpTarget(null, "total", null)).toBeNull();
+  });
+});
+
+describe("iframeTargetRect", () => {
+  const iframe = fakeEl(10, 60, 800, 600);
+  const root = fakeEl(10, 40, 800, 620);
+  it("maps iframe-local coords into root coords, rounded", () => {
+    expect(iframeTargetRect(fakeEl(100.4, 50.6, 120.2, 30), iframe, root)).toEqual({ x: 100, y: 71, w: 120, h: 30 });
+    expect(iframeTargetRect(fakeEl(100, 50, 120, 30), iframe, null)).toEqual({ x: 110, y: 110, w: 120, h: 30 });
+  });
+  it("is null for empty elements or ones outside the iframe viewport on either axis", () => {
+    expect(iframeTargetRect(fakeEl(100, 50, 0, 30), iframe, root)).toBeNull();
+    expect(iframeTargetRect(fakeEl(100, -30, 120, 30), iframe, root)).toBeNull();
+    expect(iframeTargetRect(fakeEl(100, 600, 120, 30), iframe, root)).toBeNull();
+    expect(iframeTargetRect(fakeEl(-120, 50, 120, 30), iframe, root)).toBeNull();
+    expect(iframeTargetRect(fakeEl(800, 50, 120, 30), iframe, root)).toBeNull();
+  });
+  it("keeps partially visible elements", () => {
+    expect(iframeTargetRect(fakeEl(-20, -10, 120, 30), iframe, root)).toEqual({ x: -20, y: 10, w: 120, h: 30 });
+    expect(iframeTargetRect(fakeEl(790, 590, 120, 30), iframe, root)).toEqual({ x: 790, y: 610, w: 120, h: 30 });
   });
 });
 

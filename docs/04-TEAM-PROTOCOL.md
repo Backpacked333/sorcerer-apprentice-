@@ -41,6 +41,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
 | `lib/vision-schema.ts`, `lib/vision-schema.test.ts`, `lib/vision-route.test.ts` | **B** | flat vision wire schema, normalization and mocked route/schema regressions (#28) |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
+| `lib/visiondiff.ts`, `lib/visiondiff.test.ts`, `lib/vision-pipeline.test.ts` | **B** | pure visual diff, normalized identities and mocked capture lifecycle regressions (#33) |
 | `lib/events.contract.test.ts`, `lib/store.fs.test.ts`, `lib/workspace.ts` | **B** | WB-4 event/hello and filesystem regressions; local-only workspace resolver stub |
 | `lib/redact.ts` | **B** | privacy |
 | `lib/pii-masks.ts`, `lib/pii-masks.test.ts`, `lib/redact.privacy.test.ts` | **B** | P-24 source-scoped DOM rectangles, crop projection, pre-encoding masks and text privacy regressions |

@@ -50,7 +50,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
     const top = n ? 190 : 76;
     const bottom = 126;
     // leave room for the open "Tacit suggests" card on wide canvases
-    const left = !n && data.suggestions.length && v.w - right > 900 ? 330 : 0;
+    const left = !n && data.suggestions.length && v.w - right - 330 >= 480 ? 330 : 0;
     return { x: left, y: top, w: Math.max(200, v.w - right - left), h: Math.max(200, v.h - top - bottom) };
   }, [cam, inspDocked, inspW, narrow, data.roles.length, data.suggestions.length]);
 

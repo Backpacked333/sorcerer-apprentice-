@@ -43,8 +43,24 @@ export function useTeachCardState(vm: TeachVM): TeachCardState {
 
 const small = { fontSize: 12, color: "#8e8e93", margin: 0 } as const;
 
+/**
+ * The replay belongs to the moment it was opened for. Once the new hire moves to another invoice, or a newer
+ * tutor decision arrives (e.g. the praise after the fix, which already quotes the expert), it folds away so the
+ * card stays short and off the ERP. "Show the moment again" brings it back. View-only: vm.replay is untouched.
+ */
+function useReplayVisible(vm: TeachVM): { visible: boolean; restore: () => void } {
+  const onScreen = vm.currentState?.invoice ?? vm.currentInvoice ?? null;
+  const count = vm.decisions.length;
+  const [mark, setMark] = useState<{ r: TeachVM["replay"]; n: number; inv: string | null }>({ r: vm.replay, n: count, inv: onScreen });
+  if (mark.r !== vm.replay) setMark({ r: vm.replay, n: count, inv: onScreen });
+  const sameInvoice = !mark.inv || !onScreen || mark.inv === onScreen;
+  const visible = !!vm.replay && !vm.ended && sameInvoice && count <= mark.n;
+  return { visible, restore: () => setMark({ r: vm.replay, n: count, inv: onScreen }) };
+}
+
 export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm: TeachVM; presenter: boolean; panel: boolean; workspace: boolean; state: TeachCardState }) {
   const [mech, setMech] = useState(false);
+  const replay = useReplayVisible(vm);
   useEffect(() => {
     if (presenter) setMech(true);
   }, [presenter]);
@@ -58,7 +74,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
   const line = shown ? tutorLine(shown) : null;
   const kind = teachKindOf(shown);
 
-  const mode: CompanionMode = panel ? "panel" : !vm.started ? "teach" : vm.ended ? "capsule" : shown || vm.replay ? "teach" : "capsule";
+  const mode: CompanionMode = panel ? "panel" : !vm.started ? "teach" : vm.ended ? "capsule" : shown || replay.visible ? "teach" : "capsule";
 
   // ---------- loading / no source map ----------
   if (!vm.log || !vm.map) {
@@ -96,7 +112,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
         <BrowserCheck />
         <PersonaCard role="newhire" name={learner} expert={expert} />
         <p style={{ fontSize: 14, lineHeight: 1.45, color: "#3a3a3c", margin: "0 2px" }}>
-          Loaded {map.rules.length} rules from {expert}&apos;s confirmed Work Map{map.confirmedAt ? `, rev ${map.revision}` : ""}.
+          Loaded {map.rules.length} rules from {expert}&apos;s confirmed Work Map{map.confirmedAt ? `, rev\u00a0${map.revision}` : ""}.
         </p>
         {presenter ? (
           <ul style={{ ...small, padding: "0 2px", listStyle: "none", display: "flex", flexDirection: "column", gap: 2 }}>
@@ -143,8 +159,8 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
       footer={
         vm.ended ? null : (
           <div style={{ display: "flex", gap: 6 }}>
-            {vm.reopenReplay ? (
-              <GlassButton size={34} style={{ flex: 1 }} onClick={vm.reopenReplay}>
+            {vm.reopenReplay || (vm.replay && !replay.visible) ? (
+              <GlassButton size={34} style={{ flex: 1 }} onClick={vm.replay ? replay.restore : vm.reopenReplay}>
                 Show the moment again
               </GlassButton>
             ) : null}
@@ -159,7 +175,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
         <div key={`d${vm.decisions.length}`} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 2px" }}>
           {context ? <p style={{ ...small, animation: "tc-rise .5s var(--ease-rise) both" }}>{context}</p> : null}
           <p style={{ fontSize: 18, lineHeight: 1.32, fontWeight: 600, letterSpacing: "-.012em", margin: 0, textWrap: "pretty", animation: "tc-rise .6s var(--ease-rise) .1s both" }}>{line.message}</p>
-          {line.quote && !vm.replay ? (
+          {line.quote && !replay.visible ? (
             <div style={{ padding: "10px 12px", borderRadius: 16, background: "rgba(255,255,255,.55)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.06)", animation: "tc-rise .55s var(--ease-rise) .2s both" }}>
               <p style={{ fontSize: 14, lineHeight: 1.4, fontWeight: 500, margin: 0 }}>“{line.quote}”</p>
               <p style={{ ...small, fontSize: 11.5, marginTop: 3 }}>{expert}, in their own words</p>
@@ -171,7 +187,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
         </div>
       ) : null}
 
-      {vm.replay && !vm.ended ? <ReplayRow replay={vm.replay} expert={expert} onClose={vm.closeReplay} /> : null}
+      {replay.visible && vm.replay ? <ReplayRow replay={vm.replay} expert={expert} onClose={vm.closeReplay} /> : null}
 
       {vm.pipeline.degraded === "wrong_surface" ? (
         <p style={{ fontSize: 12.5, color: "#a35f00", margin: "0 2px" }}>A different surface is shared, so no frames are sent. ERP telemetry continues.</p>

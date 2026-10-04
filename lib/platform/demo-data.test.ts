@@ -86,3 +86,11 @@ describe("demo-data: shape", () => {
     }
   });
 });
+
+describe("demo-data: stays inside the demo (QA)", () => {
+  it("never links a demo user into the real capture flow", () => {
+    const p = demoPlatform();
+    expect(p.roles.every((r) => r.captureHref == null)).toBe(true);
+    expect(JSON.stringify(p)).not.toMatch(/"\/capture/);
+  });
+});

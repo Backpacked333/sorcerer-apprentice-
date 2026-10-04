@@ -6,6 +6,16 @@ import { AppShell } from "@/components/ui/AppShell";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { GlassButton } from "@/components/glass";
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** Deterministic (server = client, any time zone): "4 Oct 2026, 03:30 UTC". Never toLocaleString during render. */
+function stamp(ms: number): string {
+  const d = new Date(ms);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}, ${p(d.getUTCHours())}:${p(d.getUTCMinutes())} UTC`;
+}
+
 export function TeachStart({
   maps,
   preselect,
@@ -51,7 +61,7 @@ export function TeachStart({
               <select className="input mt-1.5 w-full" value={from} onChange={(e) => setFrom(e.target.value)}>
                 {usable.map((m) => (
                   <option key={m.sessionId} value={m.sessionId}>
-                    {m.expert} · {m.startedAt ? new Date(m.startedAt).toLocaleString() : m.task} · {m.steps} steps · {m.rules} rules
+                    {m.expert} · {m.startedAt ? stamp(m.startedAt) || m.task : m.task} · {m.steps} steps · {m.rules} rules
                   </option>
                 ))}
               </select>

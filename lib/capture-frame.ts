@@ -82,6 +82,30 @@ export function isSelfCapture(surface: string | undefined, videoW: number, video
   return Math.abs(videoW / videoH - want) / want <= tolerance;
 }
 
+export interface SelfCaptureInput {
+  /** The track's displaySurface setting. */
+  surface: string | undefined;
+  videoW: number;
+  videoH: number;
+  viewport: Size | null | undefined;
+  /** "tab": the plain share prompt; "workspace": current-tab capture (preferCurrentTab). */
+  mode: "tab" | "workspace";
+  /** The per-page Capture Handle this tab set, or null when setCaptureHandleConfig is unavailable/failed. */
+  ownHandle: string | null | undefined;
+  /** Does the track expose getCaptureHandle()? */
+  trackHandleApi: boolean;
+  /** What track.getCaptureHandle()?.handle returned (null/undefined: no handle on the captured surface). */
+  trackHandle: string | null | undefined;
+}
+
+/** Is the capture this very tab? With the Capture Handle API, only our own handle proves it (a missing or foreign
+ * handle is another surface, e.g. a same-window sibling /erp tab with the same aspect). Without it, the aspect
+ * heuristic is trusted only for a workspace (preferCurrentTab) share; a plain tab-mode share is never self. */
+export function decideSelfCapture(i: SelfCaptureInput): boolean {
+  if (i.ownHandle && i.trackHandleApi) return i.surface === "browser" && i.trackHandle === i.ownHandle;
+  return i.mode === "workspace" && isSelfCapture(i.surface, i.videoW, i.videoH, i.viewport);
+}
+
 /** Timestamped ring buffer of occluder rects (CSS px). `rects(now)` is, per occluder, the bounding union of
  * every rect it had in the last max(windowMs, holdMs) (always at least the last 750 ms), padded and snapped
  * outward to `snap` px. An occluder that just vanished stays painted for that long. */

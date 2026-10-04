@@ -15,7 +15,9 @@ import { CapsuleFooter, InertButton, KindHeader, MetaRow, Muted, Question } from
 
 const H = { margin: 0, fontSize: 24, fontWeight: 700, letterSpacing: "-.02em" } as const;
 const SUB = { margin: "6px 0 0", fontSize: 15, color: "#6e6e73", maxWidth: 680 } as const;
-const GRID = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(348px,100%),1fr))", gap: "28px 24px", alignItems: "start" } as const;
+// Columns are the card's own width (capsule 348): three per row at 1280+, no dead gutters
+// between a card and its neighbour; the leftover space sits once, at the row's end.
+const GRID = { display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(min(348px,100%),348px))", gap: "32px 32px", alignItems: "start" } as const;
 
 export function CompanionGallery() {
   return (
@@ -53,7 +55,7 @@ export function CompanionGallery() {
       <section aria-labelledby="layouts-title">
         <h2 id="layouts-title" style={H}>Layouts</h2>
         <p style={SUB}>Capsule (348), ask (404), teach-back (440) and teach (404). The card springs to fit its content.</p>
-        <div className="mt-7" style={{ ...GRID, gridTemplateColumns: "repeat(auto-fill,minmax(min(404px,100%),1fr))" }}>
+        <div className="mt-7" style={{ ...GRID, gridTemplateColumns: "repeat(auto-fill,minmax(min(440px,100%),1fr))" }}>
           <Labeled title="Capsule · quiet">
             <CompanionCard
               mood="quiet"

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ScreenEvent, SessionLog } from "../events";
 import { WorkMapSchema, type WorkMap } from "../workmap";
-import { debriefAt, deriveOntology, derivePlatform, deriveRole, mergeBeads, parseMastery, quoteAt, slug, type PlatformInput } from "./derive";
+import { debriefAt, deriveOntology, derivePlatform, deriveRole, mergeBeads, parseMastery, quoteAt, ringLayout, slug, type PlatformInput } from "./derive";
 
 const T0 = Date.UTC(2026, 9, 3, 10, 0, 0);
 const NOW = T0 + 60 * 60_000;
@@ -204,5 +204,45 @@ describe("derive: mastery (T3 labels)", () => {
     expect(cells).toEqual({ r1: "corrected after intervention", r2: "correct without help" });
     expect(role!.people.map((x) => `${x.name}:${x.tag}`)).toEqual(["Alex:expert", "Sam:new hire"]);
     expect(data.live?.href).toBe("/teach/t1");
+  });
+});
+
+describe("derive: placeholder names and layout (QA)", () => {
+  it("a blank or default expert name is not a separate person next to a named one", () => {
+    const named = session("a", { events: [ev("e", 1, "dom", { invoice: "1" })] });
+    const unnamed = session("b", { expertName: "Expert", startedAt: T0 + 1000, events: [ev("e", 1, "dom", { invoice: "2" })] });
+    const blank = session("c", { expertName: "  ", startedAt: T0 + 2000, events: [ev("e", 1, "dom", { invoice: "3" })] });
+    const hire = (id: string, name: string): SessionLog => ({ ...session(id), mode: "teach", expertName: name, sourceMapSessionId: "a", events: [ev("e", 1, "dom", { invoice: "9" })] });
+    const p = derivePlatform(input([named, unnamed, blank, hire("t1", "New hire"), hire("t2", "New hire")], {}));
+    expect(p.roles[0].people.map((x) => `${x.name}:${x.tag}`)).toEqual(["Alex:expert", "Unnamed new hire:new hire"]);
+    expect(p.roles[0].learners).toBe(1);
+  });
+
+  it("only placeholder names collapse into one honest 'Unnamed expert'", () => {
+    const a = session("a", { expertName: "Expert", events: [ev("e", 1, "dom", { invoice: "1" })] });
+    const b = session("b", { expertName: "", events: [ev("e", 1, "dom", { invoice: "2" })] });
+    const p = derivePlatform(input([a, b], {}));
+    expect(p.roles[0].people.map((x) => x.name)).toEqual(["Unnamed expert"]);
+    expect(JSON.stringify(p)).not.toMatch(/"name":"Expert"/);
+  });
+
+  it("company-map nodes never overlap: main in the centre, others on rings", () => {
+    for (const [nIn, nOut] of [[1, 0], [2, 2], [3, 1], [5, 6], [9, 12]]) {
+      const l = ringLayout(nIn, nOut, 1000, 650);
+      expect(l.inner[0]).toEqual({ x: 1000, y: 650 });
+      const pts = [...l.inner.map((p) => ({ ...p, r: 62 })), ...l.outer.map((p) => ({ ...p, r: 42 }))];
+      for (let i = 0; i < pts.length; i++) for (let j = i + 1; j < pts.length; j++) {
+        expect(Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y)).toBeGreaterThan(pts[i].r + pts[j].r + 60);
+      }
+    }
+  });
+
+  it("a second captured role does not sit on the main one in real data", () => {
+    const a = session("a", { events: [ev("e", 1, "dom", { invoice: "1" })] });
+    const b = session("b", { task: "Work the claims queue", events: [ev("e", 1, "dom", { invoice: "2" })] });
+    const p = derivePlatform(input([a, b], { a: map("a", { confirmedAt: T0 + 20 * 60_000 }) }));
+    const [main, second] = p.roles;
+    expect(main.isMain).toBe(true);
+    expect(Math.hypot(main.x - second.x, main.y - second.y)).toBeGreaterThan(main.r + second.r + 60);
   });
 });

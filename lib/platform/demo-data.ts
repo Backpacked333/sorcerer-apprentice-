@@ -245,7 +245,8 @@ function role(partial: Omit<RoleNode, "coverage" | "rules" | "sessions" | "menti
   return {
     coverage: [], rules: [], sessions: [], mentions: m, openGaps: 0, learners: 0,
     topRules: rulesTo(partial.id).map(chip), statusLabel: statusLabel[partial.status],
-    captureHref: partial.status === "captured" ? null : "/capture",
+    // demo users never get sent into the real capture flow from the sample company
+    captureHref: null,
     note: partial.status === "captured" ? null : m.length ? "Tacit knows when work goes here — not yet how this role decides." : null,
     ...partial,
   };

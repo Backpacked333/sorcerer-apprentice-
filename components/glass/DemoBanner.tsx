@@ -26,7 +26,8 @@ export function DemoBanner({ text = "Demo data — fictional. Nothing here was l
         lineHeight: 1.35,
         textAlign: "center",
         color: "#3a3a3c",
-        background: "linear-gradient(180deg,rgba(236,230,255,.92),rgba(228,222,255,.82))",
+        // Near-opaque: content scrolling underneath must not ghost through the label.
+        background: "linear-gradient(180deg,rgba(238,233,255,.985),rgba(231,225,255,.97))",
         backdropFilter: "blur(16px) saturate(1.6)",
         WebkitBackdropFilter: "blur(16px) saturate(1.6)",
         boxShadow: "inset 0 -.5px 0 rgba(106,85,216,.25),0 4px 14px rgba(80,60,180,.06)",

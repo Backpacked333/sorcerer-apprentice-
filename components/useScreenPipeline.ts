@@ -8,7 +8,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { describeEvent, type Frame, type ScreenEvent } from "@/lib/events";
 import { classifyActivity, diffGray, toGray, worthSending, DIFF_H, DIFF_W, type Activity, type DiffResult } from "@/lib/framediff";
 import { blurRegions, type PiiRegion } from "@/lib/redact";
-import { drawFrame, frameSize, iframeContentBox, isSelfCapture, OccluderHistory, piiToCss, planFrame, type FrameSpec, type Rect, type Size, type Surface } from "@/lib/capture-frame";
+import { decideSelfCapture, drawFrame, frameSize, iframeContentBox, OccluderHistory, piiToCss, planFrame, type FrameSpec, type Rect, type Size, type Surface } from "@/lib/capture-frame";
 import { collectPiiRects, piiSourceId, subscribePiiRects, type PiiRectsMessage } from "@/lib/pii-masks";
 import { subscribeTelemetry, type TelemetryMessage } from "@/lib/telemetry";
 import type { InvoiceState } from "@/lib/workmap";
@@ -130,7 +130,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
     return w > 0 && h > 0 ? { w, h } : null;
   };
 
-  /** Decide once per stream whether the capture is this tab (capture handle if the browser reports one, else aspect). */
+  /** Decide once per stream whether the capture is this tab (Capture Handle when supported, else aspect in workspace mode). */
   const decideSurface = useCallback(() => {
     if (selfRef.current !== undefined) return;
     const stream = streamRef.current;
@@ -139,12 +139,15 @@ export function useScreenPipeline(opts: PipelineOptions) {
     const v = videoRef.current;
     const vw = v?.videoWidth || settings.width || 0, vh = v?.videoHeight || settings.height || 0;
     if (!track || !(vw > 0 && vh > 0)) return; // not yet known; retried on the next tick
-    let self = isSelfCapture(settings.displaySurface, vw, vh, viewport());
-    // Capture Handle (feature-detected, Chrome): a handle that is not ours proves another tab; ours proves this one.
-    try {
-      const handle = track.getCaptureHandle?.()?.handle;
-      if (typeof handle === "string" && captureHandle.current) self = settings.displaySurface === "browser" && handle === captureHandle.current;
-    } catch { /* unsupported */ }
+    // Capture Handle (feature-detected, Chrome): only our own per-page handle proves this tab; a missing or foreign
+    // handle is another surface. Without the API, the aspect guess is used for a workspace share only.
+    let trackHandle: string | null | undefined;
+    const trackHandleApi = typeof track.getCaptureHandle === "function";
+    try { trackHandle = trackHandleApi ? track.getCaptureHandle?.()?.handle ?? null : undefined; } catch { trackHandle = null; }
+    const self = decideSelfCapture({
+      surface: settings.displaySurface, videoW: vw, videoH: vh, viewport: viewport(),
+      mode: startOpts.current.mode, ownHandle: captureHandle.current, trackHandleApi, trackHandle,
+    });
     selfRef.current = self;
     setSelfCapture(self);
     const s = settings.displaySurface;
@@ -451,7 +454,8 @@ export function useScreenPipeline(opts: PipelineOptions) {
     const mode: CaptureMode = so?.mode === "workspace" ? "workspace" : "tab";
     startOpts.current = { mode, app: so?.app === "claims" ? "claims" : "erp", queue: so?.queue };
     const md = navigator.mediaDevices as MediaDevices & { setCaptureHandleConfig?: (c: { handle: string; exposeOrigin: boolean; permittedOrigins: string[] }) => void };
-    if (mode === "workspace" && typeof md.setCaptureHandleConfig === "function") {
+    // both modes: a per-page handle lets decideSurface tell this tab from a same-window sibling tab
+    if (typeof md.setCaptureHandleConfig === "function") {
       try {
         captureHandle.current ??= uid("tacit");
         md.setCaptureHandleConfig({ handle: captureHandle.current, exposeOrigin: false, permittedOrigins: [location.origin] });

@@ -236,7 +236,16 @@ function statusOf(g: RoleGroup): { status: RoleNode["status"]; label: string } {
   return { status: "capturing", label: "Capturing" };
 }
 
-const expertOf = (g: RoleGroup) => g.display?.m.expert.name || g.experts[0] || "the expert";
+/**
+ * Capture and Teach fall back to a placeholder name ("Expert" / "New hire") when nobody typed one. That placeholder is not a
+ * person: it never becomes a separate entry next to a named one, and it is shown as "Unnamed …" only when nobody was named.
+ */
+const PLACEHOLDER_NAMES = new Set(["", "expert", "the expert", "new hire", "the new hire", "unnamed", "unknown"]);
+export const isPlaceholderName = (name: string | null | undefined) => PLACEHOLDER_NAMES.has((name ?? "").trim().toLowerCase());
+const named = (names: string[]) => names.filter((n) => !isPlaceholderName(n));
+const displayName = (name: string, tag: "expert" | "new hire") => (isPlaceholderName(name) ? `Unnamed ${tag}` : name);
+
+const expertOf = (g: RoleGroup) => [g.display?.m.expert.name ?? "", ...g.experts].find((n) => !isPlaceholderName(n)) || "the expert";
 
 // ---------------------------------------------------------------- beads and timeline
 
@@ -250,7 +259,7 @@ function beadsFor(groups: RoleGroup[]): Bead[] {
     for (const s of g.captures) {
       const m = g.pairs.find((p) => p.s.id === s.id)?.m;
       const liveRules = m ? m.rules.filter((r) => r.quotes.some((q) => q.source !== "debrief")).length : 0;
-      beads.push({ id: `cap_${s.id}`, at: s.startedAt, type: "capture", title: `Capture · ${s.task}`, who: s.expertName, href: m ? `/map/${s.id}` : null,
+      beads.push({ id: `cap_${s.id}`, at: s.startedAt, type: "capture", title: `Capture · ${s.task}`, who: displayName(s.expertName, "expert"), href: m ? `/map/${s.id}` : null,
         diff: m ? `+${liveRules} rule${liveRules === 1 ? "" : "s"} · ${casesOf(s)} case${casesOf(s) === 1 ? "" : "s"}` : "not compiled yet" });
       if (!m) continue;
       const filled = m.slots.filter((x) => x.status === "filled" && x.filledBy?.source === "debrief").length;
@@ -262,7 +271,7 @@ function beadsFor(groups: RoleGroup[]): Bead[] {
     }
     for (const t of g.teaches) {
       const n = uniq((t.mastery ?? []).map((x) => x.ruleId).filter((id) => id !== "novel")).length;
-      beads.push({ id: `teach_${t.id}`, at: t.startedAt, type: "teach", title: `Teach · ${teachPhases(t)}`, who: t.expertName, diff: `${n} rule${n === 1 ? "" : "s"} exercised`, href: `/teach/${t.id}` });
+      beads.push({ id: `teach_${t.id}`, at: t.startedAt, type: "teach", title: `Teach · ${teachPhases(t)}`, who: displayName(t.expertName, "new hire"), diff: `${n} rule${n === 1 ? "" : "s"} exercised`, href: `/teach/${t.id}` });
     }
   }
   return beads;
@@ -338,10 +347,9 @@ export function derivePlatform(input: PlatformInput): PlatformData {
   const edges: RoleEdge[] = [];
   const cx = MAIN_W / 2, cy = MAIN_H / 2;
 
+  const layout = ringLayout(groups.length, mentionedCount(groups), cx, cy);
   groups.forEach((g, i) => {
     const { status, label } = statusOf(g);
-    const angle = (i / Math.max(1, groups.length)) * Math.PI * 2 - Math.PI / 2;
-    const ringR = groups.length > 1 ? 260 : 0;
     const p = g.display;
     const ids = p ? displayIds(p.m) : new Map<string, string>();
     roles.push({
@@ -355,10 +363,10 @@ export function derivePlatform(input: PlatformInput): PlatformData {
       sessions: cumulative([...g.captures, ...g.teaches].map((s) => s.startedAt)),
       mentions: [],
       openGaps: p ? p.m.slots.filter((x) => x.status === "open").length : 0,
-      learners: g.newHires.length,
+      learners: peopleOf(g).filter((x) => x.tag === "new hire").length,
       topRules: p ? p.m.rules.slice(0, 4).map((r) => chipOf(g.id, r, ids)) : [],
       risk: null, plannedAt: null,
-      x: Math.round(cx + Math.cos(angle) * ringR), y: Math.round(cy + Math.sin(angle) * ringR * 0.7), r: status === "captured" ? 62 : 54,
+      x: layout.inner[i].x, y: layout.inner[i].y, r: status === "captured" ? 62 : 54,
       memoryHref: `/platform/role/${g.id}`, ontologyHref: `/platform/role/${g.id}/ontology`, captureHref: null,
       note: status === "captured" ? null : status === "in_debrief" ? `Waiting for ${expertOf(g)}'s yes. Not memory yet.` : "Captured, not compiled yet.",
     });
@@ -392,12 +400,11 @@ export function derivePlatform(input: PlatformInput): PlatformData {
   const mList = [...mentioned.entries()].sort((a, b) => Math.min(...a[1].firsts) - Math.min(...b[1].firsts));
   mList.forEach(([key, mr], i) => {
     const id = `mentioned-${key}`;
-    const angle = (i / Math.max(1, mList.length)) * Math.PI * 2 - Math.PI / 2 + Math.PI / Math.max(2, mList.length);
     roles.push({
       id, title: mr.title, dept: "seen", team: null, onet: null, status: "mentioned", statusLabel: "Mentioned, not captured",
       at: Math.min(...mr.firsts), people: [], coverage: [], rules: [], sessions: [], mentions: cumulative(mr.firsts),
       openGaps: 0, learners: 0, topRules: mr.chips, risk: null, plannedAt: null,
-      x: Math.round(cx + Math.cos(angle) * 600), y: Math.round(cy + Math.sin(angle) * 420), r: 42,
+      x: layout.outer[i].x, y: layout.outer[i].y, r: 42,
       memoryHref: null, ontologyHref: null, captureHref: "/capture",
       note: "Tacit knows when work goes here — not yet how this role decides.",
     });
@@ -409,7 +416,7 @@ export function derivePlatform(input: PlatformInput): PlatformData {
   const timeline = timelineFor(beadsFor(groups), now);
   const departments: Department[] = roles.length ? [{
     id: "seen", name: "Seen by Tacit", color: "#6e6e73", cloudA: "rgba(215,218,228,.6)", cloudB: "rgba(235,236,242,.3)",
-    x: cx, y: cy, rx: mList.length ? 760 : 320, ry: mList.length ? 540 : 260,
+    x: cx, y: cy, rx: layout.cloud.rx, ry: layout.cloud.ry,
   }] : [];
 
   return {
@@ -435,20 +442,65 @@ export function derivePlatform(input: PlatformInput): PlatformData {
   };
 }
 
+/** Same key set as the mentioned-roles pass below (stopAndAsk.who of confirmed maps), so the layout knows the outer count up front. */
+function mentionedCount(groups: RoleGroup[]): number {
+  const keys = new Set<string>();
+  for (const g of groups) for (const r of g.memory?.m.rules ?? []) if (r.stopAndAsk?.who && normWho(r.stopAndAsk.who)) keys.add(slug(normWho(r.stopAndAsk.who)));
+  return keys.size;
+}
+
+/**
+ * Company-map positions. The main role sits in the centre; other captured roles share an inner ring sized so neighbours
+ * never touch, starting to the right (a node's title hangs below it, and the canvas counter-scales nodes and labels ~2x
+ * when zoomed out, so stacking roles vertically is what makes them collide); mentioned roles sit on an outer ring,
+ * rotated to stay as far as possible from the inner roles and from straight up/down, so cables and labels do not run
+ * across them.
+ */
+export function ringLayout(nInner: number, nOuter: number, cx: number, cy: number) {
+  const SPACING = 300;
+  const perim = (n: number) => (n * SPACING) / (2 * Math.PI * 0.8);
+  const others = Math.max(0, nInner - 1);
+  const innerRx = others ? Math.max(520, perim(others)) : 0;
+  const innerRy = others ? Math.max(380, innerRx * 0.62) : 0;
+  const innerAngles = Array.from({ length: others }, (_, k) => (k / others) * Math.PI * 2);
+  const outerRx = Math.max(700, innerRx + 300, perim(nOuter));
+  const outerRy = Math.max(440, innerRy + 240, outerRx * 0.62);
+  const gap = (a: number, b: number) => Math.abs((((a - b) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI);
+  const avoid = [...innerAngles, Math.PI / 2, -Math.PI / 2];
+  let best = 0, bestScore = -1;
+  for (let step = 0; step < 24; step++) {
+    const phi = (step / 24) * ((Math.PI * 2) / Math.max(1, nOuter));
+    let score = Infinity;
+    for (let i = 0; i < nOuter; i++) for (const a of avoid) score = Math.min(score, gap(phi + (i / nOuter) * Math.PI * 2, a));
+    if (score > bestScore + 1e-6) { bestScore = score; best = phi; }
+  }
+  const at = (a: number, rx: number, ry: number) => ({ x: Math.round(cx + Math.cos(a) * rx), y: Math.round(cy + Math.sin(a) * ry) });
+  const inner = [{ x: cx, y: cy }, ...innerAngles.map((a) => at(a, innerRx, innerRy))];
+  const outer = Array.from({ length: nOuter }, (_, i) => at(best + (i / nOuter) * Math.PI * 2, outerRx, outerRy));
+  const rx = nOuter ? outerRx : innerRx, ry = nOuter ? outerRy : innerRy;
+  return { inner, outer, cloud: { rx: Math.max(320, rx + 170), ry: Math.max(260, ry + 150) } };
+}
+
 function chipOf(roleId: string, r: Rule, ids: Map<string, string>): RuleChip {
   return { id: r.id, displayId: ids.get(r.id) ?? r.id, kind: ruleKind(r), title: r.title, quote: r.quotes[0]?.text ?? null, href: `/platform/role/${roleId}/ontology?rule=${encodeURIComponent(r.id)}` };
 }
 
 function peopleOf(g: RoleGroup): Person[] {
   const first = (name: string, ss: SessionLog[]) => Math.min(...ss.filter((s) => s.expertName.trim() === name).map((s) => s.startedAt), Infinity);
-  const experts = g.experts.map((name): Person => {
-    const at = first(name, g.captures);
-    return { id: `expert-${slug(name)}`, name, tag: "expert", avatar: "expert", firstSeenAt: Number.isFinite(at) ? at : null,
+  // placeholder names collapse into one honest "Unnamed …" entry, and only when no one in that role was named
+  const pick = (names: string[]) => (named(names).length ? named(names) : names.length ? [names[0]] : []);
+  const firstOf = (name: string, ss: SessionLog[]) =>
+    isPlaceholderName(name) ? Math.min(...ss.filter((s) => isPlaceholderName(s.expertName)).map((s) => s.startedAt), Infinity) : first(name, ss);
+  const experts = pick(g.experts).map((name): Person => {
+    const at = firstOf(name, g.captures);
+    const shown = displayName(name, "expert");
+    return { id: `expert-${slug(shown)}`, name: shown, tag: "expert", avatar: "expert", firstSeenAt: Number.isFinite(at) ? at : null,
       descriptor: Number.isFinite(at) ? `expert · first seen ${formatAt(at, "day")}` : "expert", yearsInRole: null, retiresInMonths: null };
   });
-  const hires = g.newHires.map((name): Person => {
-    const at = first(name, g.teaches);
-    return { id: `newhire-${slug(name)}`, name, tag: "new hire", avatar: "newhire", firstSeenAt: Number.isFinite(at) ? at : null,
+  const hires = pick(g.newHires).map((name): Person => {
+    const at = firstOf(name, g.teaches);
+    const shown = displayName(name, "new hire");
+    return { id: `newhire-${slug(shown)}`, name: shown, tag: "new hire", avatar: "newhire", firstSeenAt: Number.isFinite(at) ? at : null,
       descriptor: "new hire · learning from the map", yearsInRole: null, retiresInMonths: null };
   });
   return [...experts, ...hires];
@@ -572,7 +624,7 @@ export function deriveRole(input: PlatformInput, roleId: string): { data: Platfo
 
   const role: RoleMemory = {
     roleId: g.id, title: g.task, breadcrumb: ["Platform", "Roles", g.task], status, statusLabel: label,
-    revision: p ? p.m.revision : null, confirmed: !!g.memory, expertName: p ? expert : g.experts[0] ?? null,
+    revision: p ? p.m.revision : null, confirmed: !!g.memory, expertName: p ? expert : named(g.experts)[0] ?? null,
     memoryMapId: p?.s.id ?? null, mapHref: p ? `/map/${p.s.id}` : null, ontologyHref: `/platform/role/${g.id}/ontology`,
     coverage: coverageSeries(p), people: peopleOf(g), timeline: tl,
     synopsis: synopsisFor(p, expert),
@@ -636,7 +688,7 @@ function tasksFor(g: RoleGroup, p: Pair | null, ids: Map<string, string>): TaskC
     const n = casesOf(s);
     return {
       id: `task-${s.id}`, title: s.task, at: s.startedAt,
-      sub: `${formatAt(s.startedAt, "day")} · ${s.expertName}${s.endedAt ? ` · ${mins} min` : ""} · ${n} case${n === 1 ? "" : "s"}${m ? (m.confirmedAt ? "" : " · draft") : " · not compiled yet"}`,
+      sub: `${formatAt(s.startedAt, "day")} · ${displayName(s.expertName, "expert")}${s.endedAt ? ` · ${mins} min` : ""} · ${n} case${n === 1 ? "" : "s"}${m ? (m.confirmedAt ? "" : " · draft") : " · not compiled yet"}`,
       watched: true,
       steps: m ? [...m.steps].sort((a, b) => a.index - b.index).map((st, i) => {
         const r = isDisplay ? m.rules.find((x) => x.stepId === st.id) : undefined;
@@ -694,7 +746,7 @@ function masteryFor(g: RoleGroup, p: Pair | null, ids: Map<string, string>): Mas
   if (!p || teaches.length === 0) return { learner: null, columns: [], rows: [], empty: "No new hire has trained on this map yet." };
   const labels = teaches.map((t) => masteryLabels(t, g.pairs.find((x) => x.s.id === t.sourceMapSessionId)?.m ?? p.m));
   return {
-    learner: uniq(teaches.map((t) => t.expertName)).join(", "),
+    learner: uniq(teaches.map((t) => displayName(t.expertName, "new hire"))).join(", "),
     columns: teaches.map((t) => ({ id: t.id, at: t.startedAt, label: `${formatAt(t.startedAt, "day")} · ${teachPhases(t)}`, href: `/teach/${t.id}` })),
     rows: p.m.rules.map((r) => ({ ruleId: r.id, displayId: ids.get(r.id)!, title: r.title, cells: labels.map((l) => l.get(r.id) ?? null) })),
     empty: null,
@@ -898,7 +950,7 @@ export function deriveOntology(input: PlatformInput, roleId: string): { data: Pl
       const t = g.teaches.filter((x) => x.expertName.trim() === name && (x.mastery ?? []).length).sort((a, b) => b.startedAt - a.startedAt)[0];
       if (!t) continue;
       const label = masteryLabels(t, g.pairs.find((x) => x.s.id === t.sourceMapSessionId)?.m ?? p.m).get(ruleId);
-      if (label) out.push({ name, label });
+      if (label) out.push({ name: displayName(name, "new hire"), label });
     }
     return out;
   };

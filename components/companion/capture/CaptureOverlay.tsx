@@ -30,11 +30,15 @@ export function CaptureOverlay(p: {
       setRect(null);
       return;
     }
+    // Measured every animation frame (cheap: two rects + a cached query) so the halo and the cable's card end
+    // track the card's height spring and any scroll inside the ERP continuously instead of in 200 ms steps.
+    let el: Element | null = null;
+    let raf = 0;
     const measure = () => {
       let next: Rect | null = null;
       try {
         const doc = iframe.contentDocument;
-        const el = doc?.querySelector(`[data-erp-target="${CSS.escape(target)}"]`);
+        if (!el || !el.isConnected || el.ownerDocument !== doc) el = doc?.querySelector(`[data-erp-target="${CSS.escape(target)}"]`) ?? null;
         if (el) {
           const r = el.getBoundingClientRect();
           const fr = frame.getBoundingClientRect();
@@ -51,10 +55,10 @@ export function CaptureOverlay(p: {
       const fr = frame.getBoundingClientRect();
       const nextCard = c ? round({ left: c.left - fr.left, top: c.top - fr.top, width: c.width, height: c.height }) : null;
       setCard((prev) => (same(prev, nextCard) ? prev : nextCard));
+      raf = requestAnimationFrame(measure);
     };
     measure();
-    const id = window.setInterval(measure, 200);
-    return () => window.clearInterval(id);
+    return () => cancelAnimationFrame(raf);
   }, [target, iframe, frame, cardRef]);
 
   return (

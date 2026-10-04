@@ -14,6 +14,15 @@ const SMALL: CSSProperties = { fontSize: 12.5, lineHeight: 1.45, color: "#6e6e73
 const MONO: CSSProperties = { font: "11.5px ui-monospace,Menlo,monospace", color: "#8e8e93", fontVariantNumeric: "tabular-nums" };
 const BLOCK: CSSProperties = { padding: "12px 14px", borderRadius: 18, background: "rgba(255,255,255,.62)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.07), inset 0 1px 0 #fff" };
 
+const RISE = "tc-rise .45s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both";
+
+/** Honest paint-out claim: Tacit's own surfaces are painted out only on a verified self-tab capture. */
+function ledgerOccluderLine(vm: CaptureVM): string {
+  if (!vm.pipeline.sharing) return "No screen is being captured right now, so no frame leaves the browser.";
+  if (vm.pipeline.selfCapture) return "Tacit's own card and this sheet are painted out of every captured frame.";
+  return "This shared surface is not this tab, so Tacit's own card is not painted out of its frames.";
+}
+
 export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: boolean; floating: boolean }) {
   const ref = useRef<HTMLElement>(null);
   const [masking, setMasking] = useState(false);
@@ -36,9 +45,11 @@ export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: bo
       className="scroll-thin"
       style={{ boxSizing: "border-box", ...(open ? openStyle : closedStyle) }}
     >
-      <div key={open ? "open" : "closed"} style={{ display: "flex", flexDirection: "column", gap: 10, padding: open ? 12 : 0, animation: open ? "tc-rise .45s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both" : undefined }}>
+      {/* Never keyed or conditional: <Preview> holds the pipeline's only <video>, which must stay the same element
+          for the whole session (the stream is attached once, in start()). Only the open-only blocks mount and rise. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: open ? 12 : 0 }}>
         {open && (
-          <section style={BLOCK}>
+          <section style={{ ...BLOCK, animation: RISE }}>
             <p style={H3}>Privacy ledger</p>
             <p style={{ ...SMALL, color: "#1d1d1f", marginTop: 4 }}>
               seen {vm.ledger.framesSeen} · kept {vm.ledger.framesKept} · redacted {vm.ledger.entitiesRedacted} · struck {Number(vm.ledger.secondsStruck).toFixed(0)} s
@@ -47,13 +58,13 @@ export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: bo
               {vm.pipeline.piiMode === "dom"
                 ? "Personal fields marked by the app are painted out before a frame leaves the browser."
                 : "Only the regions you mask are painted out before upload; personal data the model reports is blurred in stored stills."}{" "}
-              Tacit&apos;s own card and this sheet are painted out of every captured frame.
+              {ledgerOccluderLine(vm)}
             </p>
           </section>
         )}
         <Preview vm={vm} open={open} masking={masking} />
         {open && (
-          <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, animation: RISE }}>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <GlassButton size={30} onClick={() => setMasking((v) => !v)}>{masking ? "Shrink the preview" : "Enlarge to mask"}</GlassButton>
               {vm.pipeline.masks.length > 0 && <GlassButton size={30} onClick={vm.pipeline.clearMasks}>Clear masks</GlassButton>}
@@ -112,7 +123,7 @@ export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: bo
                 ))}
               </ul>
             </section>
-          </>
+          </div>
         )}
       </div>
     </aside>

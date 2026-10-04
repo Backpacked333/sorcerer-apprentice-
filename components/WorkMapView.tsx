@@ -83,11 +83,17 @@ function StepStill({ frame, step }: { frame?: Frame; step: Step }) {
     );
   }
   const r = step.screenMoment.region;
+  const ar = frame && frame.width > 0 && frame.height > 0 ? frame.width / frame.height : null;
   return (
     <figure className="m-0">
-      <div className="relative overflow-hidden rounded-[14px]" style={{ background: "#f4f6f8", boxShadow: "0 0 0 .5px rgba(0,0,0,.1)" }}>
+      {/* The box takes the still's own aspect (never cropped): full column width, capped in height for tall stills,
+          so the region box stays aligned with the image. */}
+      <div
+        className="relative mx-auto max-w-full overflow-hidden rounded-[14px]"
+        style={{ background: "#f4f6f8", boxShadow: "0 0 0 .5px rgba(0,0,0,.1)", ...(ar ? { aspectRatio: String(ar), width: `min(100%, calc(min(52vh, 460px) * ${ar.toFixed(4)}))` } : { width: "100%" }) }}
+      >
         {/* eslint-disable-next-line @next/next/no-img-element -- data: or same-origin still */}
-        <img src={src} alt={`Captured still of step ${step.index + 1}`} className="block w-full" style={{ border: 0, borderRadius: 0 }} />
+        <img src={src} alt={`Captured still of step ${step.index + 1}`} className={ar ? "block h-full w-full object-contain" : "block h-auto w-full"} style={{ border: 0, borderRadius: 0 }} />
         {r && (
           <span
             aria-hidden

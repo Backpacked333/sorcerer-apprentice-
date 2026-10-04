@@ -1,8 +1,19 @@
 "use client";
 // The Tacit orb (design §5.1): fill ring (pause) → ripple (re-keyed) → body with swirl,
 // bounce light, cursor-following specular and glass edge → amber "held" badge.
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { MOODS, PASTEL, SWIRL, type OrbMood } from "@/lib/ui/moods";
+
+const useIso = typeof window === "undefined" ? useEffect : useLayoutEffect;
+const BREATHE_BASE = 4.4; // s; the one constant breathe period, varied by playback rate
+
+/** Split a mood's orb animation into a breathe period (or null = still) and a talk flag. */
+function parseAnim(anim: string): { period: number | null; talk: boolean } {
+  const m = /tc-breathe\s+([\d.]+)s/.exec(anim);
+  if (m) return { period: parseFloat(m[1]) || BREATHE_BASE, talk: false };
+  if (anim.includes("tc-talk")) return { period: 1.8, talk: true };
+  return { period: null, talk: false };
+}
 
 export function Orb(p: {
   mood: OrbMood;
@@ -29,6 +40,32 @@ export function Orb(p: {
       return l.front === "a" ? { a: l.a, b: M.base, front: "b" } : { a: M.base, b: l.b, front: "a" };
     });
   }, [M.base]);
+
+  // Motion continuity across moods: ONE breathe animation whose speed changes by playback rate
+  // (keeps its phase, so a mood change never snaps the scale), paused for still moods; the
+  // listening "talk" runs on its own layer and settles back to rest instead of snapping.
+  const body = useRef<HTMLDivElement>(null);
+  const talkEl = useRef<HTMLDivElement>(null);
+  const { period, talk } = parseAnim(M.anim);
+  useIso(() => {
+    const el = body.current;
+    if (!el || typeof el.getAnimations !== "function") return;
+    const a = el.getAnimations().find((x) => (x as CSSAnimation).animationName === "tc-breathe");
+    if (!a) return;
+    const rate = period == null ? 0 : BREATHE_BASE / period;
+    if (a.playbackRate !== rate) a.updatePlaybackRate(rate);
+  }, [period]);
+  const wasTalking = useRef(talk);
+  useIso(() => {
+    const el = talkEl.current;
+    const was = wasTalking.current;
+    wasTalking.current = talk;
+    if (!el || !was || talk || typeof el.animate !== "function") return;
+    // talk just ended: ease from wherever the talk left the scale back to rest.
+    const from = getComputedStyle(el).transform;
+    if (!from || from === "none") return;
+    el.animate([{ transform: from }, { transform: "none" }], { duration: 320, easing: "cubic-bezier(.2,.9,.3,1)" });
+  }, [talk]);
 
   // Ripple only on a real change of rippleKey (never on first mount).
   const firstRipple = useRef(rippleKey);
@@ -117,14 +154,16 @@ export function Orb(p: {
           }}
         />
       )}
+      <div ref={talkEl} style={{ position: "absolute", inset: 0, borderRadius: "50%", animation: talk ? "tc-talk 1.1s ease-in-out infinite" : "none" }}>
       <div
+        ref={body}
         style={{
           position: "absolute",
           inset: 0,
           borderRadius: "50%",
           overflow: "hidden",
           boxShadow: M.shadow,
-          animation: M.anim,
+          animation: `tc-breathe ${BREATHE_BASE}s ease-in-out infinite`,
           transition: "box-shadow .7s",
           transform: "translateZ(0)",
         }}
@@ -172,6 +211,7 @@ export function Orb(p: {
             boxShadow: "inset 0 0 0 .5px rgba(255,255,255,.9),inset 0 -3px 6px rgba(0,0,0,.06)",
           }}
         />
+      </div>
       </div>
       {badge && (
         <span

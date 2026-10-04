@@ -21,32 +21,30 @@ export function TeachOverlay({ target, invoice, mood, cable }: { target: string 
       setRect(null);
       return;
     }
-    let win: Window | null = null;
+    // Measured every animation frame so the halo follows scrolling inside the ERP and the cable's card end
+    // follows the card's height spring smoothly (no 400 ms steps). The field query is cached per document.
+    let el: Element | null = null;
+    let raf = 0;
     const measure = () => {
       let next: Rect | null = null;
       try {
         const w = iframe.contentWindow;
         const doc = iframe.contentDocument;
-        if (w && w !== win) {
-          win?.removeEventListener("scroll", measure, true);
-          win = w;
-          win.addEventListener("scroll", measure, true);
-        }
         const onInvoice = !invoice || (w?.location.pathname ?? "").includes(`/invoice/${invoice}`);
-        const el = onInvoice ? doc?.querySelector(`[data-erp-target="${target}"]`) : null;
+        if (!onInvoice) el = null;
+        else if (!el || !el.isConnected || el.ownerDocument !== doc) el = doc?.querySelector(`[data-erp-target="${CSS.escape(target)}"]`) ?? null;
+        const root = frame?.getBoundingClientRect() ?? { left: 0, top: 0 };
         if (el && w) {
           const r = el.getBoundingClientRect();
           const visible = r.width > 0 && r.height > 0 && r.bottom > 0 && r.top < w.innerHeight;
           if (visible) {
             const f = iframe.getBoundingClientRect();
-            const root = frame?.getBoundingClientRect() ?? { left: 0, top: 0 };
             next = round({ x: r.left + f.left - root.left, y: r.top + f.top - root.top, w: r.width, h: r.height });
           }
         }
         const c = document.querySelector(".workspace-companion .tc-companion");
         if (c) {
           const cr = c.getBoundingClientRect();
-          const root = frame?.getBoundingClientRect() ?? { left: 0, top: 0 };
           const nc = round({ x: cr.left - root.left, y: cr.top - root.top, w: cr.width, h: cr.height });
           setCard((p) => (same(p, nc) ? p : nc));
         }
@@ -54,15 +52,10 @@ export function TeachOverlay({ target, invoice, mood, cable }: { target: string 
         next = null;
       }
       setRect((p) => (same(p, next) ? p : next));
+      raf = requestAnimationFrame(measure);
     };
     measure();
-    const id = window.setInterval(measure, 400);
-    window.addEventListener("resize", measure);
-    return () => {
-      window.clearInterval(id);
-      window.removeEventListener("resize", measure);
-      win?.removeEventListener("scroll", measure, true);
-    };
+    return () => cancelAnimationFrame(raf);
   }, [target, iframe, frame, invoice]);
 
   return (

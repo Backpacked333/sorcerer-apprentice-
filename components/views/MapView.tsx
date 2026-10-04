@@ -33,6 +33,7 @@ export function MapView({ vm }: { vm: MapVM }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [justFilled, setJustFilled] = useState<{ slot: Slot; at: number } | null>(null);
   const [wide, setWide] = useState(false);
+  const [cardH, setCardH] = useState(0);
   const cardRef = useRef<HTMLDivElement>(null);
   const prevSlots = useRef<{ id: string; status: string }[] | null>(null);
 
@@ -62,6 +63,17 @@ export function MapView({ vm }: { vm: MapVM }) {
     return () => mq.removeEventListener("change", on);
   }, []);
 
+  // At xl the companion floats bottom-right over the detail column: measure it so the column's scroll area ends above it
+  // and no reading content sits underneath the card.
+  const hasMap = !!map;
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!wide || !el) return;
+    const ro = new ResizeObserver(() => setCardH(Math.ceil(el.getBoundingClientRect().height)));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [wide, hasMap]);
+
   if (!map) {
     return (
       <AppShell step={2}>
@@ -90,7 +102,7 @@ export function MapView({ vm }: { vm: MapVM }) {
       <div style={{ background: "#fbfbfd", minHeight: "calc(100dvh - 52px)" }}>
         <main className="mx-auto grid max-w-[1600px] gap-6 px-4 pb-10 pt-4 xl:grid-cols-[280px_minmax(0,500px)_minmax(0,1fr)] xl:gap-x-10 xl:px-3 xl:pt-3">
           {/* The companion comes first in the DOM (its buttons are the first matches), floating at xl. */}
-          <div ref={cardRef} className="z-30 xl:fixed xl:bottom-7 xl:right-7 [&_.glass-companion]:[background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.85))]" style={{ maxWidth: "calc(100vw - 32px)" }}>
+          <div ref={cardRef} className="z-0 xl:fixed xl:z-30 xl:bottom-7 xl:right-7 [&_.glass-companion]:[background:linear-gradient(180deg,rgba(255,255,255,.92),rgba(255,255,255,.85))]" style={{ maxWidth: "calc(100vw - 32px)" }}>
             <DebriefCard vm={vm} mood={mood} justFilled={vm.phase === "asking" ? justFilled?.slot ?? null : null} floating={wide} />
           </div>
 
@@ -193,8 +205,12 @@ export function MapView({ vm }: { vm: MapVM }) {
             <WorkMapRail map={map} selectedId={selectedId} onSelect={setPicked} askingStepId={asking?.stepId ?? null} />
           </aside>
 
-          {/* Right: actions + step detail (scrolls under the floating card with room to clear it). */}
-          <section className="min-w-0 xl:sticky xl:top-[64px] xl:col-start-3 xl:row-start-1 xl:max-h-[calc(100dvh-64px)] xl:self-start xl:overflow-y-auto xl:pb-[420px] xl:pr-3 scroll-thin" aria-label="Step detail">
+          {/* Right: actions + step detail (its scroll area stops above the floating card). */}
+          <section
+            className="min-w-0 xl:sticky xl:top-[64px] xl:col-start-3 xl:row-start-1 xl:self-start xl:overflow-y-auto xl:pb-6 xl:pr-3 scroll-thin"
+            aria-label="Step detail"
+            style={wide ? { maxHeight: `calc(100dvh - 64px - ${cardH ? cardH + 28 + 14 : 0}px)`, maskImage: "linear-gradient(180deg,#000 calc(100% - 28px),transparent)", WebkitMaskImage: "linear-gradient(180deg,#000 calc(100% - 28px),transparent)" } : undefined}
+          >
             {wide && (
               <div className="mb-5 flex items-center justify-end gap-2 pt-1.5">
                 {confirmed && <ExportMenu sessionId={vm.sessionId} />}

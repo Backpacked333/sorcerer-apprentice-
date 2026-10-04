@@ -18,6 +18,9 @@ export const COMPANION_WIDTH: Record<Exclude<CompanionMode, "panel">, number> = 
 };
 
 const SPRING = "var(--ease-spring, cubic-bezier(.2,1.12,.3,1))";
+const RISE = "var(--ease-rise, cubic-bezier(.2,.9,.3,1))";
+const PAD = 14;
+const GAP = 12;
 const useIsoLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 
 export function CompanionCard(p: {
@@ -35,22 +38,61 @@ export function CompanionCard(p: {
   const { mood, mode, header, children, footer, floating = false, occluderId = "companion", label, className, testId } = p;
   const M = MOODS[mood] ?? MOODS.quiet;
   const outer = useRef<HTMLElement>(null);
-  const inner = useRef<HTMLDivElement>(null);
+  const headRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const footRef = useRef<HTMLDivElement>(null);
   const [h, setH] = useState<number | null>(null);
+  // Growing springs (overshoot reads as "opening"); shrinking eases out without the undershoot
+  // that would briefly clip the content, and a little faster so no gap lingers.
+  const [shrinking, setShrinking] = useState(false);
+  const lastH = useRef<number | null>(null);
   const [sprung, setSprung] = useState(false);
+  const hasBody = children != null && children !== false;
+  const hasFoot = footer != null && footer !== false;
 
   useOccluder(outer, occluderId, floating);
 
+  // The card's height springs to the content's NATURAL height (header + body content + footer),
+  // measured from parts that never stretch. The content box itself fills the springing card with
+  // the footer pinned to its bottom edge, so while the height moves the body is revealed/clipped
+  // above the footer — never an empty band of glass under the footer, never a clipped footer.
   useIsoLayoutEffect(() => {
-    const el = inner.current;
-    if (!el) return;
-    const measure = () => setH(Math.ceil(el.offsetHeight));
+    const parts = [headRef.current, bodyRef.current, footRef.current].filter((el): el is HTMLDivElement => !!el);
+    const measure = () => {
+      let sum = PAD * 2 + GAP * Math.max(0, parts.length - 1);
+      for (const el of parts) sum += el.offsetHeight;
+      const next = Math.ceil(sum);
+      if (lastH.current != null && next !== lastH.current) setShrinking(next < lastH.current);
+      lastH.current = next;
+      setH(next);
+    };
     measure();
     if (typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(measure);
-    ro.observe(el);
+    parts.forEach((el) => ro.observe(el));
     return () => ro.disconnect();
-  }, []);
+  }, [hasBody, hasFoot]);
+
+  // Layout change (capsule ↔ ask ↔ teach…): the body and footer are new content, so they fade up
+  // just behind the size spring instead of appearing at full strength in a card that is still
+  // springing to its new size. Web Animations (not a key) so stateful children never remount.
+  const prevMode = useRef(mode);
+  useIsoLayoutEffect(() => {
+    if (prevMode.current === mode) return;
+    prevMode.current = mode;
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const anims = [bodyRef.current, footRef.current]
+      .filter((el): el is HTMLDivElement => !!el && typeof el.animate === "function")
+      .map((el, i) =>
+        el.animate([{ opacity: 0, transform: "translateY(5px)" }, { opacity: 1, transform: "none" }], {
+          duration: 440,
+          delay: 50 + i * 40,
+          easing: "cubic-bezier(.2,.9,.3,1)",
+          fill: "backwards",
+        }),
+      );
+    return () => anims.forEach((a) => a.cancel());
+  }, [mode]);
 
   // Enable the size spring only after the first measured frame (no spring on mount).
   useEffect(() => {
@@ -78,7 +120,9 @@ export function CompanionCard(p: {
         flexShrink: 0,
         height: measured ? h : undefined,
         maxHeight: "calc(100dvh - 56px)",
-        transition: sprung ? `width .64s ${SPRING}, height .64s ${SPRING}` : "none",
+        transition: sprung
+          ? `width .64s ${SPRING}, height ${shrinking ? `.5s ${RISE}` : `.64s ${SPRING}`}`
+          : "none",
         color: "#1d1d1f",
         fontFamily: "var(--font-sans, -apple-system,BlinkMacSystemFont,'SF Pro Text','Helvetica Neue',sans-serif)",
       }}
@@ -103,30 +147,34 @@ export function CompanionCard(p: {
       <div className="glass-companion" style={{ position: "absolute", inset: 0, overflow: "hidden", borderRadius: 30 }}>
         <TintBlobs mood={mood} />
         <div
-          ref={inner}
           style={{
             position: measured ? "absolute" : "relative",
             top: 0,
             left: 0,
             width: panel ? "100%" : width,
+            height: measured ? "100%" : undefined,
             maxHeight: "calc(100dvh - 56px)",
-            padding: 14,
+            padding: PAD,
             boxSizing: "border-box",
             display: "flex",
             flexDirection: "column",
-            gap: 12,
+            gap: GAP,
           }}
         >
-          <div style={{ flex: "none" }}>{header}</div>
-          {children != null && children !== false ? (
+          <div ref={headRef} style={{ flex: "none" }}>{header}</div>
+          {hasBody ? (
             <div
               className="tc-companion-body"
-              style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overscrollBehavior: "contain", display: "flex", flexDirection: "column", gap: 12 }}
+              style={{ flex: "1 1 auto", minHeight: 0, overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", display: "flex", flexDirection: "column" }}
             >
-              {children}
+              {/* margin-top:auto keeps the body resting on the footer while the card is taller than
+                  its content (mid-shrink); it resolves to 0 when the body overflows, so scrolling works. */}
+              <div ref={bodyRef} style={{ display: "flex", flexDirection: "column", gap: GAP, marginTop: "auto", flex: "none" }}>
+                {children}
+              </div>
             </div>
           ) : null}
-          {footer != null && footer !== false ? <div style={{ flex: "none", position: "sticky", bottom: 0 }}>{footer}</div> : null}
+          {hasFoot ? <div ref={footRef} style={{ flex: "none", marginTop: "auto" }}>{footer}</div> : null}
         </div>
       </div>
       {/* rim on top */}

@@ -34,7 +34,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/voice.tsx` | **A** | `VoiceApi` is a contract: additive only |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |
-| `lib/governor.ts`, `lib/curiosity.ts`, `lib/capture-loop.ts`, `lib/capture-config.ts`, `lib/capture-config.test.ts`, `lib/scribe-token.test.ts`, `lib/voice-turn.ts`, `lib/voice-turn.test.ts`, `lib/voice-connect.test.ts`, `lib/voice-output-gate.test.ts`, `lib/voice-protocol.ts`, `lib/voice-protocol*.test.ts` | **A** | voice timing and configuration, capture-loop decisions, token fallback, turn state machine, connection/output-gate lifecycle, curiosity and protocol regression tests |
+| `lib/governor.ts`, `lib/curiosity.ts`, `lib/capture-loop.ts`, `lib/capture-config.ts`, `lib/capture-config.test.ts`, `lib/scribe-token.test.ts`, `lib/voice-turn.ts`, `lib/voice-turn*.test.ts`, `lib/voice-turn-adapter.ts`, `lib/voice-connect.test.ts`, `lib/voice-output-gate.test.ts`, `lib/voice-hub.ts`, `lib/voice-hub.test.ts`, `lib/voice-protocol.ts`, `lib/voice-protocol*.test.ts` | **A** | voice timing and configuration, capture-loop decisions, token fallback, turn state machine and adapter, shared transcription/output-gate lifecycle, curiosity and protocol regression tests |
 | `lib/governor.demo.test.ts`, `lib/curiosity.classify.test.ts`, `lib/curiosity.queue.test.ts`, `lib/curiosity.narration.test.ts`, `lib/capture-loop.replay.test.ts` | **A** | WA-5 cadence, attribution, queue and replay regressions |
 | `lib/elevenlabs-sync.ts`, `lib/elevenlabs-sync.test.ts` | **A** | tutor knowledge-base sync and keyless regression tests |
 | `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
@@ -54,7 +54,10 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/MapClient.tsx`, `components/TeachClient.tsx` (logic), `components/views/{map,teach}.vm.ts`, `app/map/`, `app/teach/` | **C** | after the seam split (§3) |
 | `lib/engines.test.ts` | **C** | frozen for others: new tests go in new files (§5.5) |
 | `app/globals.css`, `app/layout.tsx`, `app/page.tsx`, `app/icon.svg`, `public/` | **D** | design system |
-| `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX |
+| `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX. `capture.vm.ts` is A's and `map.vm.ts` / `teach.vm.ts` are C's from the seam-split merge |
+| `components/erp/**`, `components/demo/**` | **D** | PII publisher, queue reset, presenter tabs, embed class, health strip, demo room |
+| `lib/erp-ui.ts`, `lib/ui/**` | **D** | presentational helpers and their tests |
+| `app/error.tsx`, `app/not-found.tsx`, `scripts/d-shots.mjs`, `docs/pitch/**` | **D** | error screens, layout shots, submission copy |
 | `components/WorkMapView.tsx`, `components/Meter.tsx`, `components/TeachStart.tsx` | **D** | |
 | `components/InvoiceForm.tsx`, `components/ErpHeader.tsx`, `app/erp/`, `lib/erp-model.ts`, `app/demo/` | **D** | ERP UI **and the scenario data** (seed invoices are a contract: announce changes; the ERP server + guard is C) |
 | `README.md`, `docs/05-DEMO-AND-SUBMISSION.md`, deck, video | **D** | |

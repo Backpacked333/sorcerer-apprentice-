@@ -17,6 +17,8 @@ export interface TelemetryMessage {
   state?: InvoiceState;
   boundary?: boolean;
   mode?: "coached" | "independent";
+  /** Which sandbox queue posted this (P-14). */
+  queue?: "expert" | "newhire" | "autopilot";
   /** save_blocked only: the learned rule the save would have broken */
   blocked?: { ruleId: string; title: string; quote?: string; who?: string };
 }

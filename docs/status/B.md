@@ -10,7 +10,7 @@ In progress on `B/durable-vercel-product` (not merged): Supabase + Vercel deploy
 
 Production: [https://tacit-ai-apprentice.vercel.app](https://tacit-ai-apprentice.vercel.app), currently deployed from `c51b9f3` (`dpl_8cB6Wci8xxxMSX3GpeuLu45o9ukN`). Earlier HTTP-only smoke checks verified public root/health access, reachable Supabase storage, cookie-workspace isolation, PNG/WebM uploads and private reads, and rejection of draft export/Teach creation. Those broader checks were not repeated after this redeploy.
 
-The narrow HTTP retest on `c51b9f3` uploaded valid PNG and WebM fixtures, persisted their references, warmed and byte-compared separate reads, withdrew both references once, and immediately reattached metadata only. The first reads after reattachment returned 404 for both media routes. References were then removed and verified absent. Health returned 200 with Supabase configured and reachable; voice and gateway remain degraded/not configured. The test was HTTP-only, not a browser or real-provider test.
+The narrow HTTP retest on `c51b9f3` uploaded valid PNG and WebM fixtures, persisted their references, warmed and byte-compared separate reads, withdrew both references once, and immediately reattached metadata only. The first reads after reattachment returned 404 for both media routes. References were then removed and verified absent. Health returned 200 with Supabase configured and reachable; voice and gateway remain degraded/not configured. The test was HTTP-only, not a browser or real-provider test. The current merge integration has not been HTTP/UI retested and is not deployed.
 
 ## Human acceptance (who, when, what they did)
 

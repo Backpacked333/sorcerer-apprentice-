@@ -40,18 +40,23 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
+| `lib/events.contract.test.ts`, `lib/store.fs.test.ts`, `lib/workspace.ts` | **B** | WB-4 event/hello and filesystem regressions; local-only workspace resolver stub |
 | `lib/redact.ts` | **B** | privacy |
 | `lib/store.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
+| `lib/seed.ts`, `lib/seed-boot.test.ts`, `lib/health.test.ts` | **B** | non-destructive sample boot and readiness regressions |
+| `lib/platform-env.test.ts` | **B** | deployment environment example regression |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
 | `lib/smoke-runtime.mjs`, `lib/smoke-runtime.test.ts` | **B** | smoke environment isolation, process cleanup and console guards |
 | `lib/workmap.ts` | **C** | THE contract: additive only |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
+| `lib/compile/{steps,rules-regex,slots,rules-llm,fill,correct}.ts`, `lib/compile.split.test.ts` | **C** | compiler internals; `lib/compile.ts` retains the public API |
 | `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |
 | `app/api/compile/`, `app/api/teachback/`, `app/api/sessions/[id]/{map,slot,confirm}/` | **C** | |
 | `components/MapClient.tsx`, `components/TeachClient.tsx` (logic), `components/views/{map,teach}.vm.ts`, `app/map/`, `app/teach/` | **C** | after the seam split (§3) |
 | `lib/engines.test.ts` | **C** | frozen for others: new tests go in new files (§5.5) |
+| `lib/fixtures/compile-corpus{,.types}.ts`, `lib/compile.corpus.test.ts` | **C** | synthetic test-only oracle corpus; never runtime prompt material |
 | `app/globals.css`, `app/layout.tsx`, `app/page.tsx`, `app/icon.svg`, `public/` | **D** | design system |
 | `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX. `capture.vm.ts` is A's and `map.vm.ts` / `teach.vm.ts` are C's from the seam-split merge |
 | `components/erp/**`, `components/demo/**` | **D** | PII publisher, queue reset, presenter tabs, embed class, health strip, demo room |

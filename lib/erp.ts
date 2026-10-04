@@ -71,9 +71,16 @@ export async function patchInvoice(id: string, patch: InvoicePatch): Promise<Inv
 export async function resetErp(queue?: Queue): Promise<Invoice[]> {
   const state = await getErpSnapshot();
   const fresh = seedInvoices();
-  const invoices = queue
-    ? (state.invoices.length ? state.invoices : fresh).map((invoice) => invoice.queue === queue ? fresh.find((next) => next.id === invoice.id) ?? invoice : invoice)
-    : fresh;
+  const invoices = queue ? resetQueue(state.invoices, fresh, queue) : fresh;
   await saveErpInvoices(invoices);
   return invoices;
+}
+
+function resetQueue(stored: Invoice[], fresh: Invoice[], queue: Queue): Invoice[] {
+  const base = stored.length ? stored : fresh;
+  return base.map((invoice) => {
+    if (invoice.queue !== queue) return invoice;
+    const replacement = fresh.find((next) => next.id === invoice.id);
+    return replacement ?? invoice;
+  });
 }

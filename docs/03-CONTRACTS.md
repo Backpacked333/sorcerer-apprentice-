@@ -318,9 +318,9 @@ currentWorkspace(): Promise<string>               // visitor workspace
 
 `dataDir()` reads `DATA_DIR` per call, defaulting to `<cwd>/.data`. Local sessions/maps/media are private under `<dataDir>/<workspace>/`. Production on Vercel requires Supabase PostgreSQL and private Storage; never writes local files. Both migrations in `supabase/migrations/` must be applied in filename order.
 
-`currentWorkspace()` aliases `getWorkspaceId()`: production resolves the HttpOnly `tacit_ws` cookie, never a browser-supplied workspace field. Explicit workspace arguments may not select another visitor; alternate workspaces are supported only in explicit local development with `STORE_OWNER_ID`. A fresh visitor seeds samples through `POST /api/demo`, not a shared boot-time seed.
+`currentWorkspace()` aliases `getWorkspaceId()`: production resolves the HttpOnly `tacit_ws` cookie, never a browser-supplied workspace field. Explicit workspace arguments may not select another visitor; alternate workspaces are supported only in explicit local development with `STORE_OWNER_ID`. A fresh visitor seeds samples through the home page’s **Load the sample Work Map** server action, not a shared boot-time seed.
 
-Storage IDs match `/^[\\w-]{1,64}$/`. Local writes are atomic and serialized per file. Bulk deletion validates all IDs first. Missing records return undefined; corrupt JSON, invalid session/map records and I/O errors throw. Map reads always validate with WorkMapSchema. Evidence withdrawal removes linked clips/frames and invalidates the derived map before saving the new log.
+Storage IDs match `/^[\w-]{1,64}$/`. Local writes are atomic and serialized per file. Bulk deletion validates all IDs first. Missing records return undefined; corrupt JSON, invalid session/map records and I/O errors throw. Map reads always validate with WorkMapSchema. Evidence withdrawal removes linked clips/frames and invalidates the derived map before saving the new log.
 
 The incoming invoice-only `getErpState/saveErpState` API coexists with `getErpSnapshot/saveErpSnapshot` (invoices + active save guard), `saveErpInvoices`, `saveErpGuard`, `patchErpInvoice`, and `allowRateLimit`. `lib/erp.ts` uses the durable snapshot APIs; it never accesses files directly. Its active save guard checks confirmation and the teach session's source-map revision.
 
@@ -335,11 +335,12 @@ The additive `getGuard/saveGuard/clearGuard` API preserves upstream per-teach-se
 | `ELEVENLABS_API_KEY` | server (A) | Scribe tokens, agent creation, KB sync. Server-side only. |
 | `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | client (A) | empty → browser-speech fallback |
 | `ELEVENLABS_VOICE_ID`, `AGENT_LLM` | `create-agents.ts` (A) | voice and agent LLM |
-| `ELEVENLABS_PRIVATE_AGENTS`, `ELEVENLABS_TTS_MODEL` | server/voice integration (A) | Deployment examples use `1` and `eleven_v4_turbo`; lane A must provide server-issued conversation tokens. Flags alone do not implement private-agent authentication. |
+| `ELEVENLABS_PRIVATE_AGENTS` | server/voice integration (A) | Deployment examples use `1`; lane A must provide server-issued conversation tokens. Flags alone do not implement private-agent authentication. |
 | `DATA_DIR` | server filesystem store (B) | Local default `.data`; Railway `/app/.data` on a persistent volume with exactly one Node replica. |
-| `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile; server-only. Missing key makes vision return 503 `mock: true`, without provider invocation. |
+| `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile; server-only. API key or request-context Vercel OIDC token. Missing credentials makes vision return 503 `mock: true`, without provider invocation. |
 | `VISION_MODEL` | server (B) | vision gateway slug; defaults to `anthropic/claude-haiku-4.5` when unset. No model bake-off or fallback/eval env contract is introduced by #28. |
 | `COMPILE_MODEL` | server (C) | compile gateway model slug; unchanged by the vision work |
+| `ELEVENLABS_TTS_MODEL` | `create-agents.ts` (A) | optional assertion; only `eleven_v4_turbo` is accepted. Provisioning always sends V4 Turbo and verifies the saved model. |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |
 | `STORAGE_BACKEND` | server (B) | `local` or `supabase`; Vercel requires Supabase |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | server (B) | required together; service-role key is never sent to the browser |

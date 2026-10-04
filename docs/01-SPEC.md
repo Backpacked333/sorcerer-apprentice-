@@ -126,7 +126,7 @@ Interface principle: the work application stays dominant; the apprentice is a qu
 
 | ID | Requirement | Acceptance | Lanes |
 |---|---|---|---|
-| **S1** | ElevenAgents as interviewer **and** tutor, Expressive Mode, Scribe v2 Realtime | Both agents exist in the event account; TTS is Eleven v3 Conversational; Scribe engine badge reads "Scribe v2"; verified live | A |
+| **S1** | ElevenAgents as interviewer **and** tutor, Expressive Mode, Scribe v2 Realtime | Both agents exist in the event account; saved TTS model is `eleven_v4_turbo` for both (Roy's Oct 4 release requirement); Scribe engine badge reads "Scribe v2"; verified live | A |
 | **P1** | One moonshot slide and the path to it | The closing frame of the Demo and Tech videos (and slide 7 of the finalist deck); export + autopilot demoed as evidence | D, B |
 
 ### Non-functional (ours — they are what make the above true with a stranger driving)
@@ -172,7 +172,7 @@ flowchart TB
   end
   subgraph Ext["External"]
     GW["Vercel AI Gateway<br/>vision model · compile model"]
-    EA["ElevenAgents (WebRTC)<br/>Interviewer · Tutor<br/>Eleven v3 Conversational"]
+    EA["ElevenAgents (WebRTC)<br/>Interviewer · Tutor<br/>Eleven v4 Turbo"]
     SCR["Scribe v2 Realtime (WebSocket)"]
     KB["ElevenLabs knowledge base<br/>(confirmed Work Map as SOP)"]
   end
@@ -337,7 +337,7 @@ Consent screen before capture · designated **masks** painted on the canvas befo
 | Layer | Decision | Why |
 |---|---|---|
 | App | **Next.js 16** App Router, React 19, TypeScript, Tailwind 4, Zod 4 — one app, three pages + the sandbox ERP | It exists and works; the earlier "React + Vite + Node" suggestion is superseded (the V3 contract itself says keep a working stack) |
-| Voice | `@elevenlabs/react` — two ElevenAgents agents (Interviewer, Tutor), WebRTC, Eleven v3 Conversational (Expressive Mode) | Sponsor stack, required |
+| Voice | `@elevenlabs/react` — two ElevenAgents agents (Interviewer, Tutor), WebRTC, Eleven v4 Turbo | Sponsor stack, required; retain Expressive Mode configuration and verify provider behavior live |
 | STT / pauses | **Separate** Scribe v2 Realtime stream via `useScribe` + single-use token | The agent's mic is closed while she works, so the agent cannot provide the silence clock or the verbatim transcript — this is the "demonstrated need" for a second stream |
 | Agent LLM | A low-latency model (Flash/Haiku class) | The agent only phrases and listens; latency beats IQ |
 | Vision + compile | AI SDK 7 through the **Vercel AI Gateway** — one key, model = a slug in env | Swap models without code; fast multimodal for vision, strongest available for compile |
@@ -510,7 +510,9 @@ Full detail, sources, the list of code/SDK mismatches and ready-to-adapt snippet
 
 ### 9.3 Hosting (lane B) — decided
 
-**One long-running Node instance with a persistent volume. Not Vercel serverless.** Every write is `fs` under `.data/` plus in-process state; a serverless port is ~a rewrite of storage and is not on tonight's critical path. Default: Railway from the GitHub repo, 1 replica, a volume at the data directory, `next build` then `npm run seed:session && next start -p $PORT`, HTTPS domain generated, env set **before** the build (`NEXT_PUBLIC_*` is inlined at build time). Emergency: the demo laptop's production build through a `cloudflared` quick tunnel. Demos and recordings run from a production build (`next build && next start`), never `next dev` (first-hit compiles take ~10 s).
+**Approved Oct 4 deployment override: Supabase PostgreSQL/private Storage + Vercel, with no-login cookie-isolated visitors.** Roy authorized this direction to preserve durable Capture → Map → Teach on the established deployment. Filesystem mode remains local/single-server development only; samples are seeded per visitor, not globally. See README for the migrations, configuration and deployment verification.
+
+**Earlier hosting decision (superseded): one long-running Node instance with a persistent volume.** Every write is `fs` under `.data/` plus in-process state; a serverless port is ~a rewrite of storage and is not on tonight's critical path. Default: Railway from the GitHub repo, 1 replica, a volume at the data directory, `next build` then `npm run seed:session && next start -p $PORT`, HTTPS domain generated, env set **before** the build (`NEXT_PUBLIC_*` is inlined at build time). Emergency: the demo laptop's production build through a `cloudflared` quick tunnel. Demos and recordings run from a production build (`next build && next start`), never `next dev` (first-hit compiles take ~10 s).
 
 ### 9.4 Browser capture (lanes B, D)
 

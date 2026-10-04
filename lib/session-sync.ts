@@ -28,7 +28,9 @@ export function createSessionSync(sessionId: string, request: typeof fetch = fet
     const payload = cloneLog(snapshot);
     for (const frame of payload.frames) {
       if (!frame.dataUrl) frame.dataUrl = frame.url;
+      delete frame.url;
       if (!frame.dataUrl?.startsWith("data:")) continue;
+      const dataUrl = frame.dataUrl;
       const existing = cached.get(frame.id);
       if (existing?.dataUrl === frame.dataUrl) {
         frame.dataUrl = existing.url;
@@ -45,7 +47,7 @@ export function createSessionSync(sessionId: string, request: typeof fetch = fet
       const url = result.url;
       const expectedUrl = `/api/sessions/${encodeURIComponent(sessionId)}/frames?frameId=${encodeURIComponent(frame.id)}`;
       if (url !== expectedUrl) throw new Error("frame upload returned invalid URL");
-      cached.set(frame.id, { dataUrl: snapshot.frames.find((candidate) => candidate.id === frame.id)?.dataUrl ?? "", url });
+      cached.set(frame.id, { dataUrl, url });
       frame.dataUrl = url;
     }
     if (payload.frames.some((frame) => frame.dataUrl?.startsWith("data:"))) throw new Error("frame data was not uploaded");

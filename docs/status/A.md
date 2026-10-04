@@ -1,3 +1,9 @@
+## Oct 4 · V4 Turbo release correction [S1]
+
+Both remote agents were updated and read back with `ttsModel: eleven_v4_turbo`, `expressiveMode: true`, `llm: gemini-2.5-flash`, matching prompt hashes, `recordVoice: false`, and seven-day retention. Their IDs are configured in Vercel production. The source now enforces the V4 wire model despite SDK 2.70's stale enum and rejects a different saved model on provisioning or `--check`. Initial local verification: typecheck and 223 tests passed. Human audio/timing and browser acceptance remain unverified.
+
+The checkpoint below is historical; its missing-key/provisioning blockers have been superseded by this live API verification.
+
 ## Checkpoint M1 — 8:02 PM ET
 
 ### Done and merged (WP ids)

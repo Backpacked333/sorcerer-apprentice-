@@ -191,8 +191,9 @@ await shot(map, "12-map-corrected");
 const confirmedResponse = map.waitForResponse((response) => response.url().endsWith("/api/sessions/demo_sabine/confirm") && response.request().method() === "POST");
 await (await sel(map, "map-confirm", "text=Yes, that is how it works")).click();
 const confirmed = await confirmedResponse;
-assert.ok(confirmed.ok(), "Teach-back confirmation request must succeed");
-assert.ok((await confirmed.json()).map.confirmedAt, "Teach-back confirmation must persist");
+const confirmationResult = await confirmed.json();
+assert.ok(confirmed.ok(), `Teach-back confirmation request must succeed: ${JSON.stringify(confirmationResult.issues ?? confirmationResult.error)}`);
+assert.ok(confirmationResult.map.confirmedAt, "Teach-back confirmation must persist");
 await map.waitForTimeout(500);
 await shot(map, "13-map-confirmed");
 

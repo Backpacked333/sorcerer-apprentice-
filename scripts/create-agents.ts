@@ -10,6 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import type { ElevenLabs } from "@elevenlabs/elevenlabs-js";
+import { assertV4Agent, REQUIRED_VOICE_MODEL, v4AgentOptions } from "../lib/agent-model";
 
 for (const file of [".env.local", ".env"]) {
   try {
@@ -166,7 +167,6 @@ function buildBody(role: Role, toolIds: string[], knowledgeBase?: ElevenLabs.Kno
         },
       },
       tts: {
-        modelId: "eleven_v3_conversational" as const,
         expressiveMode: true,
         suggestedAudioTags: (role === "interviewer"
           ? [{ tag: "curious" }, { tag: "thoughtful" }, { tag: "warm" }]
@@ -216,11 +216,14 @@ async function writeAgent(
   privacy: "recordVoice=false, retentionDays=7" | "recordVoice=false" | "not applied";
 }> {
   const write = async (request: AgentBody) => {
+    const options = v4AgentOptions(request.conversationConfig);
     if (id) {
-      const response = await client.conversationalAi.agents.update(id, request);
+      const response = await client.conversationalAi.agents.update(id, request, options);
+      assertV4Agent(response);
       return response.agentId;
     }
-    const response = await client.conversationalAi.agents.create(request);
+    const response = await client.conversationalAi.agents.create(request, options);
+    assertV4Agent(await client.conversationalAi.agents.get(response.agentId));
     return response.agentId;
   };
 
@@ -316,10 +319,14 @@ async function check() {
       privacy: agent.platformSettings?.privacy ?? null,
       promptSha1: { remote: sha1(remotePrompt), local: sha1(localPrompt), equal: remotePrompt === localPrompt },
     }, null, 2));
+    assertV4Agent(agent);
   }
 }
 
 async function main() {
+  if (process.env.ELEVENLABS_TTS_MODEL && process.env.ELEVENLABS_TTS_MODEL !== REQUIRED_VOICE_MODEL) {
+    throw new Error(`ELEVENLABS_TTS_MODEL must be ${REQUIRED_VOICE_MODEL}; other voice models do not satisfy this release.`);
+  }
   if (CHECK) {
     await check();
     return;
@@ -349,7 +356,7 @@ async function main() {
     const result = await writeAgent(existingId, buildBody(role, toolIds[role], knowledgeBase));
     ids[role] = result.id;
     privacy[role] = result.privacy;
-    console.log(`${config.name}: ${existingId ? "updated" : "created"}; privacy ${result.privacy}.`);
+    console.log(`${config.name}: ${existingId ? "updated" : "created"}; verified ${REQUIRED_VOICE_MODEL}; privacy ${result.privacy}.`);
   }
 
   console.log(`NEXT_PUBLIC_INTERVIEWER_AGENT_ID=${ids.interviewer}`);

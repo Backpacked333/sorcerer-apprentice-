@@ -1,3 +1,13 @@
+## Oct 4 · V4 release deployment [S1]
+
+Deployed the focused V4/OIDC revision `ff1a7de` from live durable-storage base `c51b9f3` as `dpl_6wSbRyuyfSCV6Rb5HoZ4pzVxFaf1`, without introducing the newer integration branch's UI/voice changes. Production health reports voice and Gateway configured and Supabase reachable; Scribe token minting succeeds. The readiness fix uses `getVercelOidcTokenSync()` because Vercel supplies OIDC through request context, retains API-key/local-token support, and fails closed without credentials.
+
+Live HTTP checks used synthetic input, not customer data: vision returned 502; compile returned `llm: false` with the explicit provider error "Free tier users do not have access to this model. Upgrade to paid credits". Paid AI Gateway credits are required; configuration presence is not successful model execution. No human audio/UI acceptance is claimed.
+
+PR #44 was updated from `B/durable-vercel-product`; the sole conflict was Lane A status documentation, resolved by retaining the newer checkpoint plus the V4 verification addendum. The integrated branch passed `npm ci`, typecheck, 289 tests across 36 files, and a production build. Production remains pinned to the focused hotfix above, not this broader merge integration.
+
+The checkpoint below records earlier deployment evidence, not the current live provider status.
+
 # Lane B status
 
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
@@ -44,5 +54,7 @@ Real-provider connectivity, voice timing, and the rendered UI have not been manu
 - Preserved voice turn adapter, bounded/grounded vision, PII masks, compiler module split, seed boot safety and smoke gate.
 - Adapted the upstream store contracts to private durable workspaces, including atomic local media and per-teach-session guard records. Added a follow-up Supabase migration.
 - Health reports storage reachability independently from provider configuration; private samples are created per visitor, not shared globally.
-- Current integration: 472 tests passed before final health/smoke adjustments. Final build, smoke and production redeployment pending.
+- Current integration: 482 tests, typecheck and production build pass. The isolated keyless production smoke passed Capture, debrief/correction/confirmation, tutor intervention, independent save guard and mastery; no page errors.
+- Repaired three missing scripted screen moments rather than weakening confirmation. Added a private, non-resetting sample loader to the home page and removed misleading live-provider claims from its health strip.
+- Applied the follow-up Supabase migration. Live SQL assertions passed guard ordering, invoice preservation, RLS and denied anonymous privileges. Production redeployment/HTTP acceptance is pending.
 - Real provider/human timing acceptance remains unverified. No competition-readiness claim.

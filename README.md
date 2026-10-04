@@ -8,7 +8,9 @@ One pipeline. One artifact, the Work Map. Three readers: the expert who confirms
 
 [Open Tacit](https://tacit-ai-apprentice.vercel.app).
 
-The `c51b9f3` deployment passed a narrow HTTP retest: valid PNG/WebM reads matched their uploads, and after one evidence withdrawal an immediate metadata-only reattachment still returned 404 for both media routes on the first read. Health reported Supabase configured and reachable; voice and AI Gateway integrations are degraded/not configured. An earlier HTTP smoke verified workspace isolation and draft Teach/export rejection; those broader checks were not repeated after this redeploy. Real-provider, browser/UI, voice/timing, and human acceptance remain unverified. This in-progress merge integration has not been HTTP/UI retested and is not deployed.
+The integrated branch preserves durable Supabase workspaces, the newer voice/vision/privacy pipeline, and the V4 Turbo provisioning gate. Production now has voice and Gateway configuration, but the parallel release’s live check found that the selected Gateway models require paid credits. Configured does not mean a successful provider call. Real spoken timing and human competition acceptance are still outstanding; see `docs/status/B.md` for revision-specific verification.
+
+Fresh visitors can use **Load the sample Work Map** on the home page. It creates a private, explicitly scripted example without login and without resetting their ERP or captures. The example is not evidence of live learning.
 
 ## Run it
 
@@ -127,7 +129,7 @@ Supabase **is PostgreSQL**, plus private object storage. No Supabase Auth is nee
 
 ### 1. Create the database and private media bucket
 
-Create a new Supabase project and run the complete checked-in SQL in `supabase/migrations/202610030001_durable_workspaces.sql` through the Supabase SQL editor, or link the project and use `supabase db push`.
+Create a new Supabase project and run all checked-in SQL files in `supabase/migrations/` in filename order (including `202610040001_store_contracts.sql`) through the Supabase SQL editor, or link the project and use `supabase db push`.
 
 The migration creates `sessions` and `work_maps` with JSONB payloads, workspace-scoped ERP/guard state and rate counters, atomic map revision/invoice/rate-limit functions, and the private `tacit-media` bucket. All tables enable RLS and deny anon/authenticated access; only server-side service-role calls access data. Media objects are workspace-prefixed and served through workspace-checked routes, not public bucket URLs. The bucket accepts JPEG/PNG frames and WebM clips with a 3 MiB object ceiling; application routes enforce narrower limits and upload quotas.
 

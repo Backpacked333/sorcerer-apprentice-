@@ -87,14 +87,14 @@ function validateSession(session: SessionLog | undefined, id: string): SessionLo
 function localPath(workspace: string, ...parts: string[]): string {
   assertId(workspace);
   parts.forEach(assertId);
-  return path.join(dataDir(), workspace, ...parts);
+  return path.join(/* turbopackIgnore: true */ dataDir(), workspace, ...parts);
 }
 
 function localMediaPath(workspace: string, sessionId: string, kind: "frames" | "clips", id: string, extension: "jpg" | "png" | "webm"): string {
   assertId(workspace);
   assertId(sessionId);
   assertId(id);
-  return path.join(dataDir(), workspace, sessionId, kind, `${id}.${extension}`);
+  return path.join(/* turbopackIgnore: true */ dataDir(), workspace, sessionId, kind, `${id}.${extension}`);
 }
 
 async function readJson<T>(file: string): Promise<T | undefined> {
@@ -307,7 +307,7 @@ async function readObject(kind: "frames" | "clips", sessionId: string, id: strin
   }
   try {
     const localExtension = extension as "jpg" | "png" | "webm";
-    return new Uint8Array(await fs.readFile(localMediaPath(workspace, sessionId, kind, id, localExtension)));
+    return new Uint8Array(await fs.readFile(/* turbopackIgnore: true */ localMediaPath(workspace, sessionId, kind, id, localExtension)));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
     throw error;
@@ -477,7 +477,7 @@ export async function listFrameIds(sessionId: string): Promise<string[]> {
       names.push(...data.map((item) => item.name));
       if (data.length < 1000) break;
     }
-  } else names = await orMissing(() => fs.readdir(path.join(dataDir(), workspace, sessionId, "frames"))) ?? [];
+  } else names = await orMissing(() => fs.readdir(path.join(/* turbopackIgnore: true */ dataDir(), workspace, sessionId, "frames"))) ?? [];
   return [...new Set(names.filter((name) => /^[\w-]{1,64}\.(jpg|png)$/.test(name)).map((name) => name.slice(0, -4)))].sort();
 }
 

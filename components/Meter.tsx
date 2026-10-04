@@ -5,8 +5,8 @@ import type { Decision } from "@/lib/governor";
 /** The governor, made visible: five lights and one word. Judges asked "when to ask"; this is the answer on screen. */
 export function Meter({ decision, questions, budget }: { decision?: Decision; questions: number; budget: number }) {
   const l = decision?.lights;
-  const state = decision?.state ?? "listening";
-  const label = state === "asking" ? "asking" : state === "answering" ? "listening to the answer" : state === "waiting" ? "pause detected" : "listening";
+  const state = decision?.state;
+  const label = state === "asking" ? "asking" : state === "answering" ? "listening to the answer" : state === "waiting" ? "pause detected" : state === "listening" ? "listening" : "Waiting for observation state";
   const dot = state === "asking" || state === "answering" ? "#f5a623" : state === "waiting" ? "#22b45e" : "#aeaeb2";
   return (
     <section style={{ padding: "12px 14px", borderRadius: 18, background: "rgba(255,255,255,.62)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.07), inset 0 1px 0 #fff" }}>
@@ -16,17 +16,17 @@ export function Meter({ decision, questions, budget }: { decision?: Decision; qu
           {questions}/{budget} questions · 10 min
         </span>
       </div>
-      <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
+      <div role="status" aria-live="polite" aria-atomic="true" data-state={state ?? "unavailable"} style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 8 }}>
         <span aria-hidden style={{ width: 9, height: 9, borderRadius: "50%", background: dot, boxShadow: `0 0 8px ${dot}`, transition: "background-color .4s, box-shadow .4s" }} />
         <span style={{ fontSize: 14, color: "#1d1d1f" }}>{label}</span>
       </div>
-      <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(92px,1fr))", gap: "6px 10px", fontSize: 12, color: "#6e6e73" }}>
+      {l ? <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(92px,1fr))", gap: "6px 10px", fontSize: 12, color: "#6e6e73" }}>
         <Light on={!!l?.silence} label="not talking" />
         <Light on={!!l?.still} label="still screen" />
         <Light on={!!l?.notTyping} label="not typing" />
         <Light on={!!l?.notReading} label="not reading" />
         <Light on={!!l?.budget} label="budget" />
-      </div>
+      </div> : <p style={{ marginTop: 10, fontSize: 12, color: "#6e6e73" }}>No timing information yet.</p>}
       {decision?.reasons.length ? <p style={{ marginTop: 8, fontSize: 12, color: "#6e6e73" }}>waiting: {decision.reasons.join(", ")}</p> : null}
       {decision?.boundaryBonus ? <p style={{ marginTop: 4, fontSize: 12, color: "#1b8a4b" }}>step boundary: preferred pause</p> : null}
     </section>

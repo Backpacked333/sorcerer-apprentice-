@@ -9,7 +9,7 @@ import type { TeachReplay } from "@/components/views/teach.vm";
 
 export function ReplayRow({ replay, expert, onClose }: { replay: TeachReplay; expert: string; onClose: () => void }) {
   const [large, setLarge] = useState(false);
-  const src = frameSrc(replay.frame as { dataUrl?: string; url?: string } | undefined);
+  const src = frameSrc(replay.frame);
   const step = replay.step;
   const change = step && "field" in step.action ? `${step.action.from || "empty"} → ${step.action.to}` : null;
   return (
@@ -65,12 +65,23 @@ export function ReplayRow({ replay, expert, onClose }: { replay: TeachReplay; ex
         </div>
       </div>
       {large && src ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={src}
-          alt={`${expert}'s screen at this moment, captured still`}
-          style={{ display: "block", width: "100%", marginTop: 10, borderRadius: 12, boxShadow: "0 0 0 .5px rgba(0,0,0,.1)", animation: "tc-rise .45s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both" }}
-        />
+        <div style={{ position: "relative", marginTop: 10, borderRadius: 12, overflow: "hidden", boxShadow: "0 0 0 .5px rgba(0,0,0,.1)", animation: "tc-rise .45s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both" }}>
+          {/* eslint-disable-next-line @next/next/no-img-element -- data: or same-origin still */}
+          <img
+            src={src}
+            width={replay.frame?.width}
+            height={replay.frame?.height}
+            alt={`${expert}'s screen at this moment, captured still`}
+            style={{ display: "block", width: "100%", height: "auto" }}
+          />
+          {step?.screenMoment.region && (
+            <span aria-hidden className="pointer-events-none absolute" style={{
+              left: `${step.screenMoment.region.x * 100}%`, top: `${step.screenMoment.region.y * 100}%`,
+              width: `${step.screenMoment.region.w * 100}%`, height: `${step.screenMoment.region.h * 100}%`,
+              border: "1.5px solid #f5a623", borderRadius: 4, boxShadow: "0 0 10px rgba(245,166,35,.7)",
+            }} />
+          )}
+        </div>
       ) : null}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginTop: 8 }}>
         {replay.audioUrl ? (

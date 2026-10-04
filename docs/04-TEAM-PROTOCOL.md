@@ -71,6 +71,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX. `capture.vm.ts` is A's and `map.vm.ts` / `teach.vm.ts` are C's from the seam-split merge |
 | `components/erp/**`, `components/demo/**` | **D** | PII publisher, queue reset, presenter tabs, embed class, health strip, demo room |
 | `lib/erp-ui.ts`, `lib/ui/**` | **D** | presentational helpers and their tests |
+| `lib/experience.presentation.test.ts` | **D** | server-rendered knowledge UI and presence regressions |
 | `app/error.tsx`, `app/not-found.tsx`, `scripts/d-shots.mjs`, `docs/pitch/**` | **D** | error screens, layout shots, submission copy |
 | `components/WorkMapView.tsx`, `components/Meter.tsx`, `components/TeachStart.tsx` | **D** | |
 | `components/InvoiceForm.tsx`, `components/ErpHeader.tsx`, `app/erp/`, `lib/erp-model.ts`, `app/demo/` | **D** | ERP UI **and the scenario data** (seed invoices are a contract: announce changes; the ERP server + guard is C) |

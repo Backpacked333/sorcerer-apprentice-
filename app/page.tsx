@@ -58,18 +58,11 @@ function H2({ children }: { children: ReactNode }) {
 }
 
 async function loadSample(): Promise<{ sample?: string; mini?: MiniMapData }> {
-  const sessions = await listSessions();
-  const samples = [];
-  const maps = new Map<string, Awaited<ReturnType<typeof getMap>>>();
-  for (const s of sessions) {
-    if (!s.id.startsWith("demo_")) continue;
-    const map = await getMap(s.id);
-    maps.set(s.id, map);
-    samples.push({ id: s.id, startedAt: s.startedAt, confirmedAt: map?.confirmedAt ?? null });
-  }
-  const sample = pickSample(samples);
-  const map = sample ? maps.get(sample) : undefined;
-  if (!sample || !map?.confirmedAt) return { sample };
+  const sessions = (await listSessions()).filter((s) => s.mode === "capture" && s.id.startsWith("demo_"));
+  const selected = pickSample(await Promise.all(sessions.map(async (s) => ({ ...s, map: await getMap(s.id) }))));
+  const map = selected?.map;
+  if (!selected || !map?.confirmedAt) return {};
+  const sample = encodeURIComponent(selected.id);
   const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
   const mentioned = Array.from(new Set(map.rules.map((r) => r.stopAndAsk?.who?.trim()).filter((w): w is string => !!w).map(cap)));
   return { sample, mini: { task: map.task, expert: map.expert.name, rules: map.rules.length, steps: map.steps.length, mentioned } };
@@ -130,7 +123,9 @@ export default async function Home() {
                 action={async () => {
                   "use server";
                   await seedDemo({ ifMissing: true });
-                  redirect("/map/demo_sabine_confirmed");
+                  const loaded = await loadSample();
+                  if (!loaded.sample) throw new Error("No confirmed, nonempty sample Work Map is available. Existing samples were left unchanged.");
+                  redirect(`/map/${loaded.sample}`);
                 }}
               >
                 <p style={{ margin: 0, fontSize: 14, color: "#6e6e73" }}>A scripted example with synthetic evidence, separate from your own captures.</p>

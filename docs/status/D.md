@@ -1,5 +1,15 @@
 # Lane D status
 
+## Liquid Glass compatibility safeguards
+
+- Direction: Roy clarified that Claude owns the design, UX, flows and added functionality. Preserve the Liquid Glass implementation rather than restoring the earlier knowledge-first layout or quiet dot; only functional safeguards and regression tests carry forward.
+- Done: landing and demo entry select only confirmed, nonempty `demo_` capture maps; explicit sample loading re-reads eligibility after `seedDemo({ ifMissing: true })` and never redirects to a draft or empty map. The landing retains its platform mini-map, two doors, companion tour and company-map links.
+- Done: the existing Teach replay's expand/shrink UX and glass styling are retained, with a region highlight aligned to the naturally sized expanded still. The redesigned Work Map's responsive aspect-ratio wrapper and evidence ordering are unchanged. The governor stays inside the mechanism sheet and reports unavailable state honestly before a decision exists.
+- Verification: `npm run typecheck`, `npm test` (82 files, 757 tests), `npm run build`, and `git diff --check` pass. Presentation tests now exercise Claude's components and flows, not the superseded UI. No lint script or active pre-commit hook is configured; the existing non-failing Vite config warning remains.
+- Verified live by a human: not yet. Browser/keyless smoke, real voice, screen sharing and deployed QA have not been rerun for this integration. Rendered markup tests do not prove browser geometry or interaction.
+- Next: review the functional safeguards, then run browser and human verification against the redesigned flows. No deployment or submission performed.
+- Blocked on: no automated-check blocker; live verification remains outstanding.
+
 ## Simon branding · WD-2 / WD-5 / WD-10 / WD-12 / P1
 
 - Done: renamed visible product branding to Simon in page metadata, landing copy, shared app header, ERP return links/completion banners, README, demo/submission copy and moonshot frame.

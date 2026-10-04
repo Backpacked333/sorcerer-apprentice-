@@ -9,9 +9,9 @@ export default async function DemoPage() {
   const latestMap = sessions.find((s) => s.mode === "capture")?.id;
   const samples = [];
   for (const s of sessions) {
-    if (!s.id.startsWith("demo_")) continue;
+    if (s.mode !== "capture" || !s.id.startsWith("demo_")) continue;
     const map = await getMap(s.id);
-    samples.push({ id: s.id, startedAt: s.startedAt, confirmedAt: map?.confirmedAt ?? null });
+    samples.push({ ...s, map });
   }
-  return <DemoRoom latestMap={latestMap} sampleMap={pickSample(samples)} />;
+  return <DemoRoom latestMap={latestMap} sampleMap={pickSample(samples)?.id} />;
 }

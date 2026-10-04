@@ -1,3 +1,9 @@
+## Oct 4 · Reject false-positive answer saves [C3, N2]
+
+- Production `7bb99fe` passed the visible-reason withdrawal race: badge removed, released POST 200 → DELETE 200 → GET 404, redacted saved session, and no exact withdrawn-object row in Supabase's storage catalog. All model-bearing telemetry was V4 Turbo; no browser speech. Controlled input is not human approval.
+- A later answer failed before Pause: both transcripts said `5,000 euros`, while `log_answer.reason` said `five thousand euros`. Literal evidence correctly stayed empty, but the client handler replied `logged` and closed the turn without a clip. Eight new bridge regressions failed on the pre-fix behavior.
+- The shared guarded-turn bridge now validates evidence before calling page handlers or dispatching TOOL. It returns an explicit `not_logged` correction and allows an exact transcript retry within the unchanged listening bounds. No fuzzy matching, inferred quote, remote setting change or Map/Teach page integration is included. All 568 tests, typecheck, production build and diff checks pass; no lint script is configured. Real Capture revalidation and human naturalness/real-room checks remain open.
+
 ## Oct 4 · Derived Capture evidence withdrawal [N2, C3]
 
 - Production at `623bb01` passed connection repair, two literal current-reference answers with persisted clips, timeout suppression, listening privacy tools and V4 telemetry (12/12 speech entries, zero browser speech). Synthetic microphone input is not human naturalness or real-room acceptance. Sampled acknowledgment latency remains 2.73–4.04s; provider pre-initiation silence alone was 1.60–2.88s, before persistence.

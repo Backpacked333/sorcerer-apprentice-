@@ -418,6 +418,9 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
 
   if (event.type === "TOOL") {
     const tool = { name: event.name, params: event.params };
+    if (event.name === "mark_off_record" && (state.phase === "listening" || state.phase === "closing")) {
+      return enterClosing(state, { via: "aborted", heard: "", command: "off_record", tool, startedAt: event.at });
+    }
     if (requiresAnswerTool(state)) {
       if (event.name !== state.options?.answerTool) return { state, effects: [] };
       if (state.phase === "closing" && state.close) {

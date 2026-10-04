@@ -29,8 +29,19 @@ import {
 
 export const TOOL_NAMES = ["log_answer", "mark_off_record", "confirm_teachback", "end_task", "flag_for_expert", "show_replay", "record_prediction", "record_mastery", "end_session"] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
-export type ToolHandler = (params: Record<string, unknown>) => string | void | Promise<string | void>;
+export type ToolResult = string | void | { dispatch: false; message: string };
+export type ToolHandler = (params: Record<string, unknown>) => ToolResult | Promise<ToolResult>;
 export type ToolHandlers = Partial<Record<ToolName, ToolHandler>>;
+
+export async function dispatchClientTool(handler: ToolHandler | undefined, params: Record<string, unknown>, dispatch: () => void): Promise<string> {
+  let result: ToolResult = undefined;
+  try {
+    result = await handler?.(params);
+  } finally {
+    if (typeof result !== "object" || result.dispatch !== false) dispatch();
+  }
+  return typeof result === "object" ? result.message : result ?? "ok";
+}
 
 export interface VoiceMessage {
   role: "user" | "agent";
@@ -1019,10 +1030,9 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     const activeTurn = turnAdapterRef.current!.snapshot().phase !== "idle";
     const turnGeneration = turnAdapterRef.current!.currentGeneration();
     if (!fn && !activeTurn) return `no handler for ${name}`;
-    let out: string | void;
-    try { out = await fn?.(params ?? {}); }
-    finally { turnAdapterRef.current!.dispatchForGeneration(turnGeneration, { type: "TOOL", at: nowTurnRef.current(), name, params: params ?? {} }); }
-    return out ?? "ok";
+    return dispatchClientTool(fn, params ?? {}, () => {
+      turnAdapterRef.current!.dispatchForGeneration(turnGeneration, { type: "TOOL", at: nowTurnRef.current(), name, params: params ?? {} });
+    });
   };
   useConversationClientTool("log_answer", handle("log_answer"));
   useConversationClientTool("mark_off_record", handle("mark_off_record"));

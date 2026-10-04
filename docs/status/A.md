@@ -1,3 +1,17 @@
+## Oct 4 · Prompt stale-tool rejection [C3, N2]
+
+- Review #45 thread `4175976226` correctly identifies an unsupported thinking-time promise. Prompts now acknowledge courteously without promising indefinite listening or saving a later answer; they explicitly defer to the app's bounded window and latest tagged question. No unbounded microphone or automatic timeout extension was added. Longer thinking-time waits remain unsupported and require a controller-level feature, not a prompt promise.
+
+- Local real Capture on `a2ada0d` verified expert attribution during agent speech and an empty connection-check timeout without a clip POST. A subsequent valid answer received "Ah, got you", but the model reused the earlier window reference. Capture waited for the active replacement turn, producing a 20-second provider client-tool timeout. All four generated speech turns were V4 Turbo; zero browser speech. Sampled response latency was 987ms for the connection check and 4.010s for the acknowledgment. Off-record UI acceptance and delayed-upload ordering were not reached.
+- Capture now rejects stale/missing refs promptly with a `not_logged` correction instead of blocking on the live turn or mutating an older window. Additive `ToolResult` rejection lets a page suppress the reducer's TOOL event while returning a useful string to ElevenLabs. The current full step/window reference and literal current transcript are both required; this does not automatically reassign an old answer.
+- New bridge/adapter regressions cover immediate rejection, no window mutation, current-step mismatch, absent/closed/struck windows, corrected-call acceptance, and existing handler behavior. Deployment remains paused until the actual answer path passes. No remote model/config changes in this correction.
+
+## Oct 4 · Off-record tool precedence [N2, C3]
+
+- Review found that answer-tool matching ignored `mark_off_record` while listening or closing. The privacy tool now takes precedence, yielding an empty aborted/off-record result, discarding the clip and preventing late transcript/answer events from restoring it.
+- Four new reducer-to-Capture outcome regressions failed before the fix and passed afterward: listening, closing a confirmed answer, closing typed input, and closing a timeout. No provider settings, V4 model, or storage code changed. Human/privacy UI acceptance is still outstanding.
+- The merged base now brings CaptureLoop, explicit human/agent transcript callbacks, and consent-safe recording into this branch. Local merge checks passed 532 tests, typecheck, build and diff validation. These real Capture changes are not yet deployed; the last checked production runtime remains `4d76c20`.
+
 ## Oct 4 · Active-exchange presence [C1-C3, M1-M3]
 
 - Both live agents now distinguish connection/repeat/time requests from unrelated background speech while a tagged question is pending. Warm, brief acknowledgments are allowed; `log_answer` speaks before saving (`pre_tool_speech=force`, `execution_mode=post_tool_speech`) and still awaits the result. No acknowledgment may claim the answer is correct or already saved. Idle/background silence and V4 Turbo remain unchanged.

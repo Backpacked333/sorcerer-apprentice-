@@ -20,7 +20,7 @@ export function Meter({ decision, questions, budget }: { decision?: Decision; qu
         <span className={`light ${color} ${state === "asking" ? "pulse" : ""}`} />
         <span className="text-sm">{label}</span>
       </div>
-      <div className="mt-3 grid grid-cols-5 gap-2 text-[11px] text-muted">
+      <div className="mt-3 grid grid-cols-5 gap-2 text-[12px] text-muted">
         <Light on={!!l?.silence} label="not talking" />
         <Light on={!!l?.still} label="still screen" />
         <Light on={!!l?.notTyping} label="not typing" />

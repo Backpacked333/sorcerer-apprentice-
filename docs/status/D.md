@@ -1,5 +1,13 @@
 # Lane D status
 
+## Shared ERP iframe remount delay · code-quality cleanup
+
+- Done: CaptureView and TeachView no longer each copy the 1500 ms ERP-iframe remount effect. The delay is the named `ERP_RELOAD_MS` in `lib/ui/layout.ts`, applied by one `useErpReloadKey(started, initial)` hook in `components/ui/useErpReloadKey.ts`. Each view keeps its previous initial key (Capture: "live" if already started, else "idle"; Teach: "idle"); behavior is unchanged.
+- Verification: typecheck, full test suite, a new test pinning `ERP_RELOAD_MS` to 1500 and the production build pass. No lint script is configured.
+- Verified live by a human: not yet; no browser run was needed for this behavior-preserving refactor.
+- Next: review and merge. No deployment performed.
+- Blocked on: nothing.
+
 ## Responsive Capture / Teach browser regressions · N5 / M3
 
 - Done: preserve the desktop Liquid Glass companion/left-hand mechanism layout; at narrow widths, stack and scroll them vertically. A responsive Capture-only inset accommodates the sheet plus non-overlay scrollbar at 320px. The preview stays mounted and the floating/occluder registrations are unchanged.

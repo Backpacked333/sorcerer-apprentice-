@@ -4,7 +4,7 @@ import { EmbedAware } from "@/components/erp/EmbedAware";
 import { PiiPublisher } from "@/components/erp/PiiPublisher";
 import "./erp.css";
 
-const plex = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600"], variable: "--font-plex", display: "swap" });
+const plex = IBM_Plex_Sans({ subsets: ["latin"], weight: ["400", "500", "600", "700"], variable: "--font-plex", display: "swap" });
 
 export const metadata: Metadata = { title: "MB-ERP · Accounts payable" };
 

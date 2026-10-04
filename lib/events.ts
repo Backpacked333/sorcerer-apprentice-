@@ -24,6 +24,8 @@ export interface ScreenEvent {
   source: EventSource;
   kind: EventKind;
   invoice?: string;
+  /** what the event is about when it is not (only) an invoice; a claim never sets `invoice` */
+  subject?: { type: "invoice" | "claim"; id: string };
   field?: string;
   from?: string;
   to?: string;
@@ -113,7 +115,7 @@ export function emptySession(id: string, mode: SessionLog["mode"], task: string,
 
 /** Short one-line rendering, used for contextual updates to the agent and the event feed. */
 export function describeEvent(e: ScreenEvent): string {
-  const inv = e.invoice ? `invoice ${e.invoice}` : "screen";
+  const inv = e.invoice ? `invoice ${e.invoice}` : e.subject ? `${e.subject.type} ${e.subject.id}` : "screen";
   switch (e.kind) {
     case "invoice_opened":
       return `${inv} opened${e.state?.supplier ? ` (${e.state.supplier}, €${e.state.amount?.toLocaleString("en-IE") ?? "?"})` : ""}`;
@@ -147,6 +149,12 @@ export function labelField(f?: string): string {
     case "hasAssetNumber":
     case "assetNumber":
       return "asset number";
+    case "cause":
+      return "cause of loss";
+    case "nextStep":
+      return "next step";
+    case "priorClaims":
+      return "prior claims";
     default:
       return f ?? "field";
   }

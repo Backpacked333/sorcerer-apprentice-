@@ -66,7 +66,6 @@ export function classifyActivity(history: DiffResult[]): Activity {
   if (last.fraction > 0.08) return "scrolling";
   const small = recent.filter((d) => d.changedCells >= 1 && d.changedCells <= 3 && d.fraction > 0.0005 && d.fraction < 0.05);
   if (small.length >= 2 && sameRegion(small)) return "typing";
-  if (last.changedCells === 0) return "still";
   return "still";
 }
 

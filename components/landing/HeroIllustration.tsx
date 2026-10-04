@@ -5,6 +5,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { FieldHighlight, IridescentRim, Orb } from "@/components/glass";
 import { MOODS, type OrbMood } from "@/lib/ui/moods";
 import type { Rect } from "@/lib/ui/geometry";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 
 type Target = "terms" | "note" | null;
 const BEATS: { mood: OrbMood; t: string; s: string; target: Target; terms: string; note: string }[] = [
@@ -38,8 +39,7 @@ export function HeroIllustration() {
   }, []);
 
   useEffect(() => {
-    const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
-    if (mq.matches) {
+    if (prefersReducedMotion()) {
       setI(BEATS.length - 1);
       return;
     }

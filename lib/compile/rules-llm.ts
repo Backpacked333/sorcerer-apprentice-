@@ -57,10 +57,21 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
       const q = findQuote(g.quoteText);
       if (q && !step.guardrails.some((x) => x.text === g.text)) step.guardrails.push({ id: uid("gr"), kind: g.kind, text: g.text, quote: q });
     }
+    const rejected: string[] = [];
     for (const r of object.rules) {
-      if (!map.steps.some((step) => step.id === r.stepId)) continue;
+      if (!map.steps.some((step) => step.id === r.stepId)) {
+        rejected.push(`"${r.title}": unknown step ${r.stepId}`);
+        continue;
+      }
       const quotes = r.quoteTexts.map(findQuote).filter(Boolean) as Quote[];
-      if (!quotes.length || quotes.length !== r.quoteTexts.length) continue;
+      if (r.quoteTexts.length === 0) {
+        rejected.push(`"${r.title}": no supporting quotes`);
+        continue;
+      }
+      if (quotes.length !== r.quoteTexts.length) {
+        rejected.push(`"${r.title}": ${r.quoteTexts.length - quotes.length} of ${r.quoteTexts.length} quotes not found verbatim`);
+        continue;
+      }
       try {
         const when = modelCondition(r.when);
         const then = modelAction(r.then);
@@ -68,15 +79,21 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
         const stopAndAsk = r.stopAndAsk ? { who: r.stopAndAsk.who, when: modelCondition(r.stopAndAsk.when) } : undefined;
         evalCond(when, {});
         map.rules.push({ id: uid("rule"), stepId: r.stepId, title: r.title, when, then, unless, stopAndAsk, quotes, confidence: r.confidence, confirmedBy: Array.from(new Set(confirmedByOf(quotes))) });
-      } catch {
+      } catch (error) {
+        rejected.push(`"${r.title}": ${error instanceof Error ? error.message : "invalid condition or action"}`);
         continue;
       }
     }
-    if (map.rules.length === 0) map.rules = draft.rules;
+    const keptDraftRules = map.rules.length === 0;
+    if (keptDraftRules) map.rules = draft.rules;
     map.slots = object.slots.filter((s) => !s.stepId || map.steps.some((step) => step.id === s.stepId)).map((s) => ({ id: uid("slot"), kind: s.kind, stepId: s.stepId ?? undefined, question: s.question, status: "open" as const }));
     const extra = buildSlots(map, seenCases(log)).filter((s) => (s.kind === "novel" && !map.slots.some((x) => x.kind === "novel")) || map.slots.length < 3);
     map.slots = [...map.slots, ...extra.filter((s) => !map.slots.some((x) => x.question === s.question))];
     map.compiledAt = Date.now();
+    if (rejected.length) {
+      const note = `Rejected ${rejected.length} of ${object.rules.length} proposed rules (${rejected.join("; ")})${keptDraftRules ? "; kept deterministic draft rules" : ""}`;
+      return { map, used: true, note };
+    }
     return { map, used: true };
   } catch {
     return { map: draft, used: false, note: "LLM refinement unavailable; deterministic fallback map" };

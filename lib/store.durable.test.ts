@@ -191,6 +191,15 @@ describe("workspace durable store", () => {
     expect(await store.readClip("s_1", "a_1")).toBeUndefined();
   });
 
+  it("rejects malformed ERP invoices from durable storage", async () => {
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only");
+    vi.stubEnv("STORAGE_BACKEND", "supabase");
+    const store = await loadStore();
+    rows.set(`erp_state:${ownerA}:${ownerA}`, { owner_id: ownerA, invoices: [1], guard: null });
+    await expect(store.getErpSnapshot()).rejects.toThrow(store.StorageDataError);
+  });
+
   it("keeps the durable rate limit across fresh store instances", async () => {
     vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
     vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only");

@@ -8,6 +8,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { Slot } from "@/lib/workmap";
 import type { OrbMood } from "@/lib/ui/moods";
 import { slotEyebrow, slotSub, splitSentences, teachbackMeta } from "@/lib/ui/mapview";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 import { AnswerBubble, CompanionCard, Eyebrow, GlassButton, Orb, SessionClock, UnderstoodCard } from "@/components/glass";
 import type { MapVM } from "@/components/views/map.vm";
 
@@ -44,8 +45,7 @@ function Sentences({ text, previous }: { text: string; previous: string }) {
   const before = new Set(previous ? splitSentences(previous) : []);
   const [shown, setShown] = useState(0);
   useEffect(() => {
-    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) {
+    if (prefersReducedMotion()) {
       setShown(parts.length);
       return;
     }

@@ -3,6 +3,7 @@
 // bounce light, cursor-following specular and glass edge → amber "held" badge.
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { MOODS, PASTEL, SWIRL, type OrbMood } from "@/lib/ui/moods";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 
 const useIso = typeof window === "undefined" ? useEffect : useLayoutEffect;
 const BREATHE_BASE = 4.4; // s; the one constant breathe period, varied by playback rate
@@ -74,8 +75,7 @@ export function Orb(p: {
   // Cursor-follow specular, rAF-throttled, off under reduced motion.
   useEffect(() => {
     if (!follow || typeof window === "undefined") return;
-    const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
-    if (mq?.matches) return;
+    if (prefersReducedMotion()) return;
     let raf = 0;
     let last: { x: number; y: number } | null = null;
     const apply = () => {

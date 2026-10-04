@@ -3,12 +3,11 @@
 import { useEffect, useState } from "react";
 import { IridescentRim } from "./IridescentRim";
 import { MOODS, RAINBOW, type OrbMood } from "@/lib/ui/moods";
-import type { Rect } from "@/lib/ui/geometry";
+import { rectsEqual, type Rect } from "@/lib/ui/geometry";
 
 export type FieldHighlightProps = { rect: Rect | null; mood: OrbMood };
 
 const SPRING = "var(--ease-halo, cubic-bezier(.25,1.18,.35,1))";
-const same = (a: Rect | null, b: Rect | null) => !!a && !!b && a.x === b.x && a.y === b.y && a.w === b.w && a.h === b.h;
 
 /**
  * Halo around the field Tacit is attending to (design §6.5). Never a pop-up, never covers the field:
@@ -18,7 +17,7 @@ const same = (a: Rect | null, b: Rect | null) => !!a && !!b && a.x === b.x && a.
 export function FieldHighlight({ rect, mood }: FieldHighlightProps) {
   // Keep the last rect so the halo fades where it was instead of jumping (stored-previous-value pattern).
   const [last, setLast] = useState<Rect | null>(rect);
-  if (rect && !same(rect, last)) setLast(rect);
+  if (rect && !rectsEqual(rect, last)) setLast(rect);
   const [shown, setShown] = useState(false);
   const hasRect = !!rect;
   useEffect(() => {

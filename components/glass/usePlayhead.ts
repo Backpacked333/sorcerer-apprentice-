@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 
 export type Playhead = {
   t: number;
@@ -10,14 +11,6 @@ export type Playhead = {
   /** Play from the current t (or from the start when at the end) to the end; pauses when playing. */
   toggle: () => void;
   stop: () => void;
-};
-
-const reducedMotion = () => {
-  try {
-    return typeof window !== "undefined" && !!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  } catch {
-    return false;
-  }
 };
 
 /**
@@ -71,7 +64,7 @@ export function usePlayhead(range: [number, number], ms = 7000): Playhead {
       stop();
       return;
     }
-    if (b <= a || reducedMotion()) {
+    if (b <= a || prefersReducedMotion()) {
       setPlaying(false);
       write(b);
       return;

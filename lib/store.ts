@@ -368,17 +368,26 @@ export async function allowRateLimit(bucket: string, limit: number, seconds: num
   return value.count <= limit;
 }
 
-export async function getErpSnapshot(ws?: string): Promise<{ invoices: Invoice[]; guard: unknown | null }> {
+function validateInvoices(value: unknown): Invoice[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.some((invoice) => !invoice || typeof invoice !== "object" || Array.isArray(invoice))) throw new StorageDataError();
+  return value as Invoice[];
+}
+
+export async function getErpSnapshot(ws?: string): Promise<ErpState> {
   const workspace = await resolveWorkspace(ws);
   if (backend() === "supabase") {
     const { data, error } = await db().from("erp_state").select("invoices,guard").eq("owner_id", workspace).maybeSingle();
     if (error) throw error;
-    return { invoices: (data?.invoices as Invoice[] | undefined) ?? [], guard: data?.guard ?? null };
+    return { invoices: validateInvoices(data?.invoices ?? undefined) ?? [], guard: data?.guard ?? null };
   }
-  return (await readJson<{ invoices: Invoice[]; guard: unknown | null }>(localPath(workspace, "erp"))) ?? { invoices: [], guard: null };
+  const state = await readJson<ErpState>(localPath(workspace, "erp"));
+  if (state === undefined) return { invoices: [], guard: null };
+  if (!state || typeof state !== "object" || Array.isArray(state) || !Array.isArray(state.invoices)) throw new StorageDataError();
+  return { invoices: validateInvoices(state.invoices)!, guard: state.guard ?? null };
 }
 
-export async function saveErpSnapshot(state: { invoices: Invoice[]; guard: unknown | null }, ws?: string): Promise<void> {
+export async function saveErpSnapshot(state: ErpState, ws?: string): Promise<void> {
   const workspace = await resolveWorkspace(ws);
   if (backend() === "supabase") {
     const { error } = await db().from("erp_state").upsert({ owner_id: workspace, invoices: state.invoices, guard: state.guard }, { onConflict: "owner_id" });
@@ -498,8 +507,7 @@ export async function getErpState(ws?: string): Promise<Invoice[] | undefined> {
     if (state !== undefined && (!state || !Array.isArray(state.invoices))) throw new StorageDataError();
     value = state?.invoices;
   }
-  if (value !== undefined && (!Array.isArray(value) || value.some((invoice) => !invoice || typeof invoice !== "object" || Array.isArray(invoice)))) throw new StorageDataError();
-  return value as Invoice[] | undefined;
+  return validateInvoices(value);
 }
 
 export async function saveErpState(invoices: Invoice[], ws?: string): Promise<void> {

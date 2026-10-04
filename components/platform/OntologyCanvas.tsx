@@ -11,7 +11,7 @@ import { Dock } from "./Dock";
 import { OntologyInspector } from "./OntologyInspector";
 import { SidebarToggle, useShell } from "./PlatformShell";
 import { fitBox, useCamera, type Box } from "./useCamera";
-import { AVATAR, EDGE_GRAD, KIND, PASTEL, PROV, hexA, initials, lastBeads, stepIndex } from "./meta";
+import { AVATAR, EDGE_GRAD, edgeStroke, KIND, PASTEL, PROV, hexA, initials, lastBeads, stepIndex } from "./meta";
 import { CANVAS_CSS } from "./meta";
 
 type Mode = "graph" | "schema";
@@ -241,7 +241,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
   const edgeSvg = useMemo(() => (
     <svg aria-hidden width={WORLD.w} height={WORLD.h} style={{ position: "absolute", left: 0, top: 0, overflow: "visible", pointerEvents: "none" }}>
       <defs>
-        {geo.map((g) => g.e.prov === "said" ? (
+        {geo.map((g) => edgeStroke(g.e.prov).gradient ? (
           <linearGradient key={g.e.id} id={`og${uid}${g.i}`} gradientUnits="userSpaceOnUse" x1={g.p0.x} y1={g.p0.y} x2={g.p1.x} y2={g.p1.y}>
             {EDGE_GRAD.map((c, j) => <stop key={c} offset={j / 4} stopColor={c} />)}
           </linearGradient>
@@ -250,10 +250,11 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
       {geo.map((g) => {
         if (g.e.at > tk) return null;
         const hot = hotEdges.has(g.e.id);
-        const said = g.e.prov === "said";
-        const col = said ? `url(#og${uid}${g.i})` : g.e.prov === "described" ? "#9a9aa2" : PROV[g.e.prov].color;
-        const dash = g.e.prov === "described" || g.e.prov === "inferred" || g.e.prov === "teachback" ? "6 6" : null;
-        const w = hot ? 3.4 : said ? 2.2 : 1.5;
+        const s = edgeStroke(g.e.prov);
+        const grad = s.gradient;
+        const col = grad ? `url(#og${uid}${g.i})` : s.color;
+        const dash = s.dash;
+        const w = hot ? 3.4 : grad ? 2.2 : 1.5;
         const fresh = isNew(g.e.at);
         const op = dimEdge(g.e) ? (activeRule ? 0.14 : 0.14) : 1;
         return (
@@ -264,8 +265,8 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
             ) : (
               <path d={g.d} stroke={col} strokeWidth={w} fill="none" strokeLinecap="round" pathLength={1} strokeDasharray="1" style={{ animation: "tc-draw .8s var(--ease-rise) both", transition: "stroke-width .35s" }} />
             )}
-            <polygon points={g.tip} fill={said ? "#b7a6ff" : col} style={{ animation: "tc-fade .4s .4s both" }} />
-            {said || hot ? (
+            <polygon points={g.tip} fill={grad ? "#b7a6ff" : col} style={{ animation: "tc-fade .4s .4s both" }} />
+            {grad || hot ? (
               <path d={g.d} stroke="#fff" strokeWidth={w + 1} fill="none" strokeLinecap="round" pathLength={1} strokeDasharray=".04 .96" style={{ animation: `tc-flow ${hot ? 1.6 : 3.4 + (g.e.id.length % 5) * 0.4}s linear infinite` }} />
             ) : null}
           </g>

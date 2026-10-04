@@ -159,3 +159,8 @@ export function labelField(f?: string): string {
       return f ?? "field";
   }
 }
+
+/** Join key pairing curiosity candidates and question windows with compiled steps. */
+export function stepRefOf(e: ScreenEvent): string {
+  return `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
+}

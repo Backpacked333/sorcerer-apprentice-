@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileDeterministic, stepRefOf } from "./compile/steps";
+import { buildCandidates, newContext } from "./curiosity";
 import { emptySession, type ScreenEvent } from "./events";
 
 const claimEdit = (id: string, to: string, t: number): ScreenEvent => ({
@@ -25,5 +26,16 @@ describe("claims in the Work Map (M4)", () => {
     expect(map.steps[0].title).toBe("Code invoice 4471 to a cost center");
     expect(map.steps[0].invoice).toBe("4471");
     expect(stepRefOf(log.events[0])).toBe("4471:costCenter");
+  });
+  it("curiosity candidates carry the same stepRef the compiler joins on", () => {
+    const events: ScreenEvent[] = [
+      claimEdit("CLM-30412", "flood", 5),
+      { id: "i1", source: "dom", t: 3, kind: "field_changed", invoice: "4471", field: "costCenter", from: "1000", to: "2000" },
+    ];
+    for (const e of events) {
+      const candidates = buildCandidates(e, newContext(), 0);
+      expect(candidates.length).toBeGreaterThan(0);
+      for (const c of candidates) expect(c.stepRef).toBe(stepRefOf(e));
+    }
   });
 });

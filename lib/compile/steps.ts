@@ -1,5 +1,5 @@
 import type { QuestionWindow, ScreenEvent, SessionLog } from "../events";
-import { labelField } from "../events";
+import { labelField, stepRefOf } from "../events";
 import { narrationMatch, type Candidate } from "../curiosity";
 import { emptyMap, type Quote, type Step, type WorkMap, uid } from "../workmap";
 import { isQuotableTranscript, isQuotableWindow } from "./evidence";
@@ -9,9 +9,7 @@ import { buildSlots, seenCases } from "./slots";
 /** A claims-workbench event (vision-only): it names its claim in `subject` and never sets `invoice`. */
 const claimOf = (e: ScreenEvent): string | undefined => (!e.invoice && e.subject?.type === "claim" ? e.subject.id : undefined);
 
-export function stepRefOf(e: ScreenEvent): string {
-  return `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
-}
+export { stepRefOf };
 
 // ---------- Pass 1: deterministic ----------
 

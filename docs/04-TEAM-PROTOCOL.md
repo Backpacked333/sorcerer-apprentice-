@@ -50,6 +50,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/platform-env.test.ts` | **B** | deployment environment example regression |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
 | `lib/workmap.ts` | **C** | THE contract: additive only |
+| `lib/workmap.contracts.test.ts` | **C** | legacy/new map compatibility for pre-approved contract additions |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
 | `lib/compile/{steps,rules-regex,slots,rules-llm,fill,correct}.ts`, `lib/compile.split.test.ts` | **C** | compiler internals; `lib/compile.ts` retains the public API |
 | `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |

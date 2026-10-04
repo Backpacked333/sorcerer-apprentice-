@@ -247,6 +247,8 @@ Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `t
 
 **Privacy precedence:** `mark_off_record` bypasses answer-tool matching while listening or closing. It supersedes pending typed/tool answers and timeouts with an empty `aborted` result carrying `command: "off_record"`; the clip is discarded and late answer events cannot restore evidence.
 
+Capture withdrawal also invalidates derived in-memory evidence: narration badges/quotes, affected candidates and dependent follow-ups, deferred questions, and curiosity context. Transcript/window overlap counts, not only start timestamps. Delayed screen/transcript callbacks within a struck interval must not repopulate those caches; genuinely later evidence remains eligible.
+
 **The verbatim rule:** the page records the expert's words from **Scribe** (what was actually said), not from the tool's `reason` param (which the LLM may reword). `reason` is only a fallback when Scribe heard nothing.
 
 ---

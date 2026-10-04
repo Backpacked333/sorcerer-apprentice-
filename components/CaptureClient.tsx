@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { captureAnswerToolRejection, CaptureLoop, captureToolStepRef, shouldPersistAgentSpokenText, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
+import { captureAnswerToolRejection, captureEvidenceIsOffRecord, CaptureLoop, captureToolStepRef, redactCaptureRange, shouldPersistAgentSpokenText, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
 import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
 import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
 import { COST_CENTERS } from "@/lib/erp-model";
@@ -79,6 +79,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
 
   const onEvent = useCallback((event: ScreenEvent, frame?: Frame) => {
     const session = log.current;
+    if (captureEvidenceIsOffRecord(session.offRecord, event.t)) return;
     session.events.push(event);
     if (frame) session.frames.push(frame);
     if (event.kind !== "typing") {
@@ -95,6 +96,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   pipelineRef.current = pipeline;
 
   const pushTranscript = useCallback((text: string, speaker: "expert" | "agent", start?: number, end?: number) => {
+    if (captureEvidenceIsOffRecord(log.current.offRecord, start ?? nowSecs(), end)) return;
     const clean = speaker === "expert" ? redactText(text) : { text: text.trim(), entities: [] };
     if (!clean.text) return;
     entitiesRedacted.current += clean.entities.length;
@@ -118,6 +120,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       if (holdingRef.current) return;
       setPartial("");
       const at = start ?? nowSecs();
+      if (captureEvidenceIsOffRecord(log.current.offRecord, at, end)) return;
       pushTranscript(text, "expert", at, end);
       const clean = redactText(text).text;
       expertSpeech.current.push({ at: end ?? at, words: clean.split(/\s+/u).filter(Boolean).length });
@@ -166,16 +169,9 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     const currentWindow = governor.current.window;
     const from = fromSecs ?? (currentWindow ? currentWindow.openedAt : Math.max(0, now - 30));
     const to = toSecs ?? now;
-    for (const segment of session.transcript) if (segment.t >= from && segment.t <= to) Object.assign(segment, { text: "", redacted: true });
-    for (const event of session.events) if (event.t >= from && event.t <= to) Object.assign(event, { redacted: true, from: undefined, to: undefined, state: undefined });
-    session.frames = session.frames.filter((frame) => frame.t < from || frame.t > to);
-    for (const window of session.windows) {
-      if (window.openedAt >= from && window.openedAt <= to) Object.assign(window, { answerText: "", outcome: "off_record", logged: undefined, answerAudioId: undefined });
-    }
-    for (const candidate of queue.current.items) if (candidate.createdAt >= from && candidate.createdAt <= to && candidate.status === "queued") candidate.status = "expired";
-    const previousStrike = session.offRecord.at(-1);
-    if (previousStrike && Math.abs(previousStrike.from - from) < 0.01 && from <= previousStrike.to + 2) previousStrike.to = Math.max(previousStrike.to, to);
-    else session.offRecord.push({ from, to });
+    redactCaptureRange(session, loop.current, ctx.current, from, to);
+    activeHeard.current = "";
+    setPartial("");
     pipelineRef.current?.bumpEpoch();
     dirty.current = true;
     rerender();

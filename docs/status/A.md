@@ -1,3 +1,9 @@
+## Oct 4 · Derived Capture evidence withdrawal [N2, C3]
+
+- Production at `623bb01` passed connection repair, two literal current-reference answers with persisted clips, timeout suppression, listening privacy tools and V4 telemetry (12/12 speech entries, zero browser speech). Synthetic microphone input is not human naturalness or real-room acceptance. Sampled acknowledgment latency remains 2.73–4.04s; provider pre-initiation silence alone was 1.60–2.88s, before persistence.
+- A scoped held-upload race exposed a privacy UI defect: native Scratch that cleared persisted answer/transcript/audio and the released upload was deleted, but the full withdrawn quote remained in the Reason heard badge. This is a runtime candidate-cache defect, not evidence that storage retained that quote; compile was not exercised.
+- Withdrawal now clears affected runtime quotes and candidate/follow-up/debrief state and rebuilds curiosity context from unstruck evidence. Overlapping transcript/window ranges are struck, and timestamped late screen/transcript callbacks are rejected. Five focused regressions pass; real Capture revalidation and human listening remain pending. Provider settings/model and storage routes are unchanged.
+
 ## Oct 4 · Prompt stale-tool rejection [C3, N2]
 
 - Review #45 thread `4175976226` correctly identifies an unsupported thinking-time promise. Prompts now acknowledge courteously without promising indefinite listening or saving a later answer; they explicitly defer to the app's bounded window and latest tagged question. No unbounded microphone or automatic timeout extension was added. Longer thinking-time waits remain unsupported and require a controller-level feature, not a prompt promise.

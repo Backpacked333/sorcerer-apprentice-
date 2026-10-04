@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, shouldPersistAgentSpokenText, turnCommitEvidenceEligible, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
+import { captureAnswerToolRejection, captureEvidenceIsOffRecord, CaptureLoop, captureToolStepRef, redactCaptureRange, shouldPersistAgentSpokenText, turnCommitEvidenceEligible, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
 import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
 import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
 import { aboutFor, captureApp, changeText, evidenceFor, eyebrowFor, type CaptureAppId, type Evidence } from "@/lib/ui/capture-copy";
@@ -94,6 +94,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
 
   const onEvent = useCallback((event: ScreenEvent, frame?: Frame) => {
     const session = log.current;
+    if (captureEvidenceIsOffRecord(session.offRecord, event.t)) return;
     session.events.push(event);
     if (frame) session.frames.push(frame);
     if (event.kind !== "typing") {
@@ -113,6 +114,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   pipelineRef.current = pipeline;
 
   const pushTranscript = useCallback((text: string, speaker: "expert" | "agent", start?: number, end?: number) => {
+    if (captureEvidenceIsOffRecord(log.current.offRecord, start ?? nowSecs(), end)) return;
     const clean = speaker === "expert" ? redactText(text) : { text: text.trim(), entities: [] };
     if (!clean.text) return;
     entitiesRedacted.current += clean.entities.length;
@@ -136,6 +138,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
       if (holdingRef.current) return;
       setPartial("");
       const at = start ?? nowSecs();
+      if (captureEvidenceIsOffRecord(log.current.offRecord, at, end)) return;
       const committedAt = end ?? at;
       const activeWindow = activeWindowId.current
         ? log.current.windows.find((window) => window.id === activeWindowId.current)
@@ -193,16 +196,9 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     const currentWindow = governor.current.window;
     const from = fromSecs ?? (currentWindow ? currentWindow.openedAt : Math.max(0, now - 30));
     const to = toSecs ?? now;
-    for (const segment of session.transcript) if (segment.t >= from && segment.t <= to) Object.assign(segment, { text: "", redacted: true });
-    for (const event of session.events) if (event.t >= from && event.t <= to) Object.assign(event, { redacted: true, from: undefined, to: undefined, state: undefined });
-    session.frames = session.frames.filter((frame) => frame.t < from || frame.t > to);
-    for (const window of session.windows) {
-      if (window.openedAt >= from && window.openedAt <= to) Object.assign(window, { answerText: "", outcome: "off_record", logged: undefined, answerAudioId: undefined });
-    }
-    for (const candidate of queue.current.items) if (candidate.createdAt >= from && candidate.createdAt <= to && candidate.status === "queued") candidate.status = "expired";
-    const previousStrike = session.offRecord.at(-1);
-    if (previousStrike && Math.abs(previousStrike.from - from) < 0.01 && from <= previousStrike.to + 2) previousStrike.to = Math.max(previousStrike.to, to);
-    else session.offRecord.push({ from, to });
+    redactCaptureRange(session, loop.current, ctx.current, from, to);
+    activeHeard.current = "";
+    setPartial("");
     pipelineRef.current?.bumpEpoch();
     setLastStrike({ at: Date.now(), from, to });
     dirty.current = true;
@@ -386,27 +382,9 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   endTaskRef.current = endTask;
 
   tools.current = {
-    log_answer: async (params) => {
-      const correlated = parseCaptureToolStepRef(typeof params.stepRef === "string" ? params.stepRef : "");
-      const logged = {
-        reason: typeof params.reason === "string" ? params.reason : undefined,
-        guardrail: typeof params.guardrail === "string" ? params.guardrail : undefined,
-        kind: typeof params.kind === "string" ? params.kind : undefined,
-      };
+    log_answer: (params) => {
       const active = governor.current.window && log.current.windows.find((window) => window.id === governor.current.window!.id);
-      if (!active || !correlated.windowId || active.id !== correlated.windowId) {
-        const exact = correlated.windowId ? log.current.windows.find((window) => window.id === correlated.windowId) : undefined;
-        const late = exact
-          ? findLateAnswerWindow([exact], correlated.stepRef, nowSecs())
-          : findLateAnswerWindow(log.current.windows, correlated.stepRef, nowSecs());
-        if (late) {
-          late.logged = logged;
-          dirty.current = true;
-          rerender();
-        }
-        await awaitReplacementBeforeToolDispatch(active?.id, correlated.windowId ?? late?.id, activeTurn.current);
-      }
-      return "logged";
+      return captureAnswerToolRejection(active ?? undefined, params.stepRef) ?? "logged";
     },
     mark_off_record: (params) => {
       const seconds = typeof params.seconds === "number" ? params.seconds : undefined;

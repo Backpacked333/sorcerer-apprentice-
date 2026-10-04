@@ -1,7 +1,7 @@
-import { CandidateQueue, type Candidate } from "./curiosity";
+import { CandidateQueue, extractThresholds, newContext, observe, type Candidate, type CuriosityContext } from "./curiosity";
 import { Governor, type OpenWindow, type Signals } from "./governor";
 import { redactText } from "./redact";
-import type { QuestionWindow } from "./events";
+import type { QuestionWindow, SessionLog } from "./events";
 import type { TurnResult } from "./voice-turn";
 
 export interface LoopSignals extends Signals {
@@ -116,6 +116,18 @@ const TOOL_WINDOW_SEPARATOR = "::window:";
 /** Correlate an agent tool call to one exact Capture turn while preserving the canonical stepRef separately. */
 export function captureToolStepRef(stepRef: string, windowId: string): string {
   return `${stepRef}${TOOL_WINDOW_SEPARATOR}${windowId}`;
+}
+
+export function captureAnswerToolRejection(active: QuestionWindow | undefined, stepRef: unknown): { dispatch: false; message: string } | undefined {
+  if (!active || active.outcome || active.closedAt !== undefined) {
+    return { dispatch: false, message: "not_logged: no active question. Do not retry or claim the answer was saved." };
+  }
+  const currentRef = captureToolStepRef(active.stepRef ?? "", active.id);
+  if (stepRef === currentRef) return;
+  return {
+    dispatch: false,
+    message: `not_logged: stale or missing question reference. The current question is ${JSON.stringify(active.question)}; stepRef=${currentRef}. Retry only if the expert's latest answer belongs to this current question. Never move an older answer to it. Do not claim it was saved.`,
+  };
 }
 
 export function parseCaptureToolStepRef(value: string): { stepRef: string; windowId?: string } {
@@ -313,8 +325,32 @@ export class CaptureLoop {
 
   get reasonHeard(): { stepRef: string; quote: string; t: number }[] {
     return this.queue.items
-      .filter((candidate) => candidate.filledBy === "narration" && candidate.heardQuote && candidate.heardAt !== undefined)
+      .filter((candidate) => candidate.status === "filled" && candidate.filledBy === "narration" && candidate.heardQuote && candidate.heardAt !== undefined)
       .map((candidate) => ({ stepRef: candidate.stepRef, quote: candidate.heardQuote!, t: candidate.heardAt! }));
+  }
+
+  withdrawEvidence(from: number, to: number, candidateIds: string[]): void {
+    const affected = new Set(candidateIds);
+    for (const candidate of this.queue.items) {
+      if ((candidate.createdAt >= from && candidate.createdAt <= to) ||
+          (candidate.heardAt !== undefined && candidate.heardAt >= from && candidate.heardAt <= to)) affected.add(candidate.id);
+    }
+    for (const candidate of this.queue.items) {
+      const dependsOnAnswer = candidate.parentId && affected.has(candidate.parentId) && candidate.filledBy !== "window" && candidate.filledBy !== "narration";
+      if (!affected.has(candidate.id) && !dependsOnAnswer) continue;
+      candidate.status = "expired";
+      candidate.filledBy = undefined;
+      candidate.heardQuote = undefined;
+      candidate.heardAt = undefined;
+      candidate.userDeferred = undefined;
+      candidate.retryAfter = undefined;
+      this.mustChain.delete(candidate.id);
+      this.chainedParents.delete(candidate.id);
+    }
+    if (this.pendingWhy && affected.has(this.pendingWhy.id)) {
+      this.pendingWhy = undefined;
+      this.pendingSince = Number.NEGATIVE_INFINITY;
+    }
   }
 
   get chainedCount(): number {
@@ -346,4 +382,36 @@ export class CaptureLoop {
     if (!candidate.invoice || candidate.invoice === signals.currentInvoice) return true;
     return candidate.leftAt !== undefined && signals.now - candidate.leftAt <= this.graceSecs;
   }
+}
+
+export function captureEvidenceIsOffRecord(ranges: SessionLog["offRecord"], start: number, end = start): boolean {
+  return ranges.some(({ from, to }) => start <= to && end >= from);
+}
+
+export function redactCaptureRange(session: SessionLog, loop: CaptureLoop, context: CuriosityContext, from: number, to: number): void {
+  const range = [{ from, to }];
+  for (const segment of session.transcript) {
+    if (captureEvidenceIsOffRecord(range, segment.t, segment.tEnd)) Object.assign(segment, { text: "", redacted: true });
+  }
+  for (const event of session.events) {
+    if (captureEvidenceIsOffRecord(range, event.t)) Object.assign(event, { redacted: true, from: undefined, to: undefined, state: undefined });
+  }
+  session.frames = session.frames.filter((frame) => !captureEvidenceIsOffRecord(range, frame.t));
+  for (const window of session.windows) {
+    if (captureEvidenceIsOffRecord(range, window.openedAt, window.closedAt ?? to)) {
+      Object.assign(window, { answerText: "", outcome: "off_record", logged: undefined, answerAudioId: undefined });
+    }
+  }
+  loop.withdrawEvidence(from, to, session.windows.filter((window) => window.outcome === "off_record").map((window) => window.candidateId));
+  session.deferred = loop.deferred();
+  const labels = context.valueLabels;
+  Object.assign(context, newContext(), { valueLabels: labels });
+  for (const event of session.events) if (!event.redacted) observe(event, context);
+  for (const segment of session.transcript) {
+    if (segment.redacted || segment.speaker !== "expert") continue;
+    for (const threshold of extractThresholds(segment.text)) if (!context.knownThresholds.includes(threshold)) context.knownThresholds.push(threshold);
+  }
+  const previous = session.offRecord.at(-1);
+  if (previous && Math.abs(previous.from - from) < 0.01 && from <= previous.to + 2) previous.to = Math.max(previous.to, to);
+  else session.offRecord.push({ from, to });
 }

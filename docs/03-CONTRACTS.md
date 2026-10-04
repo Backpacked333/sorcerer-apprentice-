@@ -117,7 +117,7 @@ Helpers: `emptySession(id, mode, task, expertName)` · `describeEvent(e): string
 
 All added fields are optional; existing logs remain valid. `save_intent` describes a save requested but not yet posted, unlike `save_clicked`. `Frame.dataUrl` is now optional so URL-only frames are valid; consumers must render `frame.url ?? frame.dataUrl`. `sample` marks sample sessions; `ws` is metadata, not automatic session isolation. Adding fields does not wire their producers or consumers.
 
-Persisted `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change the persisted form. Capture's transient `[ASK]` tool payload appends `::window:<QuestionWindow.id>` so a delayed `log_answer.stepRef` can be correlated to one turn; Capture strips that suffix before any lookup or persistence.
+Persisted `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change the persisted form. Capture's transient `[ASK]` tool payload appends `::window:<QuestionWindow.id>` so a delayed `log_answer.stepRef` can be correlated to one turn; Capture compares the complete reference to the current question and never persists the suffix. Stale/missing refs return an immediate `not_logged` correction without dispatching a turn event or enriching an old window; they must not wait for the replacement turn to finish.
 
 ### Telemetry channel — `lib/telemetry.ts` · Owner **B**
 
@@ -204,7 +204,8 @@ useVoice(): VoiceApi
 type TranscriptMeta = { startedAtMs: number; endedAtMs: number; speaker: "human"|"agent" };
 useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?, meta?), onAgentEcho?(text, startSecs?, endSecs?, meta?), onCommand?(command, text, meta), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
-type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
+type ToolResult = string | void | { dispatch: false; message: string };
+type ToolHandlers = Partial<Record<ToolName, (params) => ToolResult | Promise<ToolResult>>>;   // pages assign tools.current = {…}
 
 type TurnPhase = "idle"|"sending"|"waiting_for_speech"|"speaking"|"listening"|"closing";
 interface TurnOptions {
@@ -267,6 +268,16 @@ Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `t
 **Answer acceptance:** `VoiceApi.turn()` defaults listening `ASK`/`DEBRIEF` turns to `answerTool: "log_answer"`. When the agent speaks, raw Scribe/agent-ASR text alone cannot fill the slot: wait for the matching tool or resolve as an empty timeout within the existing bounds. A logged reason becomes `heard` only when it literally occurs in Scribe or agent ASR, excluding unrelated text accumulated in the same window; unmatched model text is never a quote. Late raw commits cannot promote an unconfirmed timeout. Typed answers and browser/keyless speech retain their existing completion paths. Other tags are unchanged.
 
 **Evidence timing:** recognition committed before `askedAt` (question finished / listening opened) is provisional interruption evidence only and cannot enter `heard`, `QuestionWindow.answerText`, or the quotable expert transcript. A later human-attributed commit after listen-open may become authoritative. `TurnResult.answerStartedAt` records when the accepted recognition segment began; `audioId` is returned only when that interval begins at or after `askedAt`, so a clip is never paired with text that predates recording.
+
+Guarded `log_answer` calls are checked against that same verbatim evidence **before** invoking the page handler or dispatching TOOL. Missing/mismatched evidence returns `not_logged`, preserves the current listening/deadline state, and supplies committed transcript data for an exact-text retry; number spelling is not normalized into an invented quote. Struck/typed/aborted closes reject without exposing their transcript. A page's current-window reference check still applies to otherwise eligible calls. Legacy callers without a guarded turn are unchanged.
+
+This pre-handler gate applies as soon as an answer tool is configured, before the agent's speech source is known; only intentional browser-fallback turns bypass it. Calls before listening return `not_logged` without reaching the handler. Once a tool-confirmed answer is accepted, further `log_answer` calls cannot replace it, including direct reducer events during closing. A first valid answer may still arrive during timeout closing, and `mark_off_record` still overrides accepted evidence.
+
+The interviewer acknowledges a **new human answer**, not an internal correction retry. `log_answer` uses `pre_tool_speech=auto`, `execution_mode=post_tool_speech` and `expects_response=true`: allow that acknowledgment before persistence, but do not force speech before every retry. The prompt permits one silent correction from current literal evidence, never a closed/withdrawn question or unrelated speech; failed saving is not described as success.
+
+**Privacy precedence:** `mark_off_record` bypasses answer-tool matching while listening or closing. It supersedes pending typed/tool answers and timeouts with an empty `aborted` result carrying `command: "off_record"`; the clip is discarded and late answer events cannot restore evidence.
+
+Capture withdrawal also invalidates derived in-memory evidence: narration badges/quotes, affected candidates and dependent follow-ups, deferred questions, and curiosity context. Transcript/window overlap counts, not only start timestamps. Delayed screen/transcript callbacks within a struck interval must not repopulate those caches; genuinely later evidence remains eligible.
 
 **The verbatim rule:** the page records the expert's words from **Scribe** (what was actually said), not from the tool's `reason` param (which the LLM may reword). `reason` is only a fallback when Scribe heard nothing.
 

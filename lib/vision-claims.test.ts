@@ -58,7 +58,11 @@ describe("vision route app param (provider mocked)", () => {
     const call = generate.mock.calls[0][0];
     expect(call.instructions).toBe(CLAIMS_VISION_PROMPT);
     expect(call.output.schema).toBe(ClaimsVisionWire);
-    expect(call).toMatchObject({ maxOutputTokens: 500, maxRetries: 0, timeout: { totalMs: 8000 } });
+    expect(call).toMatchObject({ model: "test/vision", maxOutputTokens: 500, maxRetries: 0, timeout: { totalMs: 8000 } });
+    expect(call.messages[0].content).toEqual([
+      { type: "text", text: "Report the current state of this frame." },
+      { type: "file", mediaType: "image/jpeg", data: "/9j/" },
+    ]);
     const body = await res.json();
     expect(body).toMatchObject({ seq: 3, app: "claims", state: {}, claim: { claim: "CLM-30412" }, model: "test/vision" });
     expect(body.state).not.toHaveProperty("invoice");

@@ -23,6 +23,8 @@ const dataRoot = path.join(process.cwd(), ".data");
 const rows = new Map<string, Record<string, unknown>>();
 const media = new Map<string, Uint8Array>();
 const rateCounts = new Map<string, number>();
+const mediaDownloads = vi.fn();
+const mediaUploads = vi.fn();
 let failNextMediaRemove = false;
 
 function rowKey(table: string, row: Record<string, unknown>): string {
@@ -85,11 +87,13 @@ function makeClient() {
     },
     storage: {
       from: () => ({
-        upload: async (key: string, bytes: Uint8Array) => {
+        upload: async (key: string, bytes: Uint8Array, options: unknown) => {
+          mediaUploads(key, options);
           media.set(key, new Uint8Array(bytes));
           return { error: null };
         },
-        download: async (key: string) => {
+        download: async (key: string, options: unknown, parameters: unknown) => {
+          mediaDownloads(key, options, parameters);
           const value = media.get(key);
           if (!value) return { data: null, error: { message: "Object not found" } };
           const buffer = new ArrayBuffer(value.byteLength);
@@ -118,6 +122,8 @@ beforeEach(() => {
   rows.clear();
   media.clear();
   rateCounts.clear();
+  mediaDownloads.mockClear();
+  mediaUploads.mockClear();
   failNextMediaRemove = false;
   supabaseMock.createClient.mockImplementation(() => makeClient());
   cookie.value = ownerA;
@@ -193,6 +199,25 @@ describe("workspace durable store", () => {
     expect(await store.allowRateLimit("frames", 1, 60)).toBe(true);
     store = await loadStore();
     expect(await store.allowRateLimit("frames", 1, 60)).toBe(false);
+  });
+
+  it("bypasses cached media on every read so deletion cannot return stale evidence", async () => {
+    vi.stubEnv("SUPABASE_URL", "https://example.supabase.co");
+    vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-only");
+    vi.stubEnv("STORAGE_BACKEND", "supabase");
+    const store = await loadStore();
+    await store.saveClip("s_cache", "clip", new Uint8Array([1]));
+    await store.saveFrame("s_cache", "frame", new Uint8Array([1]));
+    await store.readClip("s_cache", "clip");
+    await store.deleteClip("s_cache", "clip");
+    expect(await store.readClip("s_cache", "clip")).toBeUndefined();
+    const nonces = mediaDownloads.mock.calls.map(([, options, parameters]) => {
+      expect(parameters).toEqual({ cache: "no-store" });
+      expect(options.cacheNonce).toEqual(expect.any(String));
+      return options.cacheNonce;
+    });
+    expect(new Set(nonces).size).toBe(2);
+    for (const [, options] of mediaUploads.mock.calls) expect(options.cacheControl).toBe("0");
   });
 
   it("invalidates derived maps before retryable media cleanup and leaves old references until removal succeeds", async () => {

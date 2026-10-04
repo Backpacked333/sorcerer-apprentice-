@@ -1,4 +1,5 @@
 import { promises as fs } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import type { Invoice } from "./erp-model";
@@ -247,7 +248,7 @@ async function saveObject(kind: "frames" | "clips", sessionId: string, id: strin
   const workspace = await owner();
   const key = objectPath(workspace, sessionId, kind, id);
   if (backend() === "supabase") {
-    const { error } = await db().storage.from(SUPABASE_BUCKET).upload(key, bytes, { contentType, upsert: true });
+    const { error } = await db().storage.from(SUPABASE_BUCKET).upload(key, bytes, { contentType, upsert: true, cacheControl: "0" });
     if (error) throw error;
   } else {
     const extension = kind === "frames" ? "jpg" : "webm";
@@ -262,7 +263,8 @@ async function readObject(kind: "frames" | "clips", sessionId: string, id: strin
   const workspace = await owner();
   const key = objectPath(workspace, sessionId, kind, id, extension);
   if (backend() === "supabase") {
-    const { data, error } = await db().storage.from(SUPABASE_BUCKET).download(key);
+    // Storage CDN invalidation can lag deletion; withdrawn evidence must never use a cached object.
+    const { data, error } = await db().storage.from(SUPABASE_BUCKET).download(key, { cacheNonce: randomUUID() }, { cache: "no-store" });
     if (error) {
       if (error.message.toLowerCase().includes("not found")) return undefined;
       throw error;
@@ -299,7 +301,7 @@ export async function saveFrame(sessionId: string, frameId: string, bytes: Uint8
   const extension = contentType === "image/png" ? "png" : "jpg";
   const key = objectPath(workspace, sessionId, "frames", frameId, extension);
   if (backend() === "supabase") {
-    const { error } = await db().storage.from(SUPABASE_BUCKET).upload(key, bytes, { contentType, upsert: true });
+    const { error } = await db().storage.from(SUPABASE_BUCKET).upload(key, bytes, { contentType, upsert: true, cacheControl: "0" });
     if (error) throw error;
   } else {
     const file = localMediaPath(workspace, sessionId, "frames", frameId, extension);

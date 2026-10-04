@@ -9,6 +9,12 @@ Hack-Nation × ElevenLabs "AI Apprentice": three modules on one pipeline, one ar
 
 **Everything runs keyless.** The sandbox ERP reports its own events over a BroadcastChannel, the browser's speech synthesis and recognizer stand in for the voice agent, and the Work Map compiles deterministically. Add keys for the real thing: ElevenAgents for the interviewer and tutor voices, Scribe v2 Realtime for the transcript, a Vercel AI Gateway key for vision and the LLM compile pass.
 
+## Live deployment
+
+[Open Tacit](https://tacit-ai-apprentice.vercel.app).
+
+The deployed health endpoint reported Supabase configured and reachable, but voice and AI Gateway integrations are degraded/not configured. This deployment predates the storage CDN cache-bypass follow-up on `B/durable-vercel-product`; do not consider evidence-withdrawal caching resolved until that change is deployed and rechecked. Real-provider, browser/UI, voice/timing, and human acceptance remain unverified.
+
 ## Run it in two minutes
 
 ```bash

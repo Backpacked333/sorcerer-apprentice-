@@ -12,6 +12,7 @@ import { OntologyInspector } from "./OntologyInspector";
 import { SidebarToggle, useShell } from "./PlatformShell";
 import { fitBox, useCamera, type Box } from "./useCamera";
 import { AVATAR, EDGE_GRAD, KIND, PASTEL, PROV, hexA, initials, lastBeads, stepIndex } from "./meta";
+import { CANVAS_CSS } from "./meta";
 
 type Mode = "graph" | "schema";
 const WORLD = { w: 1800, h: 1180 };
@@ -400,7 +401,8 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
   const roleTitle = ont.roleTitle;
 
   return (
-    <div style={{ position: "absolute", inset: 0 }}>
+    <div data-pcanvas="" style={{ position: "absolute", inset: 0 }}>
+      <style>{CANVAS_CSS}</style>
       <div
         ref={viewRef}
         onPointerDown={cam.onPointerDown}
@@ -482,7 +484,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
         )
       ) : null}
 
-      <div data-panel="" style={{ position: "absolute", left: narrow ? 8 : 16, right: narrow ? 8 : inspW + 32, bottom: narrow ? 8 : 16 }}>
+      <div data-panel="" data-dock="" style={{ position: "absolute", left: narrow ? 8 : 16, right: narrow ? 8 : inspW + 32, bottom: narrow ? 8 : 16 }}>
         <Dock timeline={tl} ph={ph} counts={counts} playLabel="Watch it grow" before="Before the first capture" />
       </div>
     </div>

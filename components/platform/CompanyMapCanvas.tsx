@@ -12,6 +12,7 @@ import { SidebarToggle, useShell } from "./PlatformShell";
 import { SuggestCard } from "./SuggestCard";
 import { fitBox, useCamera, type Box } from "./useCamera";
 import { AVATAR, EDGE_GRAD, hexA, initials, PROV, stepIndex } from "./meta";
+import { CANVAS_CSS } from "./meta";
 
 type Lens = "knowledge" | "risk" | "handoffs";
 const WORLD = { w: 2000, h: 1300 };
@@ -357,7 +358,8 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
   const dockRight = inspDocked && data.roles.length ? inspW + 32 : 16;
 
   return (
-    <div style={{ position: "absolute", inset: 0 }}>
+    <div data-pcanvas="" style={{ position: "absolute", inset: 0 }}>
+      <style>{CANVAS_CSS}</style>
       <div
         ref={viewRef}
         onPointerDown={cam.onPointerDown}
@@ -454,7 +456,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
       ) : null}
 
       {/* dock */}
-      <div data-panel="" style={{ position: "absolute", left: narrow ? 8 : 16, right: narrow ? 8 : dockRight, bottom: narrow ? 8 : 16 }}>
+      <div data-panel="" data-dock="" style={{ position: "absolute", left: narrow ? 8 : 16, right: narrow ? 8 : dockRight, bottom: narrow ? 8 : 16 }}>
         <Dock timeline={tl} ph={ph} counts={counts} playLabel="Watch it grow" before="Before the first capture" />
       </div>
     </div>

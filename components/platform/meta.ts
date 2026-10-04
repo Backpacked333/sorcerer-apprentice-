@@ -102,3 +102,14 @@ export function hexA(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
   return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`;
 }
+
+/**
+ * Canvas pages: panels float over animated SVG (flow dashes, drifting halos). A backdrop-filter over animated
+ * content forces a re-blur every frame, which halves the frame rate on machines without GPU compositing, so the
+ * panels over a canvas use near-opaque glass instead (performance rule: backdrop-filter only on a few fixed panels).
+ */
+export const CANVAS_CSS = `
+[data-pcanvas] [data-panel],[data-pcanvas] [data-panel] *,[data-pcanvas] .glass-nav,[data-pcanvas] .glass-panel,[data-pcanvas] .glass-chip{-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+[data-pcanvas] .glass-nav,[data-pcanvas] .glass-chip,[data-pcanvas] .glass-panel{background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(255,255,255,.9))!important}
+[data-pcanvas] [data-dock]>div{background:linear-gradient(180deg,rgba(255,255,255,.97),rgba(255,255,255,.9))!important}
+`;

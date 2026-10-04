@@ -31,7 +31,7 @@ export function OntologyInspector({ ont, t, node, rule, onPickNode, onTrace, onC
         display: "flex",
         flexDirection: "column",
         borderRadius: 28,
-        background: "linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.68))",
+        background: "linear-gradient(180deg,rgba(255,255,255,.97),rgba(255,255,255,.9))",
         backdropFilter: "blur(28px) saturate(1.8)",
         WebkitBackdropFilter: "blur(28px) saturate(1.8)",
         boxShadow: "inset 0 1px 0 #fff,0 0 0 .5px rgba(0,0,0,.07),0 18px 50px rgba(15,23,42,.1)",

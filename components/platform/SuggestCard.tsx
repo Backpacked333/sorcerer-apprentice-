@@ -46,7 +46,7 @@ export function SuggestCard({ items, onFocusRole, defaultOpen = true }: { items:
         boxSizing: "border-box",
         padding: 14,
         borderRadius: 24,
-        background: "linear-gradient(180deg,rgba(255,255,255,.88),rgba(255,255,255,.66))",
+        background: "linear-gradient(180deg,rgba(255,255,255,.97),rgba(255,255,255,.9))",
         backdropFilter: "blur(24px) saturate(1.8)",
         WebkitBackdropFilter: "blur(24px) saturate(1.8)",
         boxShadow: "inset 0 1px 0 #fff,0 0 0 .5px rgba(0,0,0,.07),0 12px 34px rgba(15,23,42,.08)",

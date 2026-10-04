@@ -52,22 +52,6 @@ export interface TurnResult {
   abortReason?: "resumed" | "user" | "superseded" | "paused" | "disconnected" | "silent";
 }
 
-export function createTurnPromiseQueue() {
-  const resolvers: Array<(result: TurnResult) => void> = [];
-  return {
-    push() {
-      return new Promise<TurnResult>((resolve) => { resolvers.push(resolve); });
-    },
-    resolve(result: TurnResult) {
-      const resolve = resolvers.shift();
-      if (!resolve) return false;
-      resolve(result);
-      return true;
-    },
-    pending: () => resolvers.length,
-  };
-}
-
 export type TurnEvent =
   | { type: "SEND"; at: number; options: TurnOptions; agentConnected?: boolean; audioId?: string }
   | { type: "SPEAK_START"; at: number; source?: "agent" | "fallback" }
@@ -153,6 +137,13 @@ export function gateState({ turnActive, now, gateHoldUntil, micMuted, squelch }:
   return active || now < gateHoldUntil || !micMuted;
 }
 
+export function composedVoiceGateState(input: Omit<GateStateInput, "turnActive"> & { turnPhase: TurnPhase; legacyAuthorized: boolean }): boolean {
+  return gateState({
+    ...input,
+    turnActive: input.legacyAuthorized || input.turnPhase !== "idle",
+  });
+}
+
 export interface TurnTransition {
   state: TurnState;
   effects: TurnEffect[];
@@ -225,6 +216,9 @@ function immediateAbort(
     effects: [
       { type: "SQUELCH" },
       { type: "MUTE" },
+      ...(state.options?.recordClip && (state.phase === "listening" || state.phase === "closing")
+        ? ([{ type: "CLIP_STOP", upload: false, audioId: state.audioId }] satisfies TurnEffect[])
+        : []),
       ...(includeNote ? ([{ type: "SEND_CONTEXT", text: NOTE_CANCELLED }] satisfies TurnEffect[]) : []),
       { type: "RESOLVE", result },
     ],
@@ -383,6 +377,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
 
   if (event.type === "CANCEL") {
     const reason = event.reason ?? "user";
+    if (reason === "disconnected") return immediateAbort(state, event.at, reason);
     if (state.phase === "listening") {
       return enterClosing(state, { via: "aborted", heard: "", abortReason: reason, startedAt: event.at });
     }
@@ -435,7 +430,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
           spokenBy: event.source ?? state.spokenBy ?? "agent",
           speechEndCandidateAt: undefined,
         },
-        effects: [{ type: "OPEN_GATE" }],
+        effects: event.source === "fallback" ? [] : [{ type: "OPEN_GATE" }],
       };
     }
   }

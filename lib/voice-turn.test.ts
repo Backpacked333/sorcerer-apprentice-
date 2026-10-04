@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createTurnPromiseQueue,
   gateState,
+  composedVoiceGateState,
   initialTurnState,
   reduce,
   type TurnEffect,
@@ -10,32 +10,6 @@ import {
   type TurnOptions,
   type TurnState,
 } from "./voice-turn";
-
-describe("turn promise queue", () => {
-  it("resolves superseded turns in request order without settling the replacement", async () => {
-    const queue = createTurnPromiseQueue();
-    const first = queue.push();
-    const second = queue.push();
-    const aborted = {
-      spoke: false,
-      heard: "",
-      via: "aborted" as const,
-      askedAt: 10,
-      sentAt: 10,
-      closedAt: 11,
-      abortReason: "superseded" as const,
-    };
-
-    expect(queue.resolve(aborted)).toBe(true);
-    await expect(first).resolves.toEqual(aborted);
-    expect(queue.pending()).toBe(1);
-
-    let replacementSettled = false;
-    void second.then(() => { replacementSettled = true; });
-    await Promise.resolve();
-    expect(replacementSettled).toBe(false);
-  });
-});
 
 const options: TurnOptions = {
   tag: "ASK",
@@ -77,6 +51,16 @@ function finish(state: TurnState, at = 18) {
 }
 
 describe("gate", () => {
+  it("keeps legacy speech authorized after its estimated hold expires", () => {
+    expect(composedVoiceGateState({
+      turnPhase: "idle",
+      legacyAuthorized: true,
+      now: 20,
+      gateHoldUntil: 10,
+      micMuted: true,
+      squelch: false,
+    })).toBe(true);
+  });
   it("is closed at rest when the legacy microphone is muted", () => {
     expect(gateState({ turnActive: false, now: 10, gateHoldUntil: 0, micMuted: true, squelch: false })).toBe(false);
   });

@@ -7,12 +7,17 @@
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe, type ScribeCallbacks } from "@elevenlabs/react";
-import { createTurnPromiseQueue, gateState, initialTurnState, reduceTurn, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
+import { composedVoiceGateState, initialTurnState, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
+import { stopAndClearMediaStream, VoiceTurnAdapter } from "@/lib/voice-turn-adapter";
+export type { TurnOptions, TurnPhase, TurnResult } from "@/lib/voice-turn";
 import { AgentSpeechTimeline, type VoiceCommand } from "@/lib/voice-protocol";
 import {
   AgentSpeechTracker,
   buildVoiceHubScribeOptions,
   cleanupVoiceHubProvider,
+  createTurnHubSubscriber,
+  routeAgentAsrMessage,
+  routeWebSpeechResult,
   VoiceHubConnectionCoordinator,
   voiceHubConfigFingerprint,
   VoiceHubRouter,
@@ -46,6 +51,25 @@ export interface VoiceConnectOptions {
   dynamicVariables?: Record<string, string>;
   sessionStartMs?: number;
   keyterms?: string[];
+}
+
+export function buildAgentReconnectOptions(opts: VoiceConnectOptions = {}): VoiceConnectOptions {
+  const { firstMessage: _firstMessage, ...rest } = opts;
+  return rest;
+}
+
+export function shouldSuppressAgentSpeech({
+  configuredMode,
+  hasVoiceError,
+  sessionRequested,
+  status,
+}: {
+  configuredMode: VoiceApi["mode"];
+  hasVoiceError: boolean;
+  sessionRequested: boolean;
+  status: string;
+}): boolean {
+  return configuredMode === "agent" && !hasVoiceError && sessionRequested && status !== "connected";
 }
 
 export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOptions = {}) {
@@ -266,6 +290,15 @@ export function createSpeechAuthorizationLatch({
   };
 }
 
+export function startTaggedTurn(
+  legacyAuthorization: Pick<ReturnType<typeof createSpeechAuthorizationLatch>, "cancel">,
+  adapter: VoiceTurnAdapter,
+  options: TurnOptions,
+): Promise<TurnResult> {
+  legacyAuthorization.cancel();
+  return adapter.turn(options);
+}
+
 export function createConnectionLifecycle({
   onOutcome,
   endSession,
@@ -316,6 +349,65 @@ export function createConnectionLifecycle({
   const fail = (generation: number, reason: string) => settle(generation, { kind: "degraded", generation, reason }, true);
   const cancel = (generation: number) => settle(generation, { kind: "cancelled", generation }, true);
   return { start, connected, mode, fail, cancel, activeGeneration: () => attempt?.generation, activeAttempt: () => attempt ? { generation: attempt.generation, promise: attempt.promise } : undefined };
+}
+
+export type AgentReconnectDecision =
+  | { action: "stop" }
+  | { action: "retry"; attempt: number; delayMs: number }
+  | { action: "exhausted"; attempt: number };
+
+export function createAgentReconnectPolicy({
+  delaysMs = [750, 1_500],
+  stableAfterMs = 10_000,
+  schedule = (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+  cancelTimer = (timer) => globalThis.clearTimeout(timer as ReturnType<typeof globalThis.setTimeout>),
+}: {
+  delaysMs?: number[];
+  stableAfterMs?: number;
+  schedule?: (callback: () => void, delayMs: number) => unknown;
+  cancelTimer?: (timer: unknown) => void;
+} = {}) {
+  let attempts = 0;
+  let retryTimer: unknown;
+  let stableTimer: unknown;
+  const cancelRetry = () => {
+    if (retryTimer === undefined) return;
+    cancelTimer(retryTimer);
+    retryTimer = undefined;
+  };
+  const cancelStableReset = () => {
+    if (stableTimer === undefined) return;
+    cancelTimer(stableTimer);
+    stableTimer = undefined;
+  };
+  return {
+    handleDisconnect({ reason, requested, current, retry }: { reason: string; requested: boolean; current: boolean; retry: () => void }): AgentReconnectDecision {
+      if (reason !== "error" || !requested || !current) return { action: "stop" };
+      cancelRetry();
+      cancelStableReset();
+      if (attempts >= delaysMs.length) return { action: "exhausted", attempt: attempts };
+      const attempt = ++attempts;
+      const delayMs = delaysMs[attempt - 1];
+      retryTimer = schedule(() => {
+        retryTimer = undefined;
+        retry();
+      }, delayMs);
+      return { action: "retry", attempt, delayMs };
+    },
+    connected() {
+      cancelRetry();
+      cancelStableReset();
+      stableTimer = schedule(() => {
+        stableTimer = undefined;
+        attempts = 0;
+      }, stableAfterMs);
+    },
+    cancel() {
+      cancelRetry();
+      cancelStableReset();
+      attempts = 0;
+    },
+  };
 }
 
 export interface VoiceApi {
@@ -392,6 +484,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const [fallbackSpeaking, setFallbackSpeaking] = useState(false);
   const [fallbackConnected, setFallbackConnected] = useState(false);
   const [voiceError, setVoiceError] = useState<string>();
+  const [agentReconnecting, setAgentReconnecting] = useState(false);
   const [sttError, setSttError] = useState<string>();
   const [sessionRequested, setSessionRequested] = useState(false);
   const [, setTranscriberRevision] = useState(0);
@@ -403,13 +496,20 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const controls = useConversationControls();
   const conversationStatus = useConversationStatus();
   const conversationMode = useConversationMode();
+  const transportStatusRef = useRef<string>(conversationStatus.status);
   const micMutedRef = useRef(true);
   const gateHoldUntilRef = useRef(0);
-  const turnStateRef = useRef<TurnState>(initialTurnState);
-  const turnPromisesRef = useRef(createTurnPromiseQueue());
-  const turnSquelchedRef = useRef(false);
   const sessionStartRef = useRef<number | undefined>(undefined);
+  const sessionRequestedRef = useRef(false);
+  const lastHumanSpeechAtRef = useRef(Number.NEGATIVE_INFINITY);
   const turnDispatchRef = useRef<(event: TurnEvent) => void>(() => {});
+  const turnEffectRef = useRef<(effect: TurnEffect, generation: number) => void | Promise<void>>(() => {});
+  const turnConnectedRef = useRef(false);
+  const nowTurnRef = useRef(() => Date.now() / 1_000);
+  const turnAdapterRef = useRef<VoiceTurnAdapter | undefined>(undefined);
+  const turnCleanupRef = useRef<() => void>(() => {});
+  const degradedAgentFallbackRef = useRef(false);
+  const reconnectingRef = useRef(false);
   const clipRecorderRef = useRef<MediaRecorder | null>(null);
   const clipStreamRef = useRef<MediaStream | null>(null);
   const clipChunksRef = useRef<Blob[]>([]);
@@ -437,6 +537,19 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const fatalScribeRef = useRef<(reason: string) => void>(() => {});
   const scribeDisconnectRef = useRef<() => void>(() => {});
   const reconcileRef = useRef<() => void>(() => {});
+  sessionRequestedRef.current = sessionRequested;
+  if (!turnAdapterRef.current) turnAdapterRef.current = new VoiceTurnAdapter({
+    now: () => nowTurnRef.current(),
+    agentConnected: () => turnConnectedRef.current,
+    applyEffect: (effect, generation) => turnEffectRef.current(effect, generation),
+    onState: (state) => { if (mountedRef.current) setTurnState(state); },
+    onPhase: (phase) => {
+      if (mountedRef.current) setTranscriberRevision((revision) => revision + 1);
+      emitRef.current("turn", "phase", { phase });
+    },
+    onError: (error) => emitRef.current("turn", "effect_error", error instanceof Error ? error.message : String(error)),
+  });
+  turnDispatchRef.current = (event) => turnAdapterRef.current!.dispatch(event);
   const authorization = useRef<ReturnType<typeof createSpeechAuthorizationLatch> | undefined>(undefined);
   if (!authorization.current) authorization.current = createSpeechAuthorizationLatch({
     onChange: () => gateChangedRef.current(),
@@ -452,8 +565,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     onOutcome: (outcome) => outcomeHandler.current(outcome),
     endSession: controls.endSession,
   });
+  const reconnectPolicy = useRef<ReturnType<typeof createAgentReconnectPolicy> | undefined>(undefined);
+  if (!reconnectPolicy.current) reconnectPolicy.current = createAgentReconnectPolicy();
+  const connectAgentRef = useRef<(opts: VoiceConnectOptions | undefined, reconnecting: boolean) => Promise<void>>(async () => {});
   const lastVadEventAt = useRef(0);
-  const speakFallbackRef = useRef<(text: string) => Promise<void>>(async () => {});
+  const speakFallbackRef = useRef<(text: string, lifecycle?: { onStart?: () => void; onEnd?: () => void; isCancelled?: () => boolean }) => Promise<void>>(async () => {});
   const emit = useCallback((src: VoiceDebugEvent["src"], type: string, data?: unknown) => {
     onDebugEvent?.({ at: Date.now(), src, type, ...(data === undefined ? {} : { data }) });
   }, [onDebugEvent]);
@@ -467,15 +583,17 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     const until = Date.now() + (2 + 0.45 * words) * 1000;
     expectedSpeechTextRef.current = text;
+    turnAdapterRef.current!.authorizeLegacy();
     authorization.current!.authorize();
     extendGateHold(until);
   }, [extendGateHold]);
-  const gateIsOpenAt = useCallback((now: number) => gateState({
-    turnActive: turnStateRef.current.phase,
+  const gateIsOpenAt = useCallback((now: number) => composedVoiceGateState({
+    turnPhase: turnAdapterRef.current!.snapshot().phase,
+    legacyAuthorized: authorization.current!.snapshot().authorized,
     now,
     gateHoldUntil: gateHoldUntilRef.current,
     micMuted: micMutedRef.current,
-    squelch: turnSquelchedRef.current || authorization.current!.snapshot().timeoutSquelched,
+    squelch: turnAdapterRef.current!.isSquelched() || authorization.current!.snapshot().timeoutSquelched,
   }), []);
   const reassertGate = useCallback((now = Date.now()) => {
     applyConversationGate(controls, gateIsOpenAt(now));
@@ -496,8 +614,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     const authorizedBefore = authorization.current!.snapshot().authorized;
     const { rising } = authorization.current!.onMode(data.mode);
     speechTrackerRef.current!.onMode(data.mode, now / 1_000, expectedSpeechTextRef.current);
-    const at = sessionStartRef.current === undefined ? now / 1_000 : (now - sessionStartRef.current) / 1_000;
-    turnDispatchRef.current(data.mode === "speaking" ? { type: "SPEAK_START", at, source: "agent" } : { type: "SPEAK_END", at });
+    const at = nowTurnRef.current();
+    const turnSnapshot = turnAdapterRef.current!.snapshot();
+    const lateAgentWhileFallback = turnAdapterRef.current!.isSquelched() && turnSnapshot.spokenBy === "fallback";
+    if (!lateAgentWhileFallback) turnDispatchRef.current(data.mode === "speaking" ? { type: "SPEAK_START", at, source: "agent" } : { type: "SPEAK_END", at });
     const authorized = authorizedBefore || authorization.current!.snapshot().authorized;
     emit("agent", "mode", data);
     reassertGate(now);
@@ -539,6 +659,8 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const activateFallback = useCallback((reason: string, generation?: number) => {
     if (generation !== undefined && establishedGeneration.current !== generation) return;
     establishedGeneration.current = undefined;
+    reconnectingRef.current = false;
+    setAgentReconnecting(false);
     setVoiceError(reason);
     setFallbackConnected(true);
     emit("agent", "degraded", { reason });
@@ -549,7 +671,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       const firstMessage = firstMessages.current.get(outcome.generation);
       firstMessages.current.delete(outcome.generation);
       if (outcome.kind === "connected") {
+        reconnectPolicy.current!.connected();
         establishedGeneration.current = outcome.generation;
+        reconnectingRef.current = false;
+        setAgentReconnecting(false);
         window.speechSynthesis?.cancel();
         setFallbackConnected(false);
         setVoiceError(undefined);
@@ -579,11 +704,16 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       gateHoldUntilRef.current = 0;
       setGateHoldUntil(0);
       applyConversationGate(controls, false);
-      turnDispatchRef.current({ type: "CANCEL", at: sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000, reason: "disconnected" });
+      if (!degradedAgentFallbackRef.current) turnAdapterRef.current!.disconnect();
+      stopAndClearMediaStream(clipStreamRef);
       emit("agent", "disconnect", details);
     },
     onError: (message, context) => emit("agent", "error", { message, context }),
-    onStatusChange: (data) => emit("agent", "status", data),
+    onStatusChange: (data) => {
+      transportStatusRef.current = data.status;
+      turnConnectedRef.current = configuredMode === "agent" && !voiceError && data.status === "connected";
+      emit("agent", "status", data);
+    },
     onModeChange: handleAgentMode,
     onMessage: (m) => {
       if (m.role === "agent") {
@@ -591,7 +721,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         speechTrackerRef.current!.refine(m.message);
       }
       if (m.role === "user" && !m.message.trimStart().startsWith("[")) {
-        turnDispatchRef.current({ type: "HUMAN_COMMIT", at: sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000, text: m.message, source: "agent_asr" });
+        const routed = routeAgentAsrMessage({ text: m.message, atMs: Date.now(), timeline: timelineRef.current!, sessionStartMs: sessionStartRef.current });
+        if (routed.human) {
+          lastHumanSpeechAtRef.current = Math.max(lastHumanSpeechAtRef.current, routed.at);
+          if (turnAdapterRef.current!.snapshot().phase !== "idle") turnDispatchRef.current({ type: "HUMAN_COMMIT", at: routed.at, text: routed.text, source: "agent_asr" });
+        }
       }
       setMessages((xs) => [...xs, { role: m.role === "agent" ? "agent" : "user", text: m.message, t: Date.now() }]);
       emit("agent", "message", m);
@@ -623,6 +757,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       setTranscriberRevision((revision) => revision + 1);
     };
   }, []);
+  useEffect(() => hubRef.current!.subscribe("__voice_turn__", () => createTurnHubSubscriber({
+    sessionActive: sessionRequestedRef.current,
+    turnActive: turnAdapterRef.current!.snapshot().phase !== "idle",
+    now: () => nowTurnRef.current(),
+    dispatch: (event) => turnDispatchRef.current(event),
+    noteHumanSpeech: (at) => { lastHumanSpeechAtRef.current = Math.max(lastHumanSpeechAtRef.current, at); },
+  })), []);
   const refreshTranscribers = useCallback(() => setTranscriberRevision((revision) => revision + 1), []);
   const sttForcedOff = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("stt") === "off";
   const transcriberDemanded = hubRef.current.shouldConnect({ sessionActive: sessionRequested, forcedOff: sttForcedOff });
@@ -651,7 +792,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         if (!mountedRef.current) return;
         const routed = hubRef.current!.partial(text, Date.now());
         emitRef.current("scribe", "partial", { text, attribution: routed.human ? "human" : "agent" });
-        if (routed.human && routed.text) turnDispatchRef.current({ type: "HUMAN_PARTIAL", at: sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000, text: routed.text });
         if (routed.changed) setTranscriberState((state) => ({ ...state, partial: routed.text }));
       },
       onCommittedTranscript: ({ text }) => {
@@ -659,9 +799,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         const routed = hubRef.current!.commit(text, Date.now());
         setTranscriberState((state) => ({ ...state, partial: "" }));
         emitRef.current("scribe", "commit", { text, speaker: routed.speaker, humanText: routed.text, command: routed.command });
-        const at = sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000;
-        if (routed.command === "off_record" || routed.command === "not_now") turnDispatchRef.current({ type: "COMMAND", at, command: routed.command });
-        else if (routed.speaker !== "agent" && routed.text) turnDispatchRef.current({ type: "HUMAN_COMMIT", at, text: routed.text, source: "scribe" });
       },
       onSessionStarted: () => {
         if (!mountedRef.current) return;
@@ -706,6 +843,8 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         clearRecognizer: () => { recognizer.current = null; },
         disconnectScribe: () => scribeDisconnectRef.current(),
       });
+      turnCleanupRef.current();
+      reconnectPolicy.current!.cancel();
     };
   }, []);
   const scribe = useScribe(scribeCallbacks);
@@ -779,17 +918,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
           const text = result[0].transcript.trim();
           if (!text) continue;
           if (result.isFinal) {
-            const routed = hubRef.current!.commit(text, Date.now());
+            const { routed } = routeWebSpeechResult(hubRef.current!, { text, isFinal: true, atMs: Date.now() });
             setTranscriberState((state) => ({ ...state, partial: "" }));
             emitRef.current("scribe", "commit", { text, engine: "webspeech", speaker: routed.speaker, humanText: routed.text, command: routed.command });
-            const at = sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000;
-            if (routed.command === "off_record" || routed.command === "not_now") turnDispatchRef.current({ type: "COMMAND", at, command: routed.command });
-            else if (routed.speaker !== "agent" && routed.text) turnDispatchRef.current({ type: "HUMAN_COMMIT", at, text: routed.text, source: "scribe" });
           } else {
-            const routed = hubRef.current!.partial(text, Date.now());
+            const { routed } = routeWebSpeechResult(hubRef.current!, { text, isFinal: false, atMs: Date.now() });
             if (routed.changed) setTranscriberState((state) => ({ ...state, partial: routed.text }));
             emitRef.current("scribe", "partial", { text, engine: "webspeech", attribution: routed.human ? "human" : "agent" });
-            if (routed.human && routed.text) turnDispatchRef.current({ type: "HUMAN_PARTIAL", at: sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000, text: routed.text });
           }
         }
       };
@@ -870,7 +1005,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   useEffect(() => {
     if (conversationStatus.status !== "connected") return;
     const timer = window.setInterval(() => {
-      if (authorization.current!.snapshot().heartbeatAllowed) noteUserActivity();
+      if (authorization.current!.snapshot().heartbeatAllowed && turnAdapterRef.current!.snapshot().phase === "idle") noteUserActivity();
     }, 10_000);
     return () => window.clearInterval(timer);
   }, [conversationStatus.status, noteUserActivity]);
@@ -879,10 +1014,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const handle = (name: ToolName) => async (params: Record<string, unknown>) => {
     emit("tool", "dispatch", { name, params });
     const fn = tools.current[name];
-    const activeTurn = turnStateRef.current.phase !== "idle";
+    const activeTurn = turnAdapterRef.current!.snapshot().phase !== "idle";
+    const turnGeneration = turnAdapterRef.current!.currentGeneration();
     if (!fn && !activeTurn) return `no handler for ${name}`;
-    const out = await fn?.(params ?? {});
-    turnDispatchRef.current({ type: "TOOL", at: sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000, name, params: params ?? {} });
+    let out: string | void;
+    try { out = await fn?.(params ?? {}); }
+    finally { turnAdapterRef.current!.dispatchForGeneration(turnGeneration, { type: "TOOL", at: nowTurnRef.current(), name, params: params ?? {} }); }
     return out ?? "ok";
   };
   useConversationClientTool("log_answer", handle("log_answer"));
@@ -895,27 +1032,30 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   useConversationClientTool("record_mastery", handle("record_mastery"));
   useConversationClientTool("end_session", handle("end_session"));
 
-  const speakFallback = useCallback((text: string) => new Promise<void>((resolve) => {
+  const speakFallback = useCallback((text: string, lifecycle?: { onStart?: () => void; onEnd?: () => void; isCancelled?: () => boolean }) => new Promise<void>((resolve) => {
     setMessages((xs) => [...xs, { role: "agent", text, t: Date.now() }]);
     let intervalId: string | undefined;
     let started = false;
     let finished = false;
     const start = () => {
-      if (started || finished) return;
+      if (started || finished || lifecycle?.isCancelled?.()) return;
       started = true;
       intervalId = timelineRef.current!.start(Date.now() / 1_000, text, "fallback");
       setFallbackSpeaking(true);
+      lifecycle?.onStart?.();
     };
     const finish = () => {
       if (finished) return;
       finished = true;
       if (intervalId) timelineRef.current!.end(Date.now() / 1_000, intervalId);
       setFallbackSpeaking(false);
+      if (started) lifecycle?.onEnd?.();
       resolve();
     };
     // text-only fallback when the browser cannot speak: pretend to talk for as long as the words would take
     const simulate = () => {
       if (finished) return;
+      if (lifecycle?.isCancelled?.()) return finish();
       start();
       window.setTimeout(finish, Math.min(12000, 600 + text.split(/\s+/).length * 330));
     };
@@ -938,7 +1078,9 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }), []);
   speakFallbackRef.current = speakFallback;
 
-  const nowTurn = useCallback(() => sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000, []);
+  const nowTurn = useCallback(() => sessionStartRef.current === undefined ? Date.now() / 1_000 : Math.max(0, (Date.now() - sessionStartRef.current) / 1_000), []);
+  nowTurnRef.current = nowTurn;
+  turnConnectedRef.current = configuredMode === "agent" && !voiceError && transportStatusRef.current === "connected";
   const stopClip = useCallback(async (upload: boolean, audioId?: string) => {
     const recorder = clipRecorderRef.current;
     clipRecorderRef.current = null;
@@ -954,12 +1096,19 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     form.append("file", blob, `${audioId}.webm`);
     await fetch(`/api/sessions/${sessionId}/clips`, { method: "POST", body: form }).catch(() => undefined);
   }, []);
+  turnCleanupRef.current = () => {
+    turnAdapterRef.current!.disconnect();
+    void stopClip(false);
+    stopAndClearMediaStream(clipStreamRef);
+  };
 
-  const runTurnEffects = useCallback(async (effects: TurnEffect[]) => {
-    for (const effect of effects) {
+  const runTurnEffect = useCallback(async (effect: TurnEffect, generation: number) => {
       emitRef.current("turn", effect.type.toLowerCase(), effect);
-      if (effect.type === "OPEN_GATE") { turnSquelchedRef.current = false; reassertGate(); }
-      else if (effect.type === "SQUELCH") { turnSquelchedRef.current = true; applyConversationGate(controls, false); }
+      if (effect.type === "OPEN_GATE") reassertGate();
+      else if (effect.type === "SQUELCH") {
+        window.speechSynthesis?.cancel();
+        applyConversationGate(controls, false);
+      }
       else if (effect.type === "MUTE" || effect.type === "UNMUTE") {
         const muted = effect.type === "MUTE";
         micMutedRef.current = muted;
@@ -968,61 +1117,76 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       } else if (effect.type === "SEND_TAG") {
         setMessages((items) => [...items, { role: "user", text: `[${effect.tag}] ${effect.text}`, t: Date.now() }]);
         try { controls.sendUserMessage(`[${effect.tag}] ${effect.text}`); }
-        catch { turnDispatchRef.current({ type: "TICK", at: nowTurn() + 999 }); }
+        catch { turnAdapterRef.current!.dispatchForGeneration(generation, { type: "TICK", at: nowTurn() + (turnAdapterRef.current!.snapshot().options?.watchdogSecs ?? 4) }); }
       } else if (effect.type === "SEND_CONTEXT") {
         try { controls.sendContextualUpdate(effect.text); } catch { /* disconnected */ }
       } else if (effect.type === "FALLBACK_SPEAK") {
-        const at = nowTurn();
-        turnDispatchRef.current({ type: "SPEAK_START", at, source: "fallback" });
-        void speakFallbackRef.current(effect.text).finally(() => turnDispatchRef.current({ type: "SPEAK_END", at: nowTurn() }));
+        if (configuredMode === "agent") {
+          degradedAgentFallbackRef.current = true;
+          setVoiceError("Agent stayed silent; browser speech fallback is active.");
+          setFallbackConnected(true);
+          try { controls.endSession(); } catch { /* the SDK may already be disconnected */ }
+        }
+        void speakFallbackRef.current(effect.text, {
+          isCancelled: () => generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase === "idle" || Boolean(turnAdapterRef.current!.snapshot().waitingForSquelch),
+          onStart: () => { turnAdapterRef.current!.dispatchForGeneration(generation, { type: "SPEAK_START", at: nowTurn(), source: "fallback" }); },
+          onEnd: () => { turnAdapterRef.current!.dispatchForGeneration(generation, { type: "SPEAK_END", at: nowTurn() }); },
+        });
       } else if (effect.type === "CLIP_START") {
         try {
-          clipStreamRef.current ??= await navigator.mediaDevices.getUserMedia({ audio: localStorage.getItem("tacit.micDeviceId") ? { deviceId: { exact: localStorage.getItem("tacit.micDeviceId")! } } : true });
+          let stream = clipStreamRef.current;
+          if (!stream) {
+            const acquired = await navigator.mediaDevices.getUserMedia({ audio: localStorage.getItem("tacit.micDeviceId") ? { deviceId: { exact: localStorage.getItem("tacit.micDeviceId")! } } : true });
+            if (generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase !== "listening") {
+              acquired.getTracks().forEach((track) => track.stop());
+              return;
+            }
+            stream = acquired;
+            clipStreamRef.current = acquired;
+          }
+          if (generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase !== "listening") return;
           clipChunksRef.current = [];
           clipSessionRef.current = effect.sessionId;
-          const recorder = new MediaRecorder(clipStreamRef.current, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
+          const recorder = new MediaRecorder(stream, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
           recorder.ondataavailable = (event) => { if (event.data.size) clipChunksRef.current.push(event.data); };
           recorder.start(250);
           clipRecorderRef.current = recorder;
         } catch { clipRecorderRef.current = null; }
       } else if (effect.type === "CLIP_STOP") await stopClip(effect.upload, effect.audioId);
-      else if (effect.type === "RESOLVE") turnPromisesRef.current.resolve(effect.result);
-    }
-  }, [controls, nowTurn, reassertGate, stopClip]);
-
-  const dispatchTurn = useCallback((event: TurnEvent) => {
-    const previous = turnStateRef.current;
-    const transition = reduceTurn(previous, event);
-    turnStateRef.current = transition.state;
-    setTurnState(transition.state);
-    if (previous.phase !== transition.state.phase) (transition.state.options ?? previous.options)?.onPhase?.(transition.state.phase, event.at);
-    void runTurnEffects(transition.effects);
-  }, [runTurnEffects]);
-  turnDispatchRef.current = dispatchTurn;
+      else if (effect.type === "RESOLVE") reassertGate();
+  }, [configuredMode, controls, nowTurn, reassertGate, stopClip]);
+  turnEffectRef.current = runTurnEffect;
 
   useEffect(() => {
     if (turnState.phase === "idle") return;
-    const timer = window.setInterval(() => turnDispatchRef.current({ type: "TICK", at: nowTurn() }), 100);
+    const timer = window.setInterval(() => turnAdapterRef.current!.tick(), 100);
     return () => window.clearInterval(timer);
   }, [nowTurn, turnState.phase]);
 
   const turn = useCallback<VoiceApi["turn"]>((opts) => {
-    const promise = turnPromisesRef.current.push();
-    const connected = configuredMode === "agent" && !voiceError && conversationStatus.status === "connected";
-    dispatchTurn({ type: "SEND", at: nowTurn(), options: opts, agentConnected: connected, ...(opts.recordClip ? { audioId: `clip_${Date.now().toString(36)}` } : {}) });
-    return promise;
-  }, [configuredMode, conversationStatus.status, dispatchTurn, nowTurn, voiceError]);
-  const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => dispatchTurn({ type: "CANCEL", at: nowTurn(), ...(reason ? { reason } : {}) }), [dispatchTurn, nowTurn]);
-  const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => dispatchTurn({ type: "TYPED", at: nowTurn(), text }), [dispatchTurn, nowTurn]);
-  const setSessionStart = useCallback((epochMs: number) => { sessionStartRef.current = epochMs; hubRef.current!.setSessionStart(epochMs); }, []);
+    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, opts);
+  }, []);
+  const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
+  const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => turnAdapterRef.current!.submitTyped(text), []);
+  const setSessionStart = useCallback((epochMs: number) => {
+    sessionStartRef.current = epochMs;
+    lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
+    hubRef.current!.setSessionStart(epochMs);
+  }, []);
 
-  const connect = useCallback<VoiceApi["connect"]>(
-    async (opts) => {
-      hubRef.current!.setSessionStart(opts?.sessionStartMs);
-      sessionStartRef.current = opts?.sessionStartMs;
-      scribeKeytermsRef.current = opts?.keyterms;
-      setTranscriberRevision((revision) => revision + 1);
-      setSessionRequested(true);
+  const connectAgent = useCallback(
+    async (opts: VoiceConnectOptions | undefined, reconnecting: boolean) => {
+      degradedAgentFallbackRef.current = false;
+      if (!reconnecting) {
+        reconnectPolicy.current!.cancel();
+        lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
+        hubRef.current!.setSessionStart(opts?.sessionStartMs);
+        sessionStartRef.current = opts?.sessionStartMs;
+        scribeKeytermsRef.current = opts?.keyterms;
+        setTranscriberRevision((revision) => revision + 1);
+        sessionRequestedRef.current = true;
+        setSessionRequested(true);
+      }
       if (configuredMode === "fallback") {
         setFallbackConnected(true);
         setVoiceError(undefined);
@@ -1038,7 +1202,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         await active.promise;
         return;
       }
-      if (conversationStatus.status === "connected") return;
+      if (transportStatusRef.current === "connected") return;
       setVoiceError(undefined);
       const attempt = lifecycle.current!.start(Boolean(opts?.firstMessage));
       if (attempt.isNew) {
@@ -1049,6 +1213,34 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
             controls.endSession();
             activateFallback(reason, attempt.generation);
           }
+        };
+        let retryScheduledForAttempt = false;
+        const recover = (reason: string) => {
+          if (retryScheduledForAttempt) return true;
+          const decision = reconnectPolicy.current!.handleDisconnect({
+            reason: "error",
+            requested: sessionRequestedRef.current,
+            current: reconnectingRef.current || establishedGeneration.current === attempt.generation,
+            retry: () => {
+              emit("agent", "reconnect_attempt", { previousGeneration: attempt.generation });
+              void connectAgentRef.current(buildAgentReconnectOptions(opts), true);
+            },
+          });
+          if (decision.action === "retry") {
+            retryScheduledForAttempt = true;
+            establishedGeneration.current = undefined;
+            reconnectingRef.current = true;
+            setAgentReconnecting(true);
+            emit("agent", "reconnect_scheduled", { ...decision, reason });
+            const pendingGeneration = lifecycle.current!.activeGeneration();
+            if (pendingGeneration === attempt.generation) lifecycle.current!.cancel(attempt.generation);
+            return true;
+          }
+          if (decision.action === "exhausted") {
+            fail(`${reason}; reconnect attempts exhausted.`);
+            return true;
+          }
+          return false;
         };
         try {
           const inputDeviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
@@ -1063,20 +1255,37 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
               lifecycle.current!.connected(attempt.generation);
             },
             onModeChange: ({ mode }) => lifecycle.current!.mode(attempt.generation, mode),
-            onError: (message) => fail(message),
-            onDisconnect: (details) => fail(`Agent disconnected (${details.reason}).`),
+            onError: (message) => {
+              if (!reconnectingRef.current || !recover(message)) fail(message);
+            },
+            onDisconnect: (details) => {
+              if (retryScheduledForAttempt) return;
+              const reason = `Agent disconnected (${details.reason})`;
+              if (details.reason === "error" && recover(reason)) return;
+              fail(`${reason}.`);
+            },
           });
         } catch (error) {
-          fail(error instanceof Error ? error.message : String(error));
+          const reason = error instanceof Error ? error.message : String(error);
+          if (!reconnectingRef.current || !recover(reason)) fail(reason);
         }
       }
       await attempt.promise;
     },
-    [activateFallback, agentId, authorizeSpeech, configuredMode, controls, conversationStatus.status, reassertGate, speakFallback],
+    [activateFallback, agentId, authorizeSpeech, configuredMode, controls, reassertGate, speakFallback],
   );
+  connectAgentRef.current = connectAgent;
+  const connect = useCallback<VoiceApi["connect"]>((opts) => connectAgent(opts, false), [connectAgent]);
 
   const disconnect = useCallback(() => {
-    turnDispatchRef.current({ type: "CANCEL", at: nowTurn(), reason: "disconnected" });
+    reconnectPolicy.current!.cancel();
+    reconnectingRef.current = false;
+    setAgentReconnecting(false);
+    turnAdapterRef.current!.disconnect();
+    degradedAgentFallbackRef.current = false;
+    void stopClip(false);
+    stopAndClearMediaStream(clipStreamRef);
+    sessionRequestedRef.current = false;
     setSessionRequested(false);
     hubRef.current!.setSessionStart(undefined);
     scribeKeytermsRef.current = undefined;
@@ -1101,14 +1310,23 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       establishedGeneration.current = undefined;
       controls.endSession();
     }
-  }, [configuredMode, controls, nowTurn]);
+  }, [configuredMode, controls, stopClip]);
 
   const say = useCallback<VoiceApi["say"]>(
     (tag, text, spoken) => {
       const line = spoken ?? text;
+      if (shouldSuppressAgentSpeech({
+        configuredMode,
+        hasVoiceError: Boolean(voiceError),
+        sessionRequested: sessionRequestedRef.current,
+        status: transportStatusRef.current,
+      })) {
+        emit("agent", "message_suppressed_reconnecting", { tag, reconnecting: reconnectingRef.current });
+        return;
+      }
       authorizeSpeech(line);
       reassertGate();
-      if (configuredMode === "fallback" || voiceError || conversationStatus.status !== "connected") {
+      if (configuredMode === "fallback" || voiceError || transportStatusRef.current !== "connected") {
         void speakFallback(line).finally(() => authorization.current!.finish());
         return;
       }
@@ -1121,7 +1339,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         void speakFallback(line).finally(() => authorization.current!.finish());
       }
     },
-    [activateFallback, authorizeSpeech, configuredMode, controls, conversationStatus.status, reassertGate, voiceError, speakFallback],
+    [activateFallback, authorizeSpeech, configuredMode, controls, emit, reassertGate, voiceError, speakFallback],
   );
 
   const setMicMuted = useCallback(
@@ -1135,7 +1353,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const sendContext = useCallback(
     (text: string) => {
-      if (configuredMode === "agent" && !voiceError && conversationStatus.status === "connected") {
+      if (configuredMode === "agent" && !voiceError && transportStatusRef.current === "connected") {
         try {
           controls.sendContextualUpdate(text);
         } catch (error) {
@@ -1144,7 +1362,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         }
       }
     },
-    [activateFallback, configuredMode, controls, conversationStatus.status, voiceError],
+    [activateFallback, configuredMode, controls, voiceError],
   );
 
   const getId = useCallback(() => {
@@ -1159,12 +1377,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const mode: VoiceApi["mode"] = configuredMode === "agent" && !voiceError ? "agent" : "fallback";
   const degraded = Boolean(voiceError || sttError);
   const lastError = voiceError ?? sttError;
-  const gateOpen = gateState({
-    turnActive: turnState.phase,
+  const gateOpen = composedVoiceGateState({
+    turnPhase: turnState.phase,
+    legacyAuthorized: authorization.current.snapshot().authorized,
     now: Date.now(),
     gateHoldUntil,
     micMuted,
-    squelch: turnSquelchedRef.current || authorization.current.snapshot().timeoutSquelched,
+    squelch: turnAdapterRef.current!.isSquelched() || authorization.current.snapshot().timeoutSquelched,
   });
 
   useEffect(() => {
@@ -1176,7 +1395,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     () => ({
       mode,
       connected: mode === "fallback" ? fallbackConnected : conversationStatus.status === "connected",
-      status: mode === "fallback" ? (fallbackConnected ? "fallback: browser speech" : "fallback: off") : conversationStatus.message ? `error: ${conversationStatus.message}` : conversationStatus.status,
+      status: mode === "fallback" ? (fallbackConnected ? "fallback: browser speech" : "fallback: off") : agentReconnecting ? "reconnecting: ElevenAgents" : conversationStatus.message ? `error: ${conversationStatus.message}` : conversationStatus.status,
       isSpeaking: mode === "fallback" ? fallbackSpeaking : conversationMode.isSpeaking,
       micMuted,
       messages,
@@ -1194,12 +1413,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       cancelTurn,
       submitTyped,
       setSessionStart,
-      lastHumanSpeechAt: () => turnStateRef.current.lastHumanSpeechAt,
+      lastHumanSpeechAt: () => lastHumanSpeechAtRef.current,
       turnPhase: turnState.phase,
       partial: turnState.partial,
       stt: { engine: transcriberState.engine, connected: transcriberState.connected },
     }),
-    [mode, fallbackConnected, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity, turn, cancelTurn, submitTyped, setSessionStart, turnState.phase, turnState.partial, transcriberState.engine, transcriberState.connected],
+    [mode, fallbackConnected, agentReconnecting, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity, turn, cancelTurn, submitTyped, setSessionStart, turnState.phase, turnState.partial, transcriberState.engine, transcriberState.connected],
   );
   const transcriberHub = useMemo<TranscriberHubValue>(() => ({
     ...transcriberState,

@@ -59,7 +59,11 @@ export function classifyEvent(e: ScreenEvent, ctx: CuriosityContext): { cls: Eve
     // an edit of a value that was already filled in (the system default) is the strongest judgment signal
     return { cls: "edit_prefilled", value: e.from && e.from !== "" ? 0.9 : 0.7 };
   }
-  if (e.kind === "status_changed" && (e.to === "hold" || e.to === "rejected")) return { cls: "hold_or_reroute", value: 0.9 };
+  if (
+    e.kind === "status_changed"
+    && (["hold", "on hold", "rejected"].includes(normalized(e.to))
+      || (["hold", "on hold"].includes(normalized(e.from)) && ["active", "open"].includes(normalized(e.to))))
+  ) return { cls: "hold_or_reroute", value: 0.9 };
   if (e.kind === "route_changed") return { cls: "hold_or_reroute", value: 0.85 };
   if (e.kind === "invoice_opened" && e.state) {
     const supplier = e.state.supplier ?? "";
@@ -83,30 +87,70 @@ export function observe(e: ScreenEvent, ctx: CuriosityContext) {
 
 const money = (n: number) => "€" + Math.round(n).toLocaleString("en-IE");
 
+const normalized = (value?: string) => (value ?? "").trim().toLowerCase().replace(/[_-]+/g, " ").replace(/\s+/g, " ");
+
+function invoiceRef(invoice?: string): string {
+  if (!invoice) return "that invoice";
+  if (/^(?:invoice\b|inv[-\s])/i.test(invoice)) return invoice;
+  return `invoice ${invoice}`;
+}
+
+function humanField(field?: string): string {
+  return labelField(field)
+    .replace(/([a-z\d])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function fieldChangeWhy(e: ScreenEvent, inv: string): string {
+  const from = e.from ?? "empty";
+  const to = e.to ?? "empty";
+  if (humanField(e.field) === "cost center") return `You re-coded ${inv} from ${from} to ${to}. What made you choose ${to}?`;
+  return `You updated the ${humanField(e.field)} on ${inv} from ${from} to ${to}. What drove that change?`;
+}
+
+function statusChangeWhy(e: ScreenEvent, inv: string): string {
+  const from = normalized(e.from);
+  const to = normalized(e.to);
+  if ((from === "hold" || from === "on hold") && (to === "active" || to === "open")) return `You took ${inv} off hold. What changed?`;
+  if (to === "hold" || to === "on hold") return `You put ${inv} on hold. What made you pause it?`;
+  if (to === "rejected") return `You rejected ${inv}. What prompted that?`;
+  return `You moved ${inv} from ${e.from ?? "open"} to ${e.to ?? "a new status"}. What prompted that?`;
+}
+
+function routeChangeWhy(e: ScreenEvent, inv: string): string {
+  const to = normalized(e.to);
+  if (to === "second approval") return `You sent ${inv} for a second approval. What prompted that?`;
+  if (to === "single" || to === "single approval") return `You switched ${inv} to a single approval. What prompted that?`;
+  return `You rerouted ${inv} to ${to || "a different approval path"}. What prompted that?`;
+}
+
 export function templates(e: ScreenEvent): Partial<Record<CandidateKind, string>> {
-  const inv = e.invoice ? `invoice ${e.invoice}` : "that invoice";
-  const field = labelField(e.field);
+  const inv = invoiceRef(e.invoice);
+  const field = humanField(e.field);
   const amount = e.state?.amount;
   const to = e.to ?? "";
   switch (e.kind) {
     case "field_changed":
       return {
-        why: `You moved ${inv} from ${e.from ?? "empty"} to ${e.to} on the ${field}. What made you do that?`,
-        counterfactual: amount ? `If ${inv} had been ${money(amount * 0.63)} instead of ${money(amount)}, would you still have put it on ${to}?` : `If this had come from a different supplier, would you still have put it on ${to}?`,
+        why: fieldChangeWhy(e, inv),
+        counterfactual: amount ? `If ${inv} had been ${money(amount * 0.63)} instead of ${money(amount)}, would you still have coded it to ${to}?` : `If this had come from a different supplier, would you still have coded it to ${to}?`,
         limit: `Is there an amount, or a kind of supplier, where you would handle the ${field} on ${inv} differently?`,
         stop: `When would you stop at this step on ${inv} and check with someone instead?`,
       };
     case "status_changed":
       return {
-        why: `You put ${inv} on ${e.to}. What made you do that?`,
-        counterfactual: e.state?.invoiceMonth ? `If the same invoice had arrived in ${monthName(e.state.invoiceMonth === 12 ? 11 : e.state.invoiceMonth + 1)}, would you still have put it on ${e.to}?` : `Would you do that for every supplier, or only this one?`,
+        why: statusChangeWhy(e, inv),
+        counterfactual: e.state?.invoiceMonth ? `If the same invoice had arrived in ${monthName(e.state.invoiceMonth === 12 ? 11 : e.state.invoiceMonth + 1)}, would you still have made that status decision?` : `Would you do that for every supplier, or only this one?`,
         limit: `Is that for every supplier, or only this one?`,
         who: `Who decides when ${inv} gets released?`,
         stop: `When would you stop here and ask someone before releasing ${inv}?`,
       };
     case "route_changed":
       return {
-        why: `You sent ${inv} for ${String(e.to).replace(/_/g, " ")}. What made you do that?`,
+        why: routeChangeWhy(e, inv),
         limit: `Is there a kind of invoice you would never approve alone?`,
         who: `Who signs the second approval on ${inv}, and what if they are away?`,
         stop: `When would you stop here and ask someone instead of routing ${inv}?`,
@@ -145,8 +189,11 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
       ),
     ),
   );
-  const retro = (question: string) =>
-    e.invoice ? `On invoice ${e.invoice} a moment ago, ${question.charAt(0).toLowerCase()}${question.slice(1)}` : `A moment ago, ${question.charAt(0).toLowerCase()}${question.slice(1)}`;
+  const retro = (question: string) => {
+    const groundedQuestion = e.invoice ? question.replace(invoiceRef(e.invoice), "it") : question;
+    const clause = `${groundedQuestion.charAt(0).toLowerCase()}${groundedQuestion.slice(1)}`;
+    return e.invoice ? `On ${invoiceRef(e.invoice)} a moment ago, ${clause}` : `A moment ago, ${clause}`;
+  };
   const base = { invoice: e.invoice, field: e.field, stepRef, eventId: e.id, createdAt: now, status: "queued" as const, aliases };
   const make = (kind: CandidateKind, candidateValue: number, question: string, guardrail: boolean, parentId?: string): Candidate => ({
     id: cid(),

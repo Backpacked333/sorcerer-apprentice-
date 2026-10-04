@@ -6,7 +6,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "sw
 const mono = JetBrains_Mono({ subsets: ["latin"], variable: "--font-jetbrains", display: "swap" });
 
 export const metadata: Metadata = {
-  title: "Tacit · the AI Apprentice",
+  title: "Simon · the AI Apprentice",
   description: "Keep the know-how behind the work. Build a Work Map from an expert's decisions, reasoning and boundaries.",
 };
 

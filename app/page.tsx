@@ -20,8 +20,8 @@ export default async function Home() {
     <main className="min-h-screen">
       <header className="border-b border-line">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-4 px-6 py-5">
-          <Link href="/" className="flex items-center gap-3 text-lg font-semibold tracking-tight" aria-label="Tacit home">
-            <span className="brand-mark" aria-hidden="true">t</span>Tacit
+          <Link href="/" className="flex items-center gap-3 text-lg font-semibold tracking-tight" aria-label="Simon home">
+            <span className="brand-mark" aria-hidden="true">s</span>Simon
           </Link>
           <nav aria-label="Main navigation" className="flex flex-wrap gap-6 text-sm text-muted">
             <Link href="/map" className="hover:text-ink">Work Maps</Link>
@@ -68,7 +68,7 @@ export default async function Home() {
             <p className="mt-7 border-t border-line pt-5 text-sm text-muted">Missing explanations stay visible. The expert decides when the map is right.</p>
           </section>
         </div>
-        <section aria-label="How Tacit works" className="mt-16 grid gap-8 border-t border-line pt-8 md:grid-cols-3">
+        <section aria-label="How Simon works" className="mt-16 grid gap-8 border-t border-line pt-8 md:grid-cols-3">
           <div><p className="panel-title">01 · Capture</p><h2 className="mt-2 text-lg font-medium">Make room for the expert.</h2><p className="mt-2 text-sm leading-relaxed text-muted">Work through a case and share the reasoning behind a decision. You choose what to share.</p></div>
           <div><p className="panel-title">02 · Map</p><h2 className="mt-2 text-lg font-medium">Give knowledge a shape.</h2><p className="mt-2 text-sm leading-relaxed text-muted">Connect the screen moment, the explanation and its limits. Review and confirm what was learned.</p></div>
           <div><p className="panel-title">03 · Teach</p><h2 className="mt-2 text-lg font-medium">Let someone else try.</h2><p className="mt-2 text-sm leading-relaxed text-muted">Use the confirmed map on a new case. See what was understood independently and where help was needed.</p></div>

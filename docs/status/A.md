@@ -1,14 +1,21 @@
 ## Checkpoint M1 — 8:02 PM ET
 
+### Ready for independent review (not merged)
+
+- WA-4/WA-5 Capture integration is on `a/wa45-capture-integration`: Capture now drives `CaptureLoop` through P-12 `VoiceApi.turn()`, rechecks freshness, records phase/app-clock evidence, persists deferred questions, exposes cadence diagnostics, and keeps keyless typed fallback operational. Automated gates pass, including the isolated production smoke; HT-5/HT-6 remain human-only and unverified.
+- Issue #40 / P-12 is merged on `main` at `ee41948`. The WA-4/WA-5 branch is based on that commit and does not modify `components/voice.tsx`, `lib/voice-turn*`, `lib/voice-hub*`, or `app/voice-check/*`.
+
 ### Done and merged (WP ids)
 
+- WA-9 tone polish (pending this PR): grounded status, approval-route, and cost-center candidates now use short coworker language while retaining the exact invoice and material values; hold-to-active follows the existing status-candidate path, unknown fields are humanized, and retro questions name the invoice once. Existing candidate scores/order and governor timing are unchanged. Automated evidence: `lib/curiosity.tone.test.ts`; post-rebase typecheck and 465 passed / 1 skipped tests; isolated keyless production smoke passed Capture, Map, confirmation, tutor, independent guard, and page-error checks at 11:03 PM ET.
+- WA-1 recovery hardening: restored a fully local dependency tree after macOS offloaded 23,677 package files, then added bounded ElevenAgents WebRTC auto-reconnect with a 10-second stability reset, suppressed stale tagged speech during recovery, no duplicate greeting, preserved app-clock/session metadata, and browser fallback only after recovery is exhausted (this PR).
 - WA-1: generic prompts/tools, idempotent provisioning/check script, awaited connection/fallback contract, debug tap, and keyed/keyless `/voice-check` diagnostics (PRs #2, #3, #7).
 - WA-2: client-side ElevenLabs output gate, idle heartbeat, persistent late-speech squelch, and soak counters (PR #22).
-- WA-3 foundations: pure turn reducer, protocol/echo helpers, one shared Scribe/WebSpeech hub, app-clock transcript timing, bounded fatal fallback, config reconnect, and teardown safety (PRs #9, #12, #35). The documented `VoiceApi.turn()` React adapter is not implemented yet.
+- WA-3: pure turn reducer, protocol/echo helpers, one shared Scribe/WebSpeech hub, app-clock transcript timing, bounded fatal fallback, config reconnect, teardown safety, and the documented `VoiceApi.turn()` React adapter with structural gate/mic/tool/typed/clip wiring (PRs #9, #12, #35 and branch `a/wa3-turn-adapter`).
 - WA-5 foundations: deterministic governor/curiosity/Capture-loop engines plus safe environment/URL tuning parsing (PRs #17, #20). Capture controller adoption remains blocked on the D seam.
 - WA-11: safe tutor knowledge-base sync with verbatim debrief notes and rollback verification (PRs #13, #15); no shared-agent mutation was run.
 - Scribe token route: provider failures are contained as truthful, non-cacheable fallback responses instead of HTTP 500 (PR #31).
-- Fresh merged-main gate: `npm install`, `npm run typecheck`, and 215/215 tests passed. Keyless seed/smoke completed with `question window opened: true`, `intervened: true`, `guard held the independent miss: true`, and `independent success recorded: true`.
+- Fresh branch gate after rebasing current `origin/main`: `npm run typecheck`, 447 passed / 1 skipped tests, and `git diff --check` passed. Headless keyless `/voice-check?keyless=1&role=interviewer&stt=off` proved fallback speech held through its end into listening, one typed resolution, no-listen resolution, cancellation, and final idle/mic-muted/gate-closed state with no page errors. Review regressions cover single-path WebSpeech delivery, stale async tools, legacy gate authorization (including a stale legacy timeout clearing only for an explicit tagged turn), persistent hub speech time, raw agent-ASR echo rejection, and clip-stream cleanup. The full seeded smoke passed Capture (`question window opened: true`) but then timed out on C's Map debrief typed input; routed to lane C as issue #42. An earlier merged-main smoke had completed all four predicates.
 
 ### Verified live by a human (who, when, what they did)
 
@@ -16,6 +23,8 @@
 
 ### Not verified yet (and the script to verify)
 
+- HT-5 WA-9 tone follow-up — 2 minutes: open `http://localhost:3000/capture?share=0` beside the expert ERP; start Capture, open INV-4474, take it from hold to active, then stop typing and pause. Require one grounded question about INV-4474 that says “took … off hold” or an equally natural coworker phrase; it must not say “changed status from hold to active.” Repeat once by sending an invoice for second approval or changing its cost center; require the exact invoice and any material code/number to remain audible. Report the exact sentence heard; this remains NEEDS-HUMAN because phrasing quality is auditory.
+- HT-1 male ElevenLabs recovery — 2 minutes: hard-refresh `http://localhost:3000/voice-check?role=interviewer`; click **Request / refresh microphone**, allow access, then click **Connect**. Require `Mode: agent`, `Status: connected`, and a `conv_…` conversation id. Click **Send [ASK] sample** once; require the male ElevenLabs interviewer to say the sample exactly once and the mode to remain `agent` (never `fallback: browser speech`). If `reconnect_scheduled` appears in Raw events, require `reconnect_attempt` followed by a new `connect` and then repeat **Send [ASK] sample** once. Report the first row or audible result that differs.
 - HT-1 real round trip — 2 minutes: open `http://localhost:3000/voice-check?role=interviewer`; confirm agent id and Scribe token rows are green; allow the mic; click **Connect** and require connected/id/no sound; click **Send [ASK] sample** and require one sentence with 9001, 1000, 2000; click **Open mic**, say “Because that item belongs to the other department, testing one two three,” then require live partials, one exact Scribe commit, `tool log_answer stepRef=9001:code`, and a four-word-or-shorter acknowledgement. Report the first missing line.
 - HT-2 structural silence — the checkpoint explicitly requires 3 minutes, so no honest 2-minute script can verify it: on `/voice-check?role=interviewer`, connect with gate **CLOSED**, click **Silence soak**; spend 60 seconds silent, 60 seconds typing elsewhere, and 60 seconds reading aloud; require no audible agent speech, automated PASS, `audible unsolicited: 0`, no disconnect, and heartbeat delta at least 15. Record gated utterances separately.
 - HT-3/HT-4 turn exits and speaker echo — blocked until the React `VoiceApi.turn()` adapter lands. Then, in 2 minutes on `/voice-check`: run one tool-backed turn, one no-tool answer, one silent timeout, one immediate abort-on-speech, and one typed answer; require one matching resolve for each. Unplug headphones, send `[ASK]`, stay silent and require every returned segment to be `agent echo` with empty `heard`; repeat saying “my own words only” and require exactly that text. Repeat on `?keyless=1`.
@@ -33,6 +42,7 @@
 - Lane B, H10, issue #38: no deployed/current real-vision event has been handed to Lane A for HT-5.
 - Lane B, environment contract, issue #19 / PR #26: the complete governor defaults are not yet in `.env.example`/deploy configuration.
 - Lane C, M1, issue #39: no real-key LLM compile evidence from a live session is available.
+- Lane C, keyless smoke, issue #42: after Capture passes, the Map debrief no longer exposes the typed-answer input expected by `scripts/smoke.mjs:82` within 15 seconds.
 - Lane B → A → C, H6 / P-15: `SessionLog.deferred` is not on main, so deferred Capture candidates cannot be persisted/consumed.
 
 ### Next 3 things
@@ -43,8 +53,10 @@
 
 ### Risks I see for the demo
 
+- WA-9’s generated text is deterministic and green, but the ElevenLabs agent may still paraphrase `phrase=natural`; the exact spoken sentence and perceived tone remain human-only HT-5/HT-11 checks.
+- Automated recovery is green, but the actual male voice and WebRTC reconnect remain human-audibility checks; do not mark the hotfix live-verified until HT-1 above passes.
 - M1 is missed: real ElevenAgents + real Scribe + real vision + real compile have not completed one end-to-end session.
-- `docs/03-CONTRACTS.md` documents the additive P-12 `VoiceApi.turn()` surface before the React adapter exists; consumers must not treat it as available yet.
+- P-12 is implemented and automatically verified, but keyed speech timing, audibility, echo behavior, and microphone coexistence still require the human HT-1/HT-3/HT-4 runs before they can be called live-verified.
 - The quick human silence result is encouraging but does not replace the required three-minute audible soak.
 - Keyless smoke completed its functional beats but logged a transient Capture hydration warning and the expected guarded-save 409; neither predicate failed, but both should be watched after the D/B merges.
 - WA-4/WA-5 integration, off-record media purge, paid-route limits, and live provisioning remain P0 work; do not spend time on stretch goals.

@@ -35,6 +35,9 @@ const renderMap = (value = map, editable = false) => renderToStaticMarkup(create
 describe("knowledge-first presentation", () => {
   it("keeps all entry paths and clearly labels keyless mode and the missing sample", async () => {
     const html = renderToStaticMarkup(await Home());
+    expect(html).toContain('aria-label="Simon home"');
+    expect(html).toContain('aria-label="How Simon works"');
+    expect(html).not.toContain("Tacit");
     for (const path of ["/map", "/capture", "/teach", "/erp"]) expect(html).toContain(`href="${path}"`);
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>No sample Work Map yet<\/button>/);
     expect(html).toContain("No confirmed sample is available.");
@@ -104,12 +107,16 @@ describe("knowledge-first presentation", () => {
     expect(renderMap({ ...map, steps: [] })).toContain("No steps compiled yet.");
   });
 
-  it.each([undefined, "/api/sessions/sample/frames/frame-1"])("retains recorded frame URLs, regions and translations after the seam integration: %s", (url) => {
+  it.each([
+    ["data:image/png;base64,AAAA", undefined],
+    ["data:image/png;base64,AAAA", "/api/sessions/sample/frames/frame-1"],
+    [undefined, "/api/sessions/sample/frames/frame-1"],
+  ])("retains recorded frame URLs, regions and translations after the seam integration: %s, %s", (dataUrl, url) => {
     const translated = { ...map, steps: [{ ...map.steps[0],
       screenMoment: { t: 12, frameId: "frame-1", region: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } },
       reason: { ...map.steps[0].reason!, translation: "Translated explanation" },
     }] };
-    const frames = [{ id: "frame-1", t: 12, dataUrl: "data:image/png;base64,AAAA", url, width: 100, height: 100, piiRegionsBlurred: 1 }];
+    const frames = [{ id: "frame-1", t: 12, dataUrl, url, width: 100, height: 100, piiRegionsBlurred: 1 }];
     const html = renderToStaticMarkup(createElement(WorkMapView, {
       map: translated, sessionId: map.sessionId, onChange: () => {}, editable: false, frames,
     }));

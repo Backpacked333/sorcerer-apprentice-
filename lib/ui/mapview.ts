@@ -28,7 +28,7 @@ export function lowConfidenceLine(confidence?: string): string | null {
   return confidence === "low" ? "No quote backs this yet" : null;
 }
 
-export function frameSrc(frame?: { dataUrl: string; url?: string } | null): string | undefined {
+export function frameSrc(frame?: { dataUrl?: string; url?: string } | null): string | undefined {
   if (!frame) return undefined;
   return frame.url ?? frame.dataUrl;
 }

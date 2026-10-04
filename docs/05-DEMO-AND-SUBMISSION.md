@@ -30,8 +30,8 @@ Our demo is that paragraph, beat for beat, plus the five Apprentice Test answers
 
 **Browser:** current desktop Chrome (or Edge). Two layouts:
 
-- **Workspace mode (default — this is what a juror gets on the live link and what we film):** one window. The sandbox ERP sits on the left, the Tacit companion is the side panel on the right (`/capture`, then `/map/<id>`, then `/teach/<id>`). When the share picker opens choose **"This tab"**; Tacit crops the capture to the ERP region, so the companion itself is never sent to the vision model.
-- **Two-window mode (for "any application"):** ERP (or any other app) in its own window on the left ≈ 65 %, the Tacit companion window on the right ≈ 35 %, both visible. Share **the ERP tab**. Never minimize or fully cover the companion window — a hidden page's timers are throttled to once per second.
+- **Workspace mode (default — this is what a juror gets on the live link and what we film):** one window. The sandbox ERP sits on the left, the Simon companion is the side panel on the right (`/capture`, then `/map/<id>`, then `/teach/<id>`). When the share picker opens choose **"This tab"**; Simon crops the capture to the ERP region, so the companion itself is never sent to the vision model.
+- **Two-window mode (for "any application"):** ERP (or any other app) in its own window on the left ≈ 65 %, the Simon companion window on the right ≈ 35 %, both visible. Share **the ERP tab**. Never minimize or fully cover the companion window — a hidden page's timers are throttled to once per second.
 
 Both pages must be on the **exact same origin** in the same browser profile (not `localhost` in one and `127.0.0.1` or a tunnel URL in the other), or the sandbox telemetry silently delivers nothing.
 

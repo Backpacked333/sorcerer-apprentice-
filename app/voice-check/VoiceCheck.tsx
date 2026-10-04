@@ -21,6 +21,8 @@ export function VoiceCheck({ role, agentId }: { role: "interviewer" | "tutor"; a
 function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: string; agentId?: string; events: VoiceDebugEvent[]; log: (event: VoiceDebugEvent) => void; clearEvents: () => void }) {
   const voice = useVoice();
   const [sample, setSample] = useState(ASK_SAMPLE);
+  const [typed, setTyped] = useState("Typed diagnostic answer.");
+  const [abortOnSpeech, setAbortOnSpeech] = useState(false);
   const [lastCommit, setLastCommit] = useState("");
   const [lastTurn, setLastTurn] = useState<TurnResult>();
   const [mic, setMic] = useState("checking");
@@ -86,7 +88,7 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
     const at = Date.now();
     setConnectStartedAt(at);
     log({ at, src: "turn", type: "connect_clicked", data: { role } });
-    await voice.connect({ dynamicVariables: { expert_name: "the expert", newhire_name: "the new hire", task: "voice diagnostics" } });
+    await voice.connect({ sessionStartMs: at, dynamicVariables: { expert_name: "the expert", newhire_name: "the new hire", task: "voice diagnostics" } });
     log({ at: Date.now(), src: "turn", type: "connect_resolved", data: { id: voice.getId() } });
   };
   const download = () => {
@@ -112,8 +114,15 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
     setSoak({ startedAt, until: startedAt + 180_000, eventIndex });
     log({ at: startedAt, src: "gate", type: "silence_soak_started", data: { durationSecs: 180, eventIndex } });
   };
-  const runTurn = async (listen: boolean) => {
-    const result = await voice.turn({ tag: listen ? "ASK" : "CONFIRMED", text: listen ? sample : "Say: go ahead.", spoken: listen ? sample.split(" | ")[0] : "Go ahead.", listen });
+  const runTurn = async (kind: "tool" | "no-tool" | "no-listen") => {
+    const listen = kind !== "no-listen";
+    const result = await voice.turn({
+      tag: kind === "tool" ? "ASK" : "CONFIRMED",
+      text: kind === "tool" ? sample : "Say: go ahead.",
+      spoken: kind === "tool" ? sample.split(" | ")[0] : "Go ahead.",
+      listen,
+      abortOnHumanSpeech: abortOnSpeech,
+    });
     setLastTurn(result);
   };
   const liveSoakResult = soak ? evaluateSilenceSoak({ events, startedAt: soak.startedAt, connected: voice.connected, gateOpen: voice.gateOpen }) : soakResult;
@@ -138,18 +147,24 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
           <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.setMicMuted(!voice.micMuted)}>{voice.micMuted ? "Open mic" : "Close mic"}</button>
           <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.sendContext("[SCREEN] Voice diagnostics context only.")}>Send [SCREEN] context</button>
           <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.say("ASK", sample)}>Send [ASK] sample</button>
-          <button className="rounded bg-cyan-700 px-3 py-2" onClick={() => void runTurn(true)}>turn(listen)</button>
-          <button className="rounded bg-cyan-800 px-3 py-2" onClick={() => void runTurn(false)}>turn(no listen)</button>
-          <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.submitTyped("Typed diagnostic answer.")}>Submit typed</button>
+          <button className="rounded bg-cyan-700 px-3 py-2" onClick={() => void runTurn("tool")}>turn(listen)</button>
+          <button className="rounded bg-cyan-700 px-3 py-2" onClick={() => void runTurn("no-tool")}>turn(listen) without tool</button>
+          <button className="rounded bg-cyan-800 px-3 py-2" onClick={() => void runTurn("no-listen")}>turn(no listen)</button>
           <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.cancelTurn("user")}>Cancel turn</button>
           <button className="rounded bg-indigo-600 px-3 py-2 disabled:opacity-50" disabled={soak !== undefined || !voice.connected || voice.gateOpen} onClick={startSilenceSoak}>{soak ? `Silence soak · ${Math.ceil(soakRemaining / 1000)}s` : "Silence soak (3 min)"}</button>
           <button className="rounded bg-slate-700 px-3 py-2" onClick={download}>Download log (JSON)</button>
         </div>
         <textarea className="min-h-28 w-full rounded bg-slate-950 p-3 text-sm" value={sample} onChange={(event) => setSample(event.target.value)} />
+        <div className="flex flex-wrap items-center gap-2">
+          <input className="min-w-72 flex-1 rounded bg-slate-950 p-2 text-sm" value={typed} onChange={(event) => setTyped(event.target.value)} aria-label="Typed turn answer" />
+          <button className="rounded bg-slate-700 px-3 py-2" onClick={() => voice.submitTyped(typed)}>Submit typed</button>
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={abortOnSpeech} onChange={(event) => setAbortOnSpeech(event.target.checked)} />Abort on human speech</label>
+        </div>
         <div className="grid gap-2 text-sm md:grid-cols-4"><Row label="Mode" value={voice.mode} /><Row label="Status" value={voice.status} /><Row label="Conversation" value={voice.getId() ?? "none"} /><Row label="Connect elapsed" value={connectStartedAt ? `${Date.now() - connectStartedAt} ms` : "—"} /></div>
         <div className="grid gap-2 text-sm md:grid-cols-5"><Row label="Connect → ready" value={formatMs(metrics.connectMs)} /><Row label="Sent / spoke" value={`${metrics.sends} / ${metrics.speaking}`} /><Row label="Sent → spoke p50/p90" value={`${formatMs(metrics.sentToSpokeP50)} / ${formatMs(metrics.sentToSpokeP90)}`} /><Row label="Partials / commits" value={`${metrics.partials} / ${metrics.commits}`} /><Row label="log_answer tools" value={String(metrics.answers)} /></div>
         <div className="grid gap-2 text-sm md:grid-cols-4"><Row label="Output gate" value={voice.gateOpen ? "OPEN" : "CLOSED"} /><Row label="Gated utterances" value={String(metrics.gatedUtterances)} /><Row label="Audible unsolicited" value={String(metrics.audibleUnsolicited)} /><Row label="Heartbeats" value={String(metrics.heartbeats)} /></div>
         <div className="grid gap-2 text-sm md:grid-cols-4"><Row label="Turn phase" value={voice.turnPhase} /><Row label="Turn partial" value={voice.partial || "—"} /><Row label="Turn STT" value={`${voice.stt.engine} · ${voice.stt.connected ? "connected" : "off"}`} /><Row label="Last turn" value={lastTurn ? `${lastTurn.via} · ${lastTurn.heard || "no answer"}` : "—"} /></div>
+        {lastTurn && <pre className="overflow-auto rounded bg-slate-950 p-3 text-xs" data-testid="turn-result">{JSON.stringify(lastTurn, null, 2)}</pre>}
         {!soak && (!voice.connected || voice.gateOpen) && <p className="text-sm text-slate-400">Silence soak requires a connected session with the output gate initially closed.</p>}
         {soak && <p className="rounded bg-indigo-950 p-3 text-sm text-indigo-200">Silence soak running from event #{soak.eventIndex}. Agent mic stays muted while independent STT remains active. Keep this page connected: 60 seconds quiet, 60 seconds typing elsewhere, then 60 seconds reading aloud.</p>}
         {liveSoakResult && <div className="grid gap-2 rounded bg-slate-950 p-3 text-sm md:grid-cols-5"><Row label="Automated result" value={soak ? "RUNNING" : liveSoakResult.automatedPass ? "PASS" : "FAIL"} /><Row label="Soak heartbeats Δ" value={String(liveSoakResult.heartbeats)} /><Row label="Gated utterances Δ" value={String(liveSoakResult.gatedUtterances)} /><Row label="Audible unsolicited Δ" value={String(liveSoakResult.audibleUnsolicited)} /><Row label="Audibility" value="HUMAN VERIFICATION REQUIRED" /></div>}

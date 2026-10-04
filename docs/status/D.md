@@ -1,6 +1,13 @@
 # Lane D status
 
-Updated 2026-10-04 on `d/human-knowledge-ui`, with main `38b3ccd` integrated. This remains a focused presentation pass, not a claim of full Lane D acceptance.
+Updated 2026-10-04 on `d/human-knowledge-ui`, with main `6511744` integrated. This remains a focused presentation pass, not a claim of full Lane D acceptance.
+
+## Simon branding · WD-2 / WD-5 / WD-10 / WD-12 / P1
+
+- Merged on main and retained: visible branding is Simon in metadata, landing copy, shared app header, ERP links/banners, README, demo/submission copy and moonshot frame. The knowledge-first landing keeps its layout and direct confirmed-sample path with Simon's name and monogram.
+- Technical identifiers, infrastructure names, team references and voice-agent configuration remain unchanged.
+- Prior branding work reported 462 tests, typecheck, build and an agent production-build visual spot-check. That is not visual verification of this integrated revision; no human/live verification is claimed.
+- No deployment or external submission changes are included.
 
 ## Done and merged (WP ids)
 
@@ -25,7 +32,7 @@ None. No live-provider, deployed, voice or screen-sharing verification claimed.
 
 ## Not verified yet (and the script to verify)
 
-- Automated with main `38b3ccd` integrated: typecheck, all 284 tests (29 files, including 28 D presentation/selection cases), production build and diff whitespace check passed. Build output confirms `/` and `/demo` render dynamically. No lint script is configured.
+- Automated with main `6511744` integrated: typecheck, all 493 tests (47 files, including 29 D presentation/selection cases), production build and diff whitespace check passed. Coverage includes Simon landing branding and the new URL-only frame contract. Build output confirms `/` and `/demo` render dynamically. No lint script is configured. Non-failing Vite config and dynamic-filesystem tracing warnings remain.
 - Browser/keyless smoke not run in this session; UI testing needs approval.
 - Prior `d/experience` status reported a keyless smoke pass and a capture hydration warning. That result is not verification of this integrated revision.
 - UI check: open home at desktop and narrow widths; follow Work Maps/Capture/Practice/ERP links; tab to controls; open governor details; inspect a map's decision, literal reason, guardrail source and missing-frame state; verify the selected step is apparent; enable reduced motion.

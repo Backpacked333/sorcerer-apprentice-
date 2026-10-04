@@ -42,6 +42,7 @@ export interface TurnResult {
   tool?: { name: ToolName; params: Record<string, unknown> };
   audioId?: string;
   askedAt: number;
+  answerStartedAt?: number;
   answeredAt?: number;
   sentAt: number;
   spokeAt?: number;
@@ -69,7 +70,7 @@ export type TurnEvent =
   | { type: "SPEAK_START"; at: number; source?: "agent" | "fallback" }
   | { type: "SPEAK_END"; at: number }
   | { type: "HUMAN_PARTIAL"; at: number; text: string }
-  | { type: "HUMAN_COMMIT"; at: number; text: string; source?: "scribe" | "agent_asr" }
+  | { type: "HUMAN_COMMIT"; at: number; startedAt?: number; text: string; source?: "scribe" | "agent_asr" }
   | { type: "TOOL"; at: number; name: ToolName; params: Record<string, unknown> }
   | { type: "TYPED"; at: number; text: string }
   | { type: "COMMAND"; at: number; command: "off_record" | "not_now" }
@@ -112,6 +113,9 @@ export interface TurnState {
   scribeText: string;
   agentAsrText: string;
   partial: string;
+  provisionalCommit: string;
+  answerStartedAt?: number;
+  answerAudioEligible: boolean;
   lastPartialAt: number;
   lastHumanSpeechAt: number;
   lastAgentSpeechEnd: number;
@@ -130,6 +134,8 @@ export const initialTurnState: TurnState = {
   scribeText: "",
   agentAsrText: "",
   partial: "",
+  provisionalCommit: "",
+  answerAudioEligible: true,
   lastPartialAt: Number.NEGATIVE_INFINITY,
   lastHumanSpeechAt: Number.NEGATIVE_INFINITY,
   lastAgentSpeechEnd: Number.NEGATIVE_INFINITY,
@@ -206,8 +212,11 @@ function resultFrom(state: TurnState, close: TurnClose, closedAt: number): TurnR
     heard: close.heard,
     via: close.via,
     ...(close.tool ? { tool: close.tool } : {}),
-    ...(state.audioId && close.heard ? { audioId: state.audioId } : {}),
+    ...(state.audioId && close.heard && state.answerAudioEligible && state.answerStartedAt !== undefined && state.answerStartedAt >= askedAt
+      ? { audioId: state.audioId }
+      : {}),
     askedAt,
+    ...(state.answerStartedAt !== undefined ? { answerStartedAt: state.answerStartedAt } : {}),
     ...(close.answeredAt !== undefined ? { answeredAt: close.answeredAt } : {}),
     sentAt: state.sentAt ?? closedAt,
     ...(state.spokeAt !== undefined ? { spokeAt: state.spokeAt } : {}),
@@ -261,7 +270,16 @@ function enterClosing(state: TurnState, close: TurnClose): TurnTransition {
 
 function finishSpeech(state: TurnState, at: number): TurnTransition {
   const askedAt = at;
-  const base = { ...state, askedAt, speechEndCandidateAt: undefined, lastAgentSpeechEnd: at };
+  const base = {
+    ...state,
+    askedAt,
+    speechEndCandidateAt: undefined,
+    lastAgentSpeechEnd: at,
+    // Pre-listening recognition is interruption evidence only. It cannot leak into the answer.
+    partial: "",
+    provisionalCommit: "",
+    lastPartialAt: Number.NEGATIVE_INFINITY,
+  };
   if (state.options?.listen ?? false) {
     return {
       state: { ...base, phase: "listening" },
@@ -359,6 +377,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
       partial: event.text.trim(),
       lastPartialAt: event.at,
       lastHumanSpeechAt: event.at,
+      ...(state.phase === "listening" && state.answerStartedAt === undefined ? { answerStartedAt: event.at } : {}),
     };
     const beforeQuestion = state.phase === "sending" || state.phase === "waiting_for_speech" || state.phase === "speaking";
     if (
@@ -380,12 +399,28 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
     ) {
       return { state, effects: [] };
     }
+    const answerEligible = state.phase === "listening" || state.phase === "closing";
+    if (!answerEligible) {
+      return {
+        state: {
+          ...state,
+          provisionalCommit: append(state.provisionalCommit, event.text),
+          partial: "",
+          lastHumanSpeechAt: event.at,
+        },
+        effects: [],
+      };
+    }
+    const answerStartedAt = event.startedAt ?? event.at;
+    const askedAt = state.askedAt ?? Number.POSITIVE_INFINITY;
     const next: TurnState = {
       ...state,
       scribeText: source === "scribe" ? append(state.scribeText, event.text) : state.scribeText,
       agentAsrText: source === "agent_asr" ? append(state.agentAsrText, event.text) : state.agentAsrText,
       partial: "",
       lastHumanSpeechAt: event.at,
+      answerStartedAt: state.answerStartedAt === undefined ? answerStartedAt : Math.min(state.answerStartedAt, answerStartedAt),
+      answerAudioEligible: state.answerAudioEligible && answerStartedAt >= askedAt,
     };
     if (state.phase === "closing" && state.close) {
       const captured = acceptedAnswer(next, state.close.tool);

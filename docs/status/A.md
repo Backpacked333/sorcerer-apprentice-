@@ -1,3 +1,11 @@
+## Oct 4 · False-quote evidence integrity [P-12]
+
+- Pre-listening transcriber commits are now provisional interruption signals only: they are cleared at listen-open and cannot populate the accepted turn text, Capture transcript, or `QuestionWindow.answerText`. Post-listening accepted answers are persisted once from the turn result.
+- `answeredAt < askedAt` and missing evidence clocks are rejected by deterministic and LLM compile evidence selection. Narration fallback now uses the existing invoice/value/field-grounded matcher rather than proximity alone, so narration naming invoice 9002 cannot satisfy invoice 9001.
+- `TurnResult.answerStartedAt` is an additive P-12 contract field. A clip id is returned only when the accepted answer interval began after recording/listening opened; text spanning the boundary may remain human-attributed evidence but cannot claim an uncovered clip.
+- Automated evidence: exact 34.587–44.592 agent-speech reproduction, the 36.644–37.650 pre-listening false commit, a real answer beginning at 51.434+, invalid answer-clock rejection, cross-invoice narration isolation, pre-listening transcript corpus exclusion, and clip interval rejection. Typecheck, 540 passed / 1 skipped tests, production build, and isolated keyless Capture → Map → confirmation → tutor → guard smoke passed.
+- Not human-verified: repeat the original Capture → Map flow; remain silent while the question is spoken, answer only after the UI enters answering/listening, then require teach-back to quote only that post-listening answer. The exact script is in the PR handoff.
+
 ## Oct 4 · Active-exchange presence [C1-C3, M1-M3]
 
 - Both live agents now distinguish connection/repeat/time requests from unrelated background speech while a tagged question is pending. Warm, brief acknowledgments are allowed; `log_answer` speaks before saving (`pre_tool_speech=force`, `execution_mode=post_tool_speech`) and still awaits the result. No acknowledgment may claim the answer is correct or already saved. Idle/background silence and V4 Turbo remain unchanged.

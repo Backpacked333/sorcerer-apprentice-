@@ -193,7 +193,7 @@ interface TurnOptions {
 interface TurnResult {
   spoke: boolean; heard: string; via: "tool"|"scribe"|"typed"|"timeout"|"aborted"|"spoken";
   tool?: { name: ToolName; params: Record<string, unknown> }; audioId?: string;
-  sentAt: number; spokeAt?: number; askedAt: number; answeredAt?: number; closedAt: number;
+  sentAt: number; spokeAt?: number; askedAt: number; answerStartedAt?: number; answeredAt?: number; closedAt: number;
   spokenBy?: "agent"|"fallback"; spokenText?: string; heardSource?: "scribe"|"agent_asr"|"typed";
   command?: "off_record"|"not_now";
   abortReason?: "resumed"|"user"|"superseded"|"paused"|"disconnected"|"silent";
@@ -243,6 +243,8 @@ Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `t
 **Voice timeout quality:** `VoiceApi.turn()` allows eight seconds for agent speech by default (an explicit `watchdogSecs` still wins). If no speech starts within that window, its existing labeled browser fallback and late-agent squelch apply. This avoids replacing a healthy V4 response at the former four-second boundary while retaining recovery for a true send/transport failure.
 
 **Answer acceptance:** `VoiceApi.turn()` defaults listening `ASK`/`DEBRIEF` turns to `answerTool: "log_answer"`. When the agent speaks, raw Scribe/agent-ASR text alone cannot fill the slot: wait for the matching tool or resolve as an empty timeout within the existing bounds. A logged reason becomes `heard` only when it literally occurs in Scribe or agent ASR, excluding unrelated text accumulated in the same window; unmatched model text is never a quote. Late raw commits cannot promote an unconfirmed timeout. Typed answers and browser/keyless speech retain their existing completion paths. Other tags are unchanged.
+
+**Evidence timing:** recognition committed before `askedAt` (question finished / listening opened) is provisional interruption evidence only and cannot enter `heard`, `QuestionWindow.answerText`, or the quotable expert transcript. A later human-attributed commit after listen-open may become authoritative. `TurnResult.answerStartedAt` records when the accepted recognition segment began; `audioId` is returned only when that interval begins at or after `askedAt`, so a clip is never paired with text that predates recording.
 
 **The verbatim rule:** the page records the expert's words from **Scribe** (what was actually said), not from the tool's `reason` param (which the LLM may reword). `reason` is only a fallback when Scribe heard nothing.
 

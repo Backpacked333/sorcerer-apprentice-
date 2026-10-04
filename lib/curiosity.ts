@@ -331,7 +331,7 @@ export class CandidateQueue {
 
 // ---------- Narration check ----------
 
-const REASON_CUES = /\b(because|since|so that|due to|that's why|always|never|must|has to|have to|rule|policy)\b/i;
+const REASON_CUES = /\b(because|since|so(?: that)?|due to|that's why|always|never|must|has to|have to|rule|policy)\b/i;
 const DEICTIC = /\b(this one|that one|this invoice|this supplier|here)\b/i;
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 

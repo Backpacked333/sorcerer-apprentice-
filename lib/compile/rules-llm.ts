@@ -2,14 +2,17 @@ import { generateText, Output } from "ai";
 import { gatewayConfigured, modelAction, modelCondition, RefinementSchema } from "../model-contracts";
 import type { SessionLog } from "../events";
 import { evalCond, type Quote, type Rule, type WorkMap, uid } from "../workmap";
+import { isQuotableTranscript, isQuotableWindow } from "./evidence";
 import { buildSlots, seenCases } from "./slots";
 
 const ALLOWED_FIELDS = new Set(["amount", "category", "supplier", "entity", "invoiceMonth", "costCenter", "hasAssetNumber", "knownSupplier", "hasPO", "route", "status"]);
 
 export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ map: WorkMap; used: boolean; note?: string }> {
   if (!gatewayConfigured()) return { map: draft, used: false, note: "AI Gateway is not configured; deterministic fallback map" };
-  const transcript = log.transcript.filter((s) => !s.redacted).map((s) => `[${s.t.toFixed(1)}s ${s.speaker}] ${s.text}`).join("\n");
-  const answers = log.windows.filter((w) => w.outcome === "answered").map((w) => `[${(w.answeredAt ?? w.openedAt).toFixed(1)}s] Q(${w.kind}, ${w.stepRef}): ${w.question}\nA: ${w.answerText}`).join("\n\n");
+  const quotableTranscript = log.transcript.filter((segment) => isQuotableTranscript(segment, log.windows));
+  const quotableWindows = log.windows.filter(isQuotableWindow);
+  const transcript = quotableTranscript.map((s) => `[${s.t.toFixed(1)}s ${s.speaker}] ${s.text}`).join("\n");
+  const answers = quotableWindows.map((w) => `[${w.answeredAt!.toFixed(1)}s] Q(${w.kind}, ${w.stepRef}): ${w.question}\nA: ${w.answerText}`).join("\n\n");
   const steps = draft.steps.map((s) => `${s.id} | invoice ${s.invoice} | ${s.title} | ${s.decision} | judgment=${s.judgment} | reason=${s.reason?.text ?? "none"}`).join("\n");
   try {
     const { output: object } = await generateText({
@@ -33,9 +36,9 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
     });
     const findQuote = (text: string): Quote | undefined => {
       if (!text.trim()) return undefined;
-      const w = log.windows.find((w) => w.outcome === "answered" && w.answerText?.includes(text));
-      if (w) return { text, t: w.answeredAt ?? w.openedAt, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" };
-      const s = log.transcript.find((s) => !s.redacted && s.speaker === "expert" && s.text.includes(text));
+      const w = quotableWindows.find((window) => window.answerText?.includes(text));
+      if (w) return { text, t: w.answeredAt!, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" };
+      const s = quotableTranscript.find((segment) => segment.text.includes(text));
       return s ? { text, t: s.t, source: "narration" } : undefined;
     };
     const map: WorkMap = { ...structuredClone(draft), rules: [], slots: [] };

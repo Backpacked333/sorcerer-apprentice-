@@ -8,9 +8,9 @@ In progress on `B/durable-vercel-product` (not merged): Supabase + Vercel deploy
 
 ## Live deployment
 
-Production: [https://tacit-ai-apprentice.vercel.app](https://tacit-ai-apprentice.vercel.app), currently deployed from `ddc1cf1`. HTTP-only smoke checks verified public root/health access, reachable Supabase storage, cookie-workspace isolation, PNG/WebM uploads and private reads, and rejection of draft export/Teach creation. The health response reports voice and gateway integrations degraded/not configured.
+Production: [https://tacit-ai-apprentice.vercel.app](https://tacit-ai-apprentice.vercel.app), currently deployed from `c51b9f3` (`dpl_8cB6Wci8xxxMSX3GpeuLu45o9ukN`). Earlier HTTP-only smoke checks verified public root/health access, reachable Supabase storage, cookie-workspace isolation, PNG/WebM uploads and private reads, and rejection of draft export/Teach creation. Those broader checks were not repeated after this redeploy.
 
-The production smoke exposed stale Storage CDN bytes after evidence withdrawal. The lead's direct HTTP diagnostics isolated the response to CDN caching; this branch adds a per-download `cacheNonce` with `no-store` and zero upload cache lifetime. The cache fix is **awaiting redeploy and live retest**; do not claim evidence-withdrawal cache behavior is resolved on the deployed build.
+The narrow HTTP retest on `c51b9f3` uploaded valid PNG and WebM fixtures, persisted their references, warmed and byte-compared separate reads, withdrew both references once, and immediately reattached metadata only. The first reads after reattachment returned 404 for both media routes. References were then removed and verified absent. Health returned 200 with Supabase configured and reachable; voice and gateway remain degraded/not configured. The test was HTTP-only, not a browser or real-provider test.
 
 ## Human acceptance (who, when, what they did)
 
@@ -18,7 +18,7 @@ No live human, voice/timing, rendered UI, or real-provider acceptance is claimed
 
 ## Automated verification
 
-The latest previously verified full suite passed `npm run test`: 23 files, 219 tests. It was not repeated for this cache-only follow-up. This follow-up passed `npx vitest run lib/store.durable.test.ts` (1 file, 6 tests), `npm run typecheck`, and `npm run build`. A prior local keyless HTTP smoke returned `demo_sabine` and `demo_sabine_confirmed` from `GET /api/sessions` under `STORAGE_BACKEND=local STORE_OWNER_ID=local`. Vercel CLI 62.2.0 is available and the project is linked; no deployment is being run here.
+The latest previously verified full suite passed `npm run test`: 23 files, 219 tests. It was not repeated for the cache-only follow-up or these documentation changes. The cache follow-up passed `npx vitest run lib/store.durable.test.ts` (1 file, 6 tests), `npm run typecheck`, and `npm run build`. PR #36's `check` job passed on `c51b9f3`. A prior local keyless HTTP smoke returned `demo_sabine` and `demo_sabine_confirmed` from `GET /api/sessions` under `STORAGE_BACKEND=local STORE_OWNER_ID=local`. The Vercel CLI smoke-session error/fatal query returned zero records; Vercel log-drain configuration was not inspected.
 
 ## Not verified yet (and the script to verify)
 
@@ -26,14 +26,14 @@ Real-provider connectivity and voice/screen-vision acceptance. Follow the README
 
 ## Blocked on (lane, handshake id, what exactly)
 
-Lead-owned redeployment and live retest of the media cache fix, plus a human wearing headphones for the competition acceptance run. Optional German, MCP and two-expert stretches remain deferred behind core acceptance.
+Real-provider configuration and a human wearing headphones for the competition acceptance run remain outstanding. Optional German, MCP and two-expert stretches remain deferred behind core acceptance.
 
 ## Next 3 things
 
-1. Redeploy the cache-bypass fix and repeat the evidence-withdrawal HTTP check.
-2. Run the README competition acceptance with real providers and a human wearing headphones.
-3. Complete the separate CI review after push.
+1. Configure the real voice and AI Gateway integrations.
+2. Run the README competition acceptance with a human wearing headphones.
+3. Review Vercel log-drain/monitoring configuration if operational visibility is needed.
 
 ## Risks I see for the demo
 
-Cache-withdrawal behavior is not verified on the deployed fix; real-provider connectivity, voice timing, and the rendered UI have not been manually verified.
+Real-provider connectivity, voice timing, and the rendered UI have not been manually verified. Vercel log-drain configuration has not been checked.

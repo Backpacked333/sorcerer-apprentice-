@@ -13,7 +13,7 @@ Hack-Nation × ElevenLabs "AI Apprentice": three modules on one pipeline, one ar
 
 [Open Tacit](https://tacit-ai-apprentice.vercel.app).
 
-The deployed health endpoint reported Supabase configured and reachable, but voice and AI Gateway integrations are degraded/not configured. This deployment predates the storage CDN cache-bypass follow-up on `B/durable-vercel-product`; do not consider evidence-withdrawal caching resolved until that change is deployed and rechecked. Real-provider, browser/UI, voice/timing, and human acceptance remain unverified.
+The `c51b9f3` deployment passed a narrow HTTP retest: valid PNG/WebM reads matched their uploads, and after one evidence withdrawal an immediate metadata-only reattachment still returned 404 for both media routes on the first read. Health reported Supabase configured and reachable; voice and AI Gateway integrations are degraded/not configured. An earlier HTTP smoke verified workspace isolation and draft Teach/export rejection; those broader checks were not repeated after this redeploy. Real-provider, browser/UI, voice/timing, and human acceptance remain unverified.
 
 ## Run it in two minutes
 

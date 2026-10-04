@@ -2,6 +2,7 @@
   "name": "tacit",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Tacit: the AI Apprentice. Captures what an expert knows while they work, maps it, teaches it.",
   "engines": {
     "node": ">=22"

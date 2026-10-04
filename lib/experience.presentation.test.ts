@@ -261,6 +261,20 @@ describe("Liquid Glass evidence frame geometry", () => {
 });
 
 describe("Liquid Glass observation presence", () => {
+  it("stacks the ended Teach mastery sheet and tutor on narrow screens while retaining desktop positioning", () => {
+    const view = readFileSync("components/views/TeachView.tsx", "utf8");
+    const css = readFileSync("app/globals.css", "utf8");
+    expect(view).toContain('className={vm.ended ? "teach-ended-stack" : undefined}');
+    expect(view).toContain('<MasterySheet vm={vm} learner={learner} expert={expert} floating />');
+    expect(view).toContain('<MasterySheet vm={vm} learner={learner} expert={expert} floating={false} />');
+    expect(css).toContain('.teach-ended-stack { display: contents; }');
+    const narrow = css.slice(css.indexOf('@media (max-width: 900px) {\n'));
+    expect(narrow).toContain('.workspace-companion:has(.teach-ended-stack) { right: 16px; }');
+    expect(narrow).toMatch(/\.teach-ended-stack \{[^}]*width: min\(560px, calc\(100vw - 32px\)\);[^}]*max-height: calc\(100dvh - 56px\); overflow-y: auto;/);
+    expect(narrow).toContain('.teach-ended-stack > * { flex-shrink: 0; }');
+    expect(narrow).toContain('.teach-ended-stack > .glass-inspector { position: relative !important; inset: auto !important; width: 100% !important; max-height: none !important; }');
+  });
+
   it("reserves horizontal ERP space only on wide screens but keeps vertical clearance everywhere", () => {
     const css = readFileSync("app/erp/erp.css", "utf8");
     expect(css).toContain("html.erp-embedded .erp-main { padding-bottom: calc(var(--tacit-reserve-h, 0px) + 28px); }");

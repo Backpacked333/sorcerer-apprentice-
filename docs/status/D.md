@@ -4,11 +4,12 @@
 
 - Done: preserve the desktop Liquid Glass companion/left-hand mechanism layout; at narrow widths, stack and scroll them vertically. A responsive Capture-only inset accommodates the sheet plus non-overlay scrollbar at 320px. The preview stays mounted and the floating/occluder registrations are unchanged.
 - Done: reserve horizontal space beside the embedded ERP only at 1024px and above. At smaller widths, keep the existing vertical clearance so invoice fields can scroll above the tutor rather than collapsing inside a 2px-wide card. Capture/Teach logic and business rules are unchanged.
-- Agent verification: recorded local/keyless testing reproduced both failures. Capture now passes 320px/390px, 667px landscape, 780/781px breakpoint, desktop resize-back, separate companion layout and preview-node identity checks. Initial desktop sample → Work Map → before-save guidance → replay → corrected posting/mastery and platform/claims/demo checks passed. Mobile Teach retest is pending after the ERP fix.
-- Automated verification: typecheck, 820 tests across 91 files, production build and whitespace checks pass after integration with main. No lint script is configured.
+- Done: wrap narrow ERP headings without changing column widths. Keep the ended Teach mastery sheet and tutor in a scrollable single column below 901px, retaining their desktop positioning and occluder registrations.
+- Agent verification: recorded local/keyless testing reproduced the layout failures. Capture passes 320px/390px, 667px landscape, 780/781px breakpoint, desktop resize-back, separate companion layout and preview-node identity checks. Desktop sample → Work Map → before-save guidance → replay → corrected posting/mastery and platform/claims/demo checks passed. Mobile Teach corrected/coached and independent saves persisted with distinct mastery labels; 1024px headings and 1440px resize-back passed. Final mobile mastery, Ontology and fresh Capture retest are pending.
+- Automated verification: typecheck, 821 tests across 91 files, production build and whitespace checks pass. CI on 9b1c3ab passed typecheck/tests but failed inside the unchanged IBM Plex Sans next/font compilation; the same build command passes locally and a fresh CI run is pending. No lint script is configured.
 - Verified live by a human: not yet. Provider voice, microphone quality, real screen sharing and deployed QA remain unverified; local synthetic evidence is not live-provider proof.
-- Next: finish mobile Teach/Ontology retest, publish the responsive regression fixes, settle CI. No deployment or submission performed.
-- Blocked on: no setup blocker; browser retest pending.
+- Next: finish mobile mastery/Ontology/Capture retest and settle CI on PR #65. No manual deployment or submission performed.
+- Blocked on: final browser retest and CI rerun pending.
 
 ## Liquid Glass compatibility safeguards
 

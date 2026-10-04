@@ -60,10 +60,10 @@ export function TeachView({ vm }: { vm: TeachVM }) {
           presenter={presenter}
           overlay={overlay}
           companion={
-            <>
+            <div className={vm.ended ? "teach-ended-stack" : undefined}>
               {vm.ended ? <MasterySheet vm={vm} learner={learner} expert={expert} floating /> : null}
               {card}
-            </>
+            </div>
           }
         />
       ) : (

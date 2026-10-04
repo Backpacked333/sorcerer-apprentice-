@@ -293,6 +293,7 @@ body {
   .workspace-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
   .workspace-companion { position: fixed; right: 28px; bottom: 28px; z-index: 5; }
   .capture-floating-stack { display: flex; flex-direction: row-reverse; align-items: flex-end; gap: 14px; max-height: calc(100dvh - 56px); }
+  .teach-ended-stack { display: contents; }
   .workspace-lock {
     position: absolute; inset: 0; display: grid; place-items: center; z-index: 3;
     background: rgba(244, 244, 247, .55);
@@ -454,6 +455,14 @@ body {
 
 @media (min-width: 900px) { .doors { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 900px) { .timeline { flex-direction: column; } .t-display { font-size: 32px; line-height: 36px; } }
+
+@media (max-width: 900px) {
+  .workspace-companion:has(.teach-ended-stack) { right: 16px; }
+  .teach-ended-stack { display: flex; flex-direction: column; align-items: stretch; gap: 14px; width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 56px); overflow-y: auto; overscroll-behavior: contain; }
+  .teach-ended-stack > * { flex-shrink: 0; }
+  /* The companion sheet's inline desktop geometry must not reserve a second column here. */
+  .teach-ended-stack > .glass-inspector { position: relative !important; inset: auto !important; width: 100% !important; max-height: none !important; }
+}
 
 @media (max-width: 780px) {
   .workspace-companion:has(.capture-floating-stack) { right: clamp(0px, calc((100vw - 320px) / 2), 16px); }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  createTurnPromiseQueue,
   gateState,
   initialTurnState,
   reduce,
@@ -9,6 +10,32 @@ import {
   type TurnOptions,
   type TurnState,
 } from "./voice-turn";
+
+describe("turn promise queue", () => {
+  it("resolves superseded turns in request order without settling the replacement", async () => {
+    const queue = createTurnPromiseQueue();
+    const first = queue.push();
+    const second = queue.push();
+    const aborted = {
+      spoke: false,
+      heard: "",
+      via: "aborted" as const,
+      askedAt: 10,
+      sentAt: 10,
+      closedAt: 11,
+      abortReason: "superseded" as const,
+    };
+
+    expect(queue.resolve(aborted)).toBe(true);
+    await expect(first).resolves.toEqual(aborted);
+    expect(queue.pending()).toBe(1);
+
+    let replacementSettled = false;
+    void second.then(() => { replacementSettled = true; });
+    await Promise.resolve();
+    expect(replacementSettled).toBe(false);
+  });
+});
 
 const options: TurnOptions = {
   tag: "ASK",

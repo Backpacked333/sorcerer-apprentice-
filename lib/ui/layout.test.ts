@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { layoutInputFrom, layoutMode, WORKSPACE_MIN_WIDTH } from "./layout";
+import { ERP_RELOAD_MS, layoutInputFrom, layoutMode, WORKSPACE_MIN_WIDTH } from "./layout";
 
 const wide = { search: "", width: 1440, canCrop: false, source: "vision", share0: false };
 
@@ -23,6 +23,12 @@ describe("layoutMode", () => {
   it("canCrop alone is enough for workspace on a wide screen", () => {
     expect(layoutMode({ ...wide, source: "both", canCrop: true })).toBe("workspace");
     expect(layoutMode({ ...wide, source: "both", canCrop: false })).toBe("companion");
+  });
+});
+
+describe("ERP_RELOAD_MS", () => {
+  it("pins the ERP iframe remount delay", () => {
+    expect(ERP_RELOAD_MS).toBe(1500);
   });
 });
 

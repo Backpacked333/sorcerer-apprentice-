@@ -9,6 +9,7 @@ import { AppShell } from "@/components/ui/AppShell";
 import { LayoutReveal } from "@/components/ui/LayoutReveal";
 import { OpenErpButton } from "@/components/ui/OpenErpButton";
 import { useLayoutModeState } from "@/components/ui/useLayoutMode";
+import { useErpReloadKey } from "@/components/ui/useErpReloadKey";
 import { usePresenter } from "@/components/ui/usePresenter";
 import { Workspace } from "@/components/ui/Workspace";
 import { captureApp, cardState, erpTargetFor, HEARD_MS, NOTICE_MS } from "@/lib/ui/capture-copy";
@@ -32,16 +33,10 @@ export function CaptureView({ vm }: { vm: CaptureVM }) {
   const app = vm.app ?? captureApp("erp");
   const canCrop = typeof vm.pipeline.setCropTarget === "function";
   const { mode, ready } = useLayoutModeState({ canCrop, source: vm.source, started: vm.started });
-  const [reloadKey, setReloadKey] = useState(vm.started ? "live" : "idle");
+  const reloadKey = useErpReloadKey(vm.started, vm.started ? "live" : "idle");
   const [mech, setMech] = useState(false);
   const cardRef = useRef<HTMLDivElement>(null);
   const now = useNow(vm.started);
-
-  useEffect(() => {
-    if (!vm.started) return;
-    const id = window.setTimeout(() => setReloadKey("live"), 1500);
-    return () => window.clearTimeout(id);
-  }, [vm.started]);
 
   useEffect(() => {
     if (presenter) setMech(true);

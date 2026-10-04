@@ -14,13 +14,13 @@ import {
   UnderstoodCard,
 } from "@/components/glass";
 import { MOODS } from "@/lib/ui/moods";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 import { relativeRect, type Rect } from "@/lib/ui/geometry";
 import { DEMO_COMPANY, LAYOUTS, TICKET, TOUR, TOUR_ANSWER, type TourStep, type TourTarget } from "@/lib/demo/companion-fixtures";
 import { CapsuleFooter, InertButton, KindHeader, MetaRow, Muted, Question } from "./parts";
 
 type Rects = { targets: Partial<Record<Exclude<TourTarget, null>, Rect>>; card: Rect | null };
 const useIso = typeof window === "undefined" ? useEffect : useLayoutEffect;
-const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const WORDS = TOUR_ANSWER.split(" ");
 
 export function CompanionTour() {
@@ -46,7 +46,7 @@ export function CompanionTour() {
 
   // Stream the answer one word at a time while "listening" (full text otherwise).
   useEffect(() => {
-    if (step.answer !== "stream" || reduced()) {
+    if (step.answer !== "stream" || prefersReducedMotion()) {
       setWords(WORDS.length);
       return;
     }
@@ -84,7 +84,7 @@ export function CompanionTour() {
   }, [measure]);
 
   const play = () => {
-    if (reduced()) {
+    if (prefersReducedMotion()) {
       setPlaying(false);
       setIdx(TOUR.length - 1);
       return;
@@ -302,7 +302,7 @@ function FakeConsole({ step }: { step: TourStep }) {
 function Typed({ text, active }: { text: string; active: boolean }) {
   const [n, setN] = useState(text.length);
   useEffect(() => {
-    if (!active || reduced()) {
+    if (!active || prefersReducedMotion()) {
       setN(text.length);
       return;
     }

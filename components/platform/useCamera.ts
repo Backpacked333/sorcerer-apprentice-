@@ -4,6 +4,7 @@
 // background), so pan, wheel and fly never re-render React. Only a quantised counter-scale (`ss`) and a
 // "zoomed in" flag are React state, so labels re-layout a handful of times during a zoom, not per frame.
 import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 
 export type Cam = { x: number; y: number; k: number };
 export type Box = { x: number; y: number; w: number; h: number };
@@ -73,17 +74,9 @@ export function useCamera(o: CameraOpts) {
     return { x: 0, y: 0, w: el?.clientWidth ?? 1200, h: el?.clientHeight ?? 800 };
   }, [viewRef]);
 
-  const reduced = () => {
-    try {
-      return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-    } catch {
-      return false;
-    }
-  };
-
   const flyTo = useCallback((target: Cam, ms = 700) => {
     cancel();
-    if (ms <= 0 || reduced()) {
+    if (ms <= 0 || prefersReducedMotion()) {
       set(target);
       return;
     }

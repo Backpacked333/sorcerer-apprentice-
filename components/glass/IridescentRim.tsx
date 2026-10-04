@@ -8,6 +8,7 @@
 // phase-locked to it, instead of swapping the gradient in one frame.
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 import { PASTEL } from "@/lib/ui/moods";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 
 const BASE_PERIOD = 9; // seconds; matches the CSS default period of tc-hue
 const FADE_MS = 800;
@@ -66,7 +67,7 @@ export function IridescentRim(p: {
     lastFaded.current = top.id;
     const el = wrap.current?.lastElementChild as HTMLElement | null;
     if (!el || typeof el.animate !== "function") return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: FADE_MS, easing: "ease-in-out", fill: "backwards" });
   }, [top.id]);
 

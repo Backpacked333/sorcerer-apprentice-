@@ -39,7 +39,12 @@ const RefinementWire = RefinementSchema.extend({
 export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ map: WorkMap; used: boolean; note?: string }> {
   if (!gatewayConfigured()) return { map: draft, used: false, note: "no AI_GATEWAY_API_KEY; deterministic map" };
   const eligible = log.transcript.filter((s) => s.speaker === "expert" && s.final && !s.redacted && visibleAt(log, s.t, s.tEnd));
-  const windows = log.windows.filter((w) => w.outcome === "answered" && w.answerText && eligible.some((s) => s.text.includes(w.answerText!)) && visibleAt(log, w.openedAt, w.closedAt ?? w.answeredAt));
+  const windows = log.windows.filter((w) => {
+    const end = w.closedAt ?? w.answeredAt ?? w.openedAt;
+    const spans = eligible.filter((s) => s.t >= (w.askedAt ?? w.openedAt) && s.t <= end);
+    return w.outcome === "answered" && w.answerText && visibleAt(log, w.openedAt, end)
+      && spans.map((s) => s.text).join(" ") === w.answerText;
+  });
   const transcript = eligible.map((s) => `[${s.t.toFixed(1)}s expert] ${s.text}`).join("\n");
   const answers = windows.map((w) => `[${(w.answeredAt ?? w.openedAt).toFixed(1)}s] Q(${w.kind}, ${w.stepRef}): ${w.question}\nA: ${w.answerText}`).join("\n\n");
   const steps = draft.steps.map((s) => `${s.id} | invoice ${s.invoice} | ${s.title} | ${s.decision} | judgment=${s.judgment} | reason=${s.reason?.text ?? "none"}`).join("\n");
@@ -70,7 +75,7 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
       guardrails: output.guardrails.map((g) => ({ ...g, quoteText: g.quoteText ?? undefined })),
       slots: output.slots.map((s) => ({ ...s, stepId: s.stepId ?? undefined })),
     });
-    const verbatim = (q: string) => Boolean(q.trim()) && eligible.some((s) => s.text.includes(q));
+    const verbatim = (q: string) => Boolean(q.trim()) && (eligible.some((s) => s.text.includes(q)) || windows.some((w) => w.answerText!.includes(q)));
     const findQuote = (text: string): Quote | undefined => {
       const w = windows.find((w) => w.answerText?.includes(text));
       if (w) return { text, t: w.answeredAt ?? w.openedAt, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" };

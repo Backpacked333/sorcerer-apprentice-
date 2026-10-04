@@ -11,7 +11,9 @@
 - Sonnet 5.5 high reasoning through Gateway; single-flight Capture analysis, shadow default,
   opt-in live packets with exact-state/expiry validation at voice dispatch.
 - Keyless/failure paths preserve deterministic Capture. Mocked route and packet tests pass.
-- Next: profile persistence/Map visibility; no live provider or human timing acceptance yet.
+- Adversarial fixes preserve multi-span answer/audio provenance and recover from compile
+  conflicts without replacing the displayed map with an absent result. 476 tests/typecheck pass.
+- Next: funded Gateway validation and human timing acceptance; neither performed yet.
 
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
 

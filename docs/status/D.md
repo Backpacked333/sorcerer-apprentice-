@@ -4,6 +4,8 @@
 - Work Map has a collapsible proposed-role-profile view with literal quotes and timestamps.
   It explicitly distinguishes draft relationships from executable, confirmed tutor rules.
 - Automated keyless regression checks only; no human visual/voice acceptance claimed.
+- Failed initial compiles now show an error and retry action, rather than an endless
+  loading state. Static-render regression passes; interactive acceptance remains open.
 
 Updated on branch `d/experience`. Not merged. Nothing below is a live human verification.
 

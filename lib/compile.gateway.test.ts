@@ -17,6 +17,19 @@ function fixture() {
   return { log, draft, rule };
 }
 describe("Gateway rule boundary", () => {
+  it("retains question and audio provenance for grounded multi-span answers", async () => {
+    const { log, draft, rule } = fixture();
+    log.transcript.push({ id: "t2", t: 2, speaker: "expert", final: true, text: "Then I ask the buyer for the PO." });
+    const answerText = log.transcript.map((s) => s.text).join(" ");
+    log.windows.push({ id: "w", candidateId: "c", kind: "counterfactual", question: "What if it had no PO?", openedAt: 0, askedAt: 0.5, closedAt: 3, answeredAt: 2, outcome: "answered", answerText, answerAudioId: "audio" });
+    generate.mockResolvedValue({ output: { rules: [{ ...rule, quoteTexts: [answerText] }], stepReasons: [], guardrails: [], slots: [] } });
+    const result = await refineWithLLM(log, draft);
+    expect(generate.mock.calls[0][0].prompt).toContain("What if it had no PO?");
+    expect(result.map.rules[0]).toMatchObject({ confirmedBy: ["counterfactual"], quotes: [{ text: answerText, source: "counterfactual", audioId: "audio" }] });
+    log.transcript[1].redacted = true;
+    expect((await refineWithLLM(log, draft)).map.rules).toEqual([]);
+    expect(generate.mock.calls[1][0].prompt).not.toContain("What if it had no PO?");
+  });
   it("uses a flat wire schema, validates JSON conditions locally, and preserves exact quotes", async () => {
     const { log, draft, rule } = fixture();
     generate.mockResolvedValue({ output: { rules: [rule], stepReasons: [], guardrails: [], slots: [] } });

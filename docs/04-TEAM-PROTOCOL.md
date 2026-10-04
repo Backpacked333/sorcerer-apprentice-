@@ -36,6 +36,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/role-profile.ts`, `lib/role-profile.test.ts`, `lib/compile.gateway.test.ts` | **C** | profile compile/provenance replay and flat Gateway compiler boundary |
 | `lib/agent-model.ts` | **A** | V4 wire override reused from platform PR #44; saved-model verification |
 | `lib/gateway-auth.ts` | **B** | shared Gateway key/environment/request-scoped OIDC detection |
+| `lib/compile.conflict.test.ts` | **C** | compile conflict and recoverable empty-map view regression |
 | `components/voice.tsx` | **A** | `VoiceApi` is a contract: additive only |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |

@@ -75,16 +75,19 @@ it("reads DATA_DIR per call, does not resurrect deleted sessions/maps, and surfa
 });
 
 it("round-trips isolated ERP workspaces and never treats corrupt ERP as missing", async () => {
+  expect(await store.getErpSnapshot()).toEqual({ invoices: [], guard: null });
   expect(await store.getErpState()).toBeUndefined();
   const invoices = seedInvoices().slice(0, 1);
+  await store.saveErpSnapshot({ invoices, guard: { teachSessionId: "t" } });
+  expect(await store.getErpSnapshot()).toEqual({ invoices, guard: { teachSessionId: "t" } });
   await store.saveErpState(invoices);
   expect(await store.getErpState()).toEqual(invoices);
   expect(await store.getErpState("visitor")).toBeUndefined();
   await store.saveErpState([], "visitor");
   expect(await store.getErpState("visitor")).toEqual([]);
-  for (const raw of ["{", "null", "{}", "[null]", "[[]]", "[1]"]) {
+  for (const raw of ["{", "null", "[]", "{}", '{"invoices":null}', '{"invoices":[null]}', '{"invoices":[[]]}', '{"invoices":[1]}']) {
     await fs.writeFile(path.join(root, "local", "erp"), raw);
-    await expect(store.getErpState()).rejects.toThrow();
+    await expect(store.getErpSnapshot()).rejects.toThrow();
   }
 });
 

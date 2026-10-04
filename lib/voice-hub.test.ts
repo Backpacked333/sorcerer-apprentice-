@@ -5,9 +5,12 @@ import {
   AgentSpeechTracker,
   buildVoiceHubScribeOptions,
   cleanupVoiceHubProvider,
+  createTurnHubSubscriber,
   VoiceHubConnectionCoordinator,
   voiceHubConfigFingerprint,
   VoiceHubRouter,
+  routeWebSpeechResult,
+  routeAgentAsrMessage,
   nextVoiceHubConnectionAction,
   type VoiceHubSubscriber,
 } from "./voice-hub";
@@ -97,6 +100,52 @@ describe("VoiceHubRouter app clock", () => {
 });
 
 describe("VoiceHubRouter attribution", () => {
+  it("does not let raw agent-ASR echo re-enter the turn as human text", () => {
+    const timeline = new AgentSpeechTimeline([{ start: 10, end: 12, text: "What made you choose this option?" }]);
+    expect(routeAgentAsrMessage({ text: "What made you choose this option?", atMs: 11_000, timeline, sessionStartMs: 0 })).toEqual({ human: false, text: "", at: 11 });
+    expect(routeAgentAsrMessage({ text: "My own answer is different", atMs: 13_000, timeline, sessionStartMs: 0 })).toEqual({ human: true, text: "My own answer is different", at: 13 });
+  });
+
+  it("maintains a hub-derived human clock across idle narration and turn reset", () => {
+    let turnActive = false;
+    let lastHumanSpeechAt = Number.NEGATIVE_INFINITY;
+    const dispatched = vi.fn();
+    const hub = new VoiceHubRouter({ timeline: new AgentSpeechTimeline() });
+    hub.setSessionStart(10_000);
+    hub.subscribe("__voice_turn__", () => createTurnHubSubscriber({
+      sessionActive: true,
+      turnActive,
+      now: () => 9,
+      dispatch: dispatched,
+      noteHumanSpeech: (at) => { lastHumanSpeechAt = Math.max(lastHumanSpeechAt, at); },
+    }));
+
+    hub.partial("idle human narration", 13_000);
+    expect(lastHumanSpeechAt).toBe(9);
+    expect(dispatched).not.toHaveBeenCalled();
+
+    turnActive = true;
+    hub.commit("turn answer", 15_000);
+    expect(lastHumanSpeechAt).toBe(9);
+    expect(dispatched).toHaveBeenCalledTimes(1);
+    expect(dispatched).toHaveBeenCalledWith({ type: "HUMAN_COMMIT", at: 3, text: "turn answer", source: "scribe" });
+  });
+
+  it("delivers each WebSpeech partial and commit exactly once through hub subscribers", () => {
+    const partial = vi.fn();
+    const committed = vi.fn();
+    const hub = new VoiceHubRouter({ timeline: new AgentSpeechTimeline() });
+    hub.subscribe("__voice_turn__", () => subscriber({ onPartial: partial, onCommitted: committed }));
+
+    routeWebSpeechResult(hub, { text: "one human answer", isFinal: false, atMs: 10_000 });
+    routeWebSpeechResult(hub, { text: "one human answer", isFinal: true, atMs: 10_500 });
+
+    expect(partial).toHaveBeenCalledTimes(1);
+    expect(partial).toHaveBeenCalledWith("one human answer");
+    expect(committed).toHaveBeenCalledTimes(1);
+    expect(committed).toHaveBeenCalledWith("one human answer", undefined, undefined, expect.objectContaining({ speaker: "human" }));
+  });
+
   it("holds incremental prompt prefixes as agent echo before the full echo arrives", () => {
     const partial = vi.fn();
     const activity = vi.fn();

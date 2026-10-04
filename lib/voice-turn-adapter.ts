@@ -4,6 +4,7 @@ export interface VoiceTurnAdapterPorts {
   now: () => number;
   agentConnected: () => boolean;
   applyEffect: (effect: TurnEffect, generation: number) => void | Promise<void>;
+  onState?: (state: TurnState) => void;
   onPhase?: (phase: TurnState["phase"], at: number) => void;
   onError?: (error: unknown) => void;
 }
@@ -42,9 +43,10 @@ export class VoiceTurnAdapter {
     const previous = this.state;
     const transition = reduceTurn(previous, event);
     this.state = transition.state;
+    try { this.ports.onState?.(this.state); } catch (error) { this.ports.onError?.(error); }
     if (previous.phase !== this.state.phase) {
-      this.ports.onPhase?.(this.state.phase, event.at);
-      (this.state.options ?? previous.options)?.onPhase?.(this.state.phase, event.at);
+      try { this.ports.onPhase?.(this.state.phase, event.at); } catch (error) { this.ports.onError?.(error); }
+      try { (this.state.options ?? previous.options)?.onPhase?.(this.state.phase, event.at); } catch (error) { this.ports.onError?.(error); }
     }
     for (const effect of transition.effects) {
       if (effect.type === "SQUELCH") this.squelched = true;

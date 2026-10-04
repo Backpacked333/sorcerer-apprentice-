@@ -4,11 +4,11 @@
 
 - WA-1: generic prompts/tools, idempotent provisioning/check script, awaited connection/fallback contract, debug tap, and keyed/keyless `/voice-check` diagnostics (PRs #2, #3, #7).
 - WA-2: client-side ElevenLabs output gate, idle heartbeat, persistent late-speech squelch, and soak counters (PR #22).
-- WA-3 foundations: pure turn reducer, protocol/echo helpers, one shared Scribe/WebSpeech hub, app-clock transcript timing, bounded fatal fallback, config reconnect, and teardown safety (PRs #9, #12, #35). The documented `VoiceApi.turn()` React adapter is not implemented yet.
+- WA-3: pure turn reducer, protocol/echo helpers, one shared Scribe/WebSpeech hub, app-clock transcript timing, bounded fatal fallback, config reconnect, teardown safety, and the documented `VoiceApi.turn()` React adapter with structural gate/mic/tool/typed/clip wiring (PRs #9, #12, #35 and branch `a/wa3-turn-adapter`).
 - WA-5 foundations: deterministic governor/curiosity/Capture-loop engines plus safe environment/URL tuning parsing (PRs #17, #20). Capture controller adoption remains blocked on the D seam.
 - WA-11: safe tutor knowledge-base sync with verbatim debrief notes and rollback verification (PRs #13, #15); no shared-agent mutation was run.
 - Scribe token route: provider failures are contained as truthful, non-cacheable fallback responses instead of HTTP 500 (PR #31).
-- Fresh merged-main gate: `npm install`, `npm run typecheck`, and 215/215 tests passed. Keyless seed/smoke completed with `question window opened: true`, `intervened: true`, `guard held the independent miss: true`, and `independent success recorded: true`.
+- Fresh branch gate: `npm run typecheck`, 225/225 tests, and `git diff --check` passed. Headless keyless `/voice-check?keyless=1&role=interviewer&stt=off` proved fallback speech held through its end into listening, typed resolution, no-listen resolution, cancellation, and final idle/mic-muted/gate-closed state with no page errors. Earlier keyless seed/smoke completed with `question window opened: true`, `intervened: true`, `guard held the independent miss: true`, and `independent success recorded: true`.
 
 ### Verified live by a human (who, when, what they did)
 
@@ -44,7 +44,7 @@
 ### Risks I see for the demo
 
 - M1 is missed: real ElevenAgents + real Scribe + real vision + real compile have not completed one end-to-end session.
-- `docs/03-CONTRACTS.md` documents the additive P-12 `VoiceApi.turn()` surface before the React adapter exists; consumers must not treat it as available yet.
+- P-12 is implemented and automatically verified, but keyed speech timing, audibility, echo behavior, and microphone coexistence still require the human HT-1/HT-3/HT-4 runs before they can be called live-verified.
 - The quick human silence result is encouraging but does not replace the required three-minute audible soak.
 - Keyless smoke completed its functional beats but logged a transient Capture hydration warning and the expected guarded-save 409; neither predicate failed, but both should be watched after the D/B merges.
 - WA-4/WA-5 integration, off-record media purge, paid-route limits, and live provisioning remain P0 work; do not spend time on stretch goals.

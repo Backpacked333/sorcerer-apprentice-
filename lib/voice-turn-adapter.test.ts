@@ -71,6 +71,7 @@ describe("VoiceTurnAdapter orchestration", () => {
     expect(adapter.snapshot().phase).toBe("speaking");
     h.tick(15.6);
     expect(adapter.snapshot().phase).toBe("listening");
+    expect(adapter.isSquelched()).toBe(true);
     expect(h.effects.at(-1)).toMatchObject({ type: "UNMUTE" });
     adapter.submitTyped("Fallback answer.");
     h.tick(18.1);
@@ -163,6 +164,15 @@ describe("VoiceTurnAdapter orchestration", () => {
     expect(h.errors).toHaveLength(1);
   });
 
+  it("contains consumer phase callback exceptions and still resolves", async () => {
+    const h = harness();
+    const result = h.adapter.turn({ ...listeningTurn, onPhase: () => { throw new Error("render callback failed"); } });
+    h.tick(10);
+    h.adapter.cancel("user");
+    await expect(result).resolves.toMatchObject({ via: "aborted", abortReason: "user" });
+    expect(h.errors).toHaveLength(3);
+  });
+
   it("publishes phase and live partial state with session-clock event times", async () => {
     const onPhase = vi.fn();
     const h = harness();
@@ -196,5 +206,17 @@ describe("VoiceTurnAdapter orchestration", () => {
     await expect(first).resolves.toMatchObject({ abortReason: "superseded" });
     h.adapter.cancel("user", 16);
     await expect(replacement).resolves.toMatchObject({ abortReason: "user" });
+  });
+
+  it("disconnect tears down a closing turn exactly once", async () => {
+    const h = harness();
+    const result = h.adapter.turn(listeningTurn);
+    speakingThenListening(h);
+    h.adapter.submitTyped("captured", 13);
+    expect(h.adapter.snapshot().phase).toBe("closing");
+    h.adapter.disconnect(13.1);
+    h.adapter.disconnect(13.2);
+    await expect(result).resolves.toMatchObject({ via: "aborted", abortReason: "disconnected", closedAt: 13.1 });
+    expect(h.effects.filter((effect) => effect.type === "RESOLVE")).toHaveLength(1);
   });
 });

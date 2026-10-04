@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { cleanupSmoke, expectedGuardConsole, isolatedProject, stopChild } from "./smoke-runtime.mjs";
+import { cleanupSmoke, expectedGuardConsole, isolatedProject, spawnSmoke, stopChild } from "./smoke-runtime.mjs";
 
 const roots: string[] = [];
 const temp = () => { const root = mkdtempSync(join(tmpdir(), "smoke-test-")); roots.push(root); return root; };
@@ -56,4 +56,27 @@ it("only exempts the intentional ERP 409 resource diagnostic", () => {
   expect(expectedGuardConsole(message, "http://localhost:3077/api/erp/invoices/fixture", "http://localhost:3077")).toBe(true);
   for (const url of ["", "https://other.test/api/erp/invoices/fixture", "http://localhost:3077/api/compile", "http://localhost:3077/_next/app.js"]) expect(expectedGuardConsole(message, url, "http://localhost:3077")).toBe(false);
   expect(expectedGuardConsole("Unexpected app error", "http://localhost:3077/api/erp/invoices/fixture", "http://localhost:3077")).toBe(false);
+});
+
+it.skipIf(process.platform !== "linux")("terminates an owned tsx descendant even after its launcher exits", async () => {
+  const root = temp();
+  const heartbeat = join(root, "heartbeat");
+  const code = `process.on('SIGTERM', () => {}); console.log(process.pid); setInterval(() => require('node:fs').appendFileSync(${JSON.stringify(heartbeat)}, '.'), 10)`;
+  const launcher = spawnSmoke(process.execPath, ["node_modules/tsx/dist/cli.mjs", "--eval", code], { stdio: ["ignore", "pipe", "inherit"] });
+  let pid: number | undefined;
+  try {
+    const [output] = await once(launcher.stdout!, "data");
+    pid = Number(String(output).trim());
+    expect(pid).toBeGreaterThan(0);
+    launcher.kill("SIGKILL");
+    await once(launcher, "exit");
+    await stopChild(launcher, 50);
+    await expect.poll(() => {
+      try { return readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1].startsWith("Z"); }
+      catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
+    }).toBe(true);
+  } finally {
+    if (pid) { try { process.kill(pid, "SIGKILL"); } catch { /* already stopped */ } }
+    await stopChild(launcher, 50);
+  }
 });

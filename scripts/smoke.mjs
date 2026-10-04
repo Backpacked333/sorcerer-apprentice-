@@ -7,8 +7,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
-import { isolatedProject, expectedGuardConsole, cleanupSmoke } from "../lib/smoke-runtime.mjs";
+import { isolatedProject, expectedGuardConsole, cleanupSmoke, spawnSmoke } from "../lib/smoke-runtime.mjs";
 
 const BASE = "http://localhost:3077";
 const OUT = process.env.OUT ?? "/tmp/tacit-shots";
@@ -26,7 +25,7 @@ const env = {
   NEXT_PUBLIC_EVENT_SOURCE: "dom", DATA_DIR: dataDir, NEXT_TELEMETRY_DISABLED: "1",
 };
 const run = (args, cwd = projectDir) => new Promise((resolve, reject) => {
-  const child = spawn(process.execPath, args, { env, cwd, stdio: "inherit" });
+  const child = spawnSmoke(process.execPath, args, { env, cwd, stdio: "inherit" });
   children.add(child);
   child.on("error", reject);
   child.on("exit", (code) => code === 0 ? resolve() : reject(new Error(`${args[0]} exited ${code}`)));
@@ -48,7 +47,7 @@ try {
   const next = resolve(projectDir, "node_modules/next/dist/bin/next");
   await run([next, "build"]);
   await run([resolve(projectDir, "node_modules/tsx/dist/cli.mjs"), resolve(projectDir, "scripts/seed-session.ts"), "--if-missing"], dataDir);
-  server = spawn(process.execPath, [next, "start", projectDir, "-p", "3077"], { env, cwd: dataDir, stdio: "inherit" });
+  server = spawnSmoke(process.execPath, [next, "start", projectDir, "-p", "3077"], { env, cwd: dataDir, stdio: "inherit" });
   children.add(server);
   let serverError;
   server.on("error", (error) => { serverError = error; });
@@ -86,6 +85,8 @@ browser = await chromium.launch({
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 await ctx.route("**/*", (route) => serverError || new URL(route.request().url()).origin !== BASE ? route.abort() : route.continue());
 await ctx.addInitScript(() => {
+  // Exercise the app's text-only speech fallback, not headless Chromium's unavailable audio backend.
+  delete window.speechSynthesis;
   Object.defineProperty(window, "SpeechRecognition", { value: undefined, configurable: true });
   Object.defineProperty(window, "webkitSpeechRecognition", { value: undefined, configurable: true });
   if (navigator.mediaDevices) Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: async () => new MediaStream(), configurable: true });
@@ -114,8 +115,8 @@ await shot(erp, "02-erp-invoice-4471");
 const cap = await ctx.newPage();
 await cap.goto(`${BASE}/capture?share=0`);
 await shot(cap, "03-capture-start");
-await (await sel(cap, "cap-consent", 'input[type="checkbox"]')).check();
-await (await sel(cap, "cap-start", "text=Start session and share the ERP tab")).click();
+await (await sel(cap, "capture-consent", 'input[type="checkbox"]')).check();
+await (await sel(cap, "capture-start", "text=Start session and share the ERP tab")).click();
 await cap.click("text=Show the mechanism");
 await cap.waitForSelector("text=Governor", { timeout: 20000 });
 await cap.waitForTimeout(1500);

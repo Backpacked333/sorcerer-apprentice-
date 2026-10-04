@@ -904,7 +904,7 @@ export function deriveOntology(input: PlatformInput, roleId: string): { data: Pl
   const ids = p ? displayIds(p.m) : new Map<string, string>();
   for (const r of rules) {
     const at = ruleLearnedAt(r, p!.s, p!.m);
-    const prov: Provenance = r.quotes.length ? (r.quotes.every((q) => q.evidence === "described") ? "described" : "said") : "teachback";
+    const prov: Provenance = r.quotes.length ? (ruleKind(r) === "described" ? "described" : "said") : "teachback";
     for (const f of uniq([...condFields(r.when), ...condFields(r.unless), ...actFields(r.then)])) {
       const fc = FIELD_CLASS[f];
       if (!fc || obs.has(f) || fields[fc.cls].some((x) => x.name === fc.label)) continue;

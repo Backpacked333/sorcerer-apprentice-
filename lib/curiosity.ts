@@ -47,7 +47,7 @@ export function newContext(): CuriosityContext {
 export type EventClass = "edit_prefilled" | "hold_or_reroute" | "threshold_adjacent" | "unusual_entity" | "repeat" | "navigation";
 
 export function classifyEvent(e: ScreenEvent, ctx: CuriosityContext): { cls: EventClass; value: number } {
-  const key = `${e.invoice ?? "?"}:${e.field ?? e.kind}`;
+  const key = `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
   if (e.kind === "field_changed") {
     const freeText = new Set(["notes", "note", "assetNumber", "hasAssetNumber", "description"]);
     const from = e.from ?? "";
@@ -128,6 +128,7 @@ function routeChangeWhy(e: ScreenEvent, inv: string): string {
 }
 
 export function templates(e: ScreenEvent): Partial<Record<CandidateKind, string>> {
+  if (e.subject?.type === "claim" && !e.invoice) return claimTemplates(e);
   const inv = invoiceRef(e.invoice);
   const field = humanField(e.field);
   const amount = e.state?.amount;
@@ -165,6 +166,38 @@ export function templates(e: ScreenEvent): Partial<Record<CandidateKind, string>
   }
 }
 
+/** Claims workbench events (vision-only, `subject.type === "claim"`, never an invoice): neutral claim wording. */
+function claimTemplates(e: ScreenEvent): Partial<Record<CandidateKind, string>> {
+  const claim = e.subject?.id ? `claim ${e.subject.id}` : "that claim";
+  const field = labelField(e.field);
+  const to = e.to ?? "";
+  switch (e.kind) {
+    case "field_changed":
+      return {
+        why: `You changed the ${field} on ${claim} from ${e.from ?? "empty"} to ${to}. What made you do that?`,
+        counterfactual: `What would have to be different on ${claim} for you to leave the ${field} on ${e.from ?? "empty"}?`,
+        limit: `Is there a kind of claim where you would handle the ${field} differently?`,
+        stop: `When would you stop at this step on ${claim} and check with someone instead?`,
+      };
+    case "status_changed":
+      return {
+        why: `You set ${claim} to ${to}. What made you do that?`,
+        limit: `Is that for every claim like this, or only this one?`,
+        who: `Who decides what happens next with ${claim}?`,
+        stop: `When would you stop here and ask someone before moving ${claim} on?`,
+      };
+    case "route_changed":
+      return {
+        why: `You sent ${claim} to ${String(to).replace(/_/g, " ")}. What made you do that?`,
+        limit: `Is there a kind of claim you would never decide alone?`,
+        who: `Who takes ${claim} from here, and what if they are away?`,
+        stop: `When would you stop here and ask someone instead of routing ${claim}?`,
+      };
+    default:
+      return {};
+  }
+}
+
 function monthName(m: number): string {
   return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][m - 1] ?? "another month";
 }
@@ -179,7 +212,7 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
   const { cls, value } = classifyEvent(e, ctx);
   if (value === 0) return [];
   const tpl = templates(e);
-  const stepRef = `${e.invoice ?? "?"}:${e.field ?? e.kind}`;
+  const stepRef = `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
   const label = e.to ? ctx.valueLabels?.[e.to] : undefined;
   const fieldLabel = labelField(e.field).toLowerCase();
   const aliases = Array.from(
@@ -192,7 +225,9 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
   const retro = (question: string) => {
     const groundedQuestion = e.invoice ? question.replace(invoiceRef(e.invoice), "it") : question;
     const clause = `${groundedQuestion.charAt(0).toLowerCase()}${groundedQuestion.slice(1)}`;
-    return e.invoice ? `On ${invoiceRef(e.invoice)} a moment ago, ${clause}` : `A moment ago, ${clause}`;
+    if (e.invoice) return `On ${invoiceRef(e.invoice)} a moment ago, ${clause}`;
+    if (e.subject?.type === "claim" && e.subject.id) return `On claim ${e.subject.id} a moment ago, ${clause}`;
+    return `A moment ago, ${clause}`;
   };
   const base = { invoice: e.invoice, field: e.field, stepRef, eventId: e.id, createdAt: now, status: "queued" as const, aliases };
   const make = (kind: CandidateKind, candidateValue: number, question: string, guardrail: boolean, parentId?: string): Candidate => ({
@@ -228,7 +263,7 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
     if (tpl.limit) out.push({ ...make("limit", value, tpl.limit, true), status: "debrief" });
     if (tpl.stop) out.push({ ...make("stop", value - 0.1, tpl.stop, true), status: "debrief" });
   } else if (cls === "repeat" && tpl.limit) {
-    out.push(make("limit", value, `Is it always ${e.to} for this kind of invoice, or does it depend?`, true));
+    out.push(make("limit", value, `Is it always ${e.to} for this kind of ${e.subject?.type === "claim" && !e.invoice ? "claim" : "invoice"}, or does it depend?`, true));
   }
   return out;
 }

@@ -220,12 +220,17 @@ export async function saveSession(session: SessionLog): Promise<void> {
   }
 }
 
-export async function listSessions(): Promise<Pick<SessionLog, "id" | "mode" | "task" | "expertName" | "startedAt" | "endedAt">[]> {
+/** `skipInvalid` lists the readable sessions instead of throwing on one corrupt record (read-only views such as /platform). */
+export async function listSessions(opts: { skipInvalid?: boolean } = {}): Promise<Pick<SessionLog, "id" | "mode" | "task" | "expertName" | "startedAt" | "endedAt">[]> {
   const workspace = await owner();
   if (backend() === "supabase") {
     const { data, error } = await db().from("sessions").select("data").eq("owner_id", workspace);
     if (error) throw error;
-    return (data ?? []).map((row) => row.data as SessionLog)
+    const rows = (data ?? []).map((row) => row.data as SessionLog);
+    const readable = opts.skipInvalid
+      ? rows.filter((session) => !!session && typeof session === "object" && typeof session.id === "string" && SAFE_ID.test(session.id) && typeof session.startedAt === "number")
+      : rows;
+    return readable
       .map(({ id, mode, task, expertName, startedAt, endedAt }) => ({ id, mode, task, expertName, startedAt, endedAt }))
       .sort((a, b) => b.startedAt - a.startedAt);
   }
@@ -236,7 +241,7 @@ export async function listSessions(): Promise<Pick<SessionLog, "id" | "mode" | "
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
-  const sessions = await Promise.all(files.filter((file) => SAFE_ID.test(file)).map(getSession));
+  const sessions = await Promise.all(files.filter((file) => SAFE_ID.test(file)).map((file) => (opts.skipInvalid ? getSession(file).catch(() => undefined) : getSession(file))));
   return sessions.filter((session): session is SessionLog => !!session)
     .map(({ id, mode, task, expertName, startedAt, endedAt }) => ({ id, mode, task, expertName, startedAt, endedAt }))
     .sort((a, b) => b.startedAt - a.startedAt);

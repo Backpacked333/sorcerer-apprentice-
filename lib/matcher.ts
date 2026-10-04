@@ -98,12 +98,12 @@ export class Matcher {
         this.flagged.add(inv);
         const note = this.map.notes.find((n) => (n.topic === "credit_note" && ((state.category ?? "") === "credit_note" || (state.amount ?? 0) < 0)) || (n.topic === "no_po" && state.hasPO === false));
         if (note) {
-          // the debrief asked about this case; the tutor has her words for it
+          // the debrief asked about this case; the tutor has their words for it
           this.ledger.push({ ruleId: "novel", outcome: "novel_case_covered", t: now, invoice: inv, phase, helpBefore: true });
-          return { kind: "novel", invoice: inv, quote: note.quote.text, message: `${this.map.expert.name} never worked one of these while I watched, but I asked her. She said: "${note.quote.text}"` };
+          return { kind: "novel", invoice: inv, quote: note.quote.text, message: `${this.map.expert.name} never worked one of these while I watched, but I asked them. They said: "${note.quote.text}"` };
         }
         this.ledger.push({ ruleId: "novel", outcome: "novel_case_flagged", t: now, invoice: inv, phase, helpBefore: false });
-        return { kind: "novel", invoice: inv, message: `${this.map.expert.name} never showed me a case like this one (${describeState(state)}). I will not guess. I have flagged it for her so the map can learn it.` };
+        return { kind: "novel", invoice: inv, message: `${this.map.expert.name} never showed me a case like this one (${describeState(state)}). I will not guess. I have flagged it for them so the map can learn it.` };
       }
       const upcoming = applicableRules(this.map, { ...state, costCenter: undefined, route: undefined, status: "open" });
       if (upcoming.length && inv && !this.predicted.has(inv)) {
@@ -135,7 +135,7 @@ export class Matcher {
           const after = this.hinted.has(key(rule));
           const corrected = this.ledger.some((m) => m.ruleId === rule.id && m.invoice === inv && m.outcome === "missed");
           this.ledger.push({ ruleId: rule.id, outcome: after || corrected ? "applied_after_hint" : "applied_unprompted", t: now, invoice: inv, phase, helpBefore: helped(rule) });
-          return { kind: "praise", rule, invoice: inv, quote: rule.quotes[0]?.text, message: after ? `That is it. ${rule.title}, in her words: "${rule.quotes[0]?.text ?? ""}"` : `Right. ${rule.title}. Exactly what ${this.map.expert.name} does.` };
+          return { kind: "praise", rule, invoice: inv, quote: rule.quotes[0]?.text, message: after ? `That is it. ${rule.title}, in their words: "${rule.quotes[0]?.text ?? ""}"` : `Right. ${rule.title}. Exactly what ${this.map.expert.name} does.` };
         }
       }
     }

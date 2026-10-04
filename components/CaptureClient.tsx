@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, shouldPersistAgentSpokenText, turnCommitEvidenceEligible, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
 import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
 import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
+import { aboutFor, captureApp, changeText, evidenceFor, eyebrowFor, type CaptureAppId, type Evidence } from "@/lib/ui/capture-copy";
 import { COST_CENTERS } from "@/lib/erp-model";
 import { Governor, type Decision, type GovernorConfig } from "@/lib/governor";
 import { computeMetrics } from "@/lib/metrics";
@@ -15,14 +16,14 @@ import type { TurnResult } from "@/lib/voice-turn";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
 import { VoiceProvider, useTranscriber, useVoice, type ToolHandlers } from "./voice";
 import { CaptureView } from "./views/CaptureView";
-import type { CaptureVM } from "./views/capture.vm";
+import type { CaptureVM, UnderstoodItem } from "./views/capture.vm";
 
 const OFF_RECORD = /\b(off the record|scratch that|don'?t keep that|do not keep that|strike that)\b/i;
 
 type CaptureGovernorConfig = Partial<GovernorConfig> & { graceSecs?: number };
 type OpenAction = Extract<LoopAction, { type: "open" }>;
 
-export function CaptureClient(props: { agentId?: string; source: EventSource; governor: CaptureGovernorConfig }) {
+export function CaptureClient(props: { agentId?: string; source: EventSource; governor: CaptureGovernorConfig; app?: CaptureAppId; share0?: boolean }) {
   const tools = useRef<ToolHandlers>({});
   return (
     <VoiceProvider agentId={props.agentId} tools={tools}>
@@ -31,11 +32,14 @@ export function CaptureClient(props: { agentId?: string; source: EventSource; go
   );
 }
 
-function Capture({ source, governor: govConfig, tools }: { agentId?: string; source: EventSource; governor: CaptureGovernorConfig; tools: React.MutableRefObject<ToolHandlers> }) {
+function Capture({ source: envSource, governor: govConfig, tools, app: appId, share0 = false }: { agentId?: string; source: EventSource; governor: CaptureGovernorConfig; tools: React.MutableRefObject<ToolHandlers>; app?: CaptureAppId; share0?: boolean }) {
   const router = useRouter();
   const voice = useVoice();
+  const app = useMemo(() => captureApp(appId), [appId]);
+  // The claims workbench posts no telemetry: vision only, so an open ERP tab can never leak dom events into it.
+  const source: EventSource = app.telemetry ? envSource : "vision";
   const [expertName, setExpertName] = useState("");
-  const [task, setTask] = useState("Process supplier invoices before month-end close");
+  const [task, setTask] = useState(app.task);
   const [started, setStarted] = useState(false);
   const [tick, setTick] = useState(0);
   const [decision, setDecision] = useState<Decision>();
@@ -45,6 +49,17 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const [syncError, setSyncError] = useState<string | null>(null);
   const [consented, setConsented] = useState(false);
   const [noisy, setNoisy] = useState(false);
+  // ---- companion redesign (presentation state only)
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
+  const [endingUi, setEndingUi] = useState(false);
+  const [visionKey, setVisionKey] = useState<boolean | null>(null);
+  const [lastNotice, setLastNotice] = useState<CaptureVM["lastNotice"]>();
+  const [lastStrike, setLastStrike] = useState<CaptureVM["lastStrike"]>();
+  const [lastDeferred, setLastDeferred] = useState<CaptureVM["lastDeferred"]>();
+  const startingRef = useRef(false);
+  /** per window: quiet before it opened and where the change came from */
+  const windowMeta = useRef(new Map<string, { pauseSecs?: number; evidence?: Evidence }>());
 
   const log = useRef<SessionLog>(emptySession("pending", "capture", task, expertName));
   const governor = useRef(new Governor(govConfig));
@@ -85,6 +100,9 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       const candidates = buildCandidates(event, ctx.current, event.t);
       observe(event, ctx.current);
       queue.current.add(candidates);
+      if (candidates.some((candidate) => candidate.status === "queued") && event.to !== undefined) {
+        setLastNotice({ eventId: event.id, text: changeText(event), field: event.field ?? (event.kind === "status_changed" ? "status" : event.kind === "route_changed" ? "route" : undefined), at: Date.now(), queued: true });
+      }
       voiceRef.current.sendContext(`[SCREEN t=${event.t.toFixed(0)}s] ${describeEvent(event)}`);
     }
     dirty.current = true;
@@ -186,6 +204,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     if (previousStrike && Math.abs(previousStrike.from - from) < 0.01 && from <= previousStrike.to + 2) previousStrike.to = Math.max(previousStrike.to, to);
     else session.offRecord.push({ from, to });
     pipelineRef.current?.bumpEpoch();
+    setLastStrike({ at: Date.now(), from, to });
     dirty.current = true;
     rerender();
   }, [nowSecs, rerender]);
@@ -251,6 +270,12 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     const question = action.retro ? action.candidate.questionRetro : action.candidate.question;
     const session = log.current;
     session.windows.push({ id: openWindow.id, candidateId: action.candidate.id, kind: action.candidate.kind, question, stepRef: action.candidate.stepRef, openedAt });
+    const openSignals = readSignals();
+    const lastActivity = Math.max(openSignals.lastSpeechAt, openSignals.lastScreenChangeAt, openSignals.lastTypingAt);
+    windowMeta.current.set(openWindow.id, {
+      pauseSecs: Number.isFinite(lastActivity) ? Math.max(0, openedAt - lastActivity) : undefined,
+      evidence: evidenceFor(session.events.find((event) => event.id === action.candidate.eventId)),
+    });
     activeWindowId.current = openWindow.id;
     activeHeard.current = "";
     activeForced.current = action.forced;
@@ -319,6 +344,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const endTask = useCallback(async () => {
     if (ending.current) return;
     ending.current = true;
+    setEndingUi(true);
     const session = log.current;
     if (activeTurn.current) {
       if (activeHeard.current.trim()) voiceRef.current.submitTyped(activeHeard.current);
@@ -347,6 +373,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       setSyncError(null);
     } catch {
       ending.current = false;
+      setEndingUi(false);
       dirty.current = true;
       setSyncError("Could not save this capture. Try again.");
       return;
@@ -455,9 +482,15 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     return () => window.clearInterval(interval);
   }, [started]);
 
-  const start = async () => {
-    if (!consented) return;
+  /** Called synchronously inside the click: the screen share prompt needs the user activation. */
+  const start = async (opts?: { mode?: "tab" | "workspace" }) => {
+    if (!consented || startingRef.current || started) return;
+    startingRef.current = true;
+    setStarting(true);
+    setStartError(null);
     setSyncError(null);
+    // The share prompt first, synchronously inside the click, in parallel with the session POST.
+    const share = share0 ? null : pipeline.start({ mode: opts?.mode ?? "tab", app: app.id, ...(app.id === "erp" ? { queue: "expert" } : {}) }).catch(() => undefined);
     let session: SessionLog;
     try {
       const response = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });
@@ -465,7 +498,10 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       ({ session } = await response.json());
       if (!session?.id) throw new Error("session creation failed");
     } catch {
-      setSyncError("Could not create a capture session.");
+      pipeline.stop();
+      startingRef.current = false;
+      setStarting(false);
+      setStartError("Could not create a capture session.");
       return;
     }
     log.current = session;
@@ -476,14 +512,28 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     voiceRef.current.setSessionStart(log.current.startedAt);
     pipeline.signals.current = { lastScreenChangeAt: -Infinity, lastTypingAt: -Infinity, lastBoundaryAt: -Infinity, lastInvoiceOpenedAt: -Infinity, activity: "still" };
     setStarted(true);
-    if (new URLSearchParams(window.location.search).get("share") !== "0") await pipeline.start().catch(() => undefined);
+    await share;
     await voiceRef.current.connect({
       firstMessage: "",
       sessionStartMs: log.current.startedAt,
       dynamicVariables: { expert_name: expertName.trim() || "Expert", task },
       keyterms: keytermsFrom([], COST_CENTERS),
     });
+    setStarting(false);
   };
+
+  useEffect(() => {
+    let live = true;
+    fetch("/api/health")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((health: { keys?: { gateway?: boolean } } | null) => {
+        if (live && health?.keys) setVisionKey(Boolean(health.keys.gateway));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, []);
 
   const setCaptureHolding = useCallback((paused: boolean) => {
     holdingRef.current = paused;
@@ -498,8 +548,35 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const queued = queue.current.items.filter((candidate) => candidate.status === "queued").sort((left, right) => right.value - left.value);
   const struckSeconds = session.offRecord.reduce((sum, range) => sum + (range.to - range.from), 0);
   const events = useMemo(() => session.events.filter((event) => event.kind !== "typing").slice(-14).reverse(), [session.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
-  const crop = pipeline as { setCropTarget?: (element: HTMLElement | null) => void; surface?: "browser" | "window" | "monitor" };
-  const reasons = loop.current.reasonHeard;
+  const crop = pipeline as Partial<Pick<CaptureVM["pipeline"], "setCropTarget" | "surface" | "setOccluders" | "selfCapture" | "degraded" | "lastSentUrl" | "piiMode">>;
+  // Struck narration never resurfaces on screen; `at`/`about` are presentation extras for the companion.
+  const reasons = loop.current.reasonHeard
+    .filter((reason) => !session.offRecord.some((range) => reason.t >= range.from && reason.t <= range.to))
+    .map((reason) => {
+      const candidate = queue.current.items.find((item) => item.stepRef === reason.stepRef && item.heardAt === reason.t);
+      return { ...reason, at: session.startedAt + reason.t * 1000, about: aboutFor(reason.stepRef, candidate?.field) };
+    });
+  const openMeta = openWindow ? windowMeta.current.get(openWindow.id) : undefined;
+  const understood: UnderstoodItem[] = session.windows
+    .filter((window) => window.outcome === "answered")
+    .map((window) => {
+      const candidate = queue.current.items.find((item) => item.id === window.candidateId);
+      const reason = window.logged?.reason?.trim();
+      const literal = window.answerText && window.answerText !== reason ? window.answerText : undefined;
+      return {
+        windowId: window.id,
+        kind: window.logged?.guardrail || candidate?.guardrail ? ("guardrail" as const) : ("reason" as const),
+        text: reason || literal || "",
+        isQuote: !reason && Boolean(literal),
+        at: session.startedAt + (window.closedAt ?? window.answeredAt ?? window.openedAt) * 1000,
+        question: window.question,
+        answerText: literal,
+        eyebrow: eyebrowFor(window.kind, aboutFor(window.stepRef, candidate?.field)),
+        stepRef: window.stepRef ?? "",
+      };
+    })
+    .filter((item) => item.text);
+  const governorConfig = governor.current.config;
 
   const vm: CaptureVM = {
     started,
@@ -533,11 +610,24 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       clearMasks: pipeline.clearMasks,
       paused: pipeline.paused,
       ...(typeof crop.setCropTarget === "function" ? { setCropTarget: crop.setCropTarget, surface: crop.surface } : {}),
+      ...(typeof crop.setOccluders === "function" ? { setOccluders: crop.setOccluders } : {}),
+      selfCapture: crop.selfCapture,
+      degraded: crop.degraded,
+      lastSentUrl: crop.lastSentUrl,
+      piiMode: crop.piiMode,
     },
     decision,
     questionsLast10Min: governor.current.questionsInLast10Min(nowSecs()),
     budget: governor.current.config.maxPer10Min,
-    openWindow: openWindow && governorWindow ? { ...openWindow, phase: voice.turnPhase === "listening" || voice.turnPhase === "closing" ? "answering" : "asking" } : undefined,
+    openWindow: openWindow && governorWindow
+      ? {
+          ...openWindow,
+          phase: voice.turnPhase === "listening" || voice.turnPhase === "closing" ? "answering" : "asking",
+          pauseSecs: openMeta?.pauseSecs,
+          evidence: openMeta?.evidence,
+          about: aboutFor(openWindow.stepRef, queue.current.items.find((candidate) => candidate.id === openWindow.candidateId)?.field),
+        }
+      : undefined,
     partial: voice.partial || partial,
     queued,
     askedCount: queue.current.askedCount,
@@ -550,7 +640,10 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     transcript: session.transcript,
     ledger: { framesSeen: pipeline.framesSeen, framesKept: session.frames.length, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred, secondsStruck: struckSeconds },
     strike: () => strike(),
-    notNow: () => voiceRef.current.cancelTurn("user"),
+    notNow: () => {
+      if (activeTurn.current) setLastDeferred({ at: Date.now() });
+      voiceRef.current.cancelTurn("user");
+    },
     holding,
     setHolding: setCaptureHolding,
     submitTypedAnswer: (text) => voiceRef.current.submitTyped(text),
@@ -561,6 +654,18 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     noisy,
     chainedCount: loop.current.chainedCount,
     forced: activeForced.current,
+    app,
+    share0,
+    startedAt: started ? session.startedAt : null,
+    starting,
+    startError,
+    ending: endingUi,
+    understood,
+    lastNotice,
+    lastStrike,
+    lastDeferred,
+    governorThresholds: { silenceSecs: governorConfig.silenceSecs, stillSecs: governorConfig.stillSecs, typingQuietSecs: governorConfig.typingQuietSecs },
+    visionKey,
   };
   return <CaptureView vm={vm} />;
 }

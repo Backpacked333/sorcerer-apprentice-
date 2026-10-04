@@ -124,6 +124,28 @@ For a telemetry-only run, use `/capture?share=0` with `NEXT_PUBLIC_EVENT_SOURCE=
 | `/demo` | Presenter controls and sandbox reset; use the seed command to restore samples |
 | `/voice-check` / `/voice-check?role=tutor` | Interviewer / tutor connection diagnostics |
 | `/api/health` | Storage reachability and provider configuration presence; not an end-to-end provider check |
+| `/claims` | Claims workbench sandbox (vision only, no ERP telemetry); capture it with `/capture?app=claims` |
+| `/platform` | Platform pages built from real captured sessions (roles, sessions) |
+| `/demo/companion` / `/platform/demo` | Demo mode with fictional data (see below) |
+
+### Where to look (the Apprentice Test)
+
+| Question | Where to look |
+| --- | --- |
+| When to ask | The companion's glow, and the Governor under Show the mechanism. Timing is code, not a prompt. |
+| What to ask | Candidate questions, under Show the mechanism. It never asks what the screen already shows. |
+| When it has understood | Gaps closed, on the map. Only the expert's words fill a slot, and only an explicit yes locks it. |
+| Whether the new hire learned | The mastery card. Rescued and learned are different labels. |
+| Trust | Struck from the record, and the Privacy ledger. In the workspace, masks are painted before a frame leaves the browser. |
+
+### Product tour / Demo mode
+
+- `/` is the landing page: an animated hero labelled "Illustration" (generic beats, no business rules), the two doors (a finished sample Work Map and tutor, or a live capture), the Apprentice Test and honest limits. The status strip reads `/api/health` and the event source; it reports provider configuration, never a live provider check.
+- `/demo` is the presenter room: reset, launch links, cue card.
+- `/demo/companion` is **demo mode**: every companion state (13 moods, the capsule, ask, teach-back and teach layouts) plus a "Play states" scripted tour over a fake support console. All copy is fictional (Larkspur Telecom, fictional), labelled as demo data, and never imported by the live product. Under reduced motion, Play jumps to the end state.
+- `/platform/demo` shows the platform pages with a fictional company. Everything outside demo mode runs on real session data only.
+
+Screenshots in the submission are taken from these routes.
 
 ## Environment configuration
 

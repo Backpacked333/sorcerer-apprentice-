@@ -4,7 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { Invoice, Queue } from "@/lib/erp-model";
 import { toInvoiceState } from "@/lib/erp-model";
-import { canCommit, commitStatus, decisionOf, proposedState, statusBadge, textCommit } from "@/lib/erp-ui";
+import Link from "next/link";
+import { canCommit, commitStatus, confirmCopy, decisionOf, money, progressLine, proposedState, QUEUE_LABEL, routeLabelOf, statusBadge, textCommit } from "@/lib/erp-ui";
 import { postTelemetry } from "@/lib/telemetry";
 
 /** Survives a strict-mode remount so a fake unmount does not close the invoice. */
@@ -65,7 +66,14 @@ export function InvoiceForm({
       return;
     }
     const id = window.setTimeout(() => setArm(true), 600);
-    return () => window.clearTimeout(id);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setConfirm(false);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.clearTimeout(id);
+      window.removeEventListener("keydown", onKey);
+    };
   }, [confirm]);
 
   const locked = inv.status === "posted" || inv.status === "approved";
@@ -172,49 +180,119 @@ export function InvoiceForm({
     }
   };
 
-  const money = (n: number) => `${n < 0 ? "-" : ""}€${Math.abs(n).toLocaleString("en-IE", { minimumFractionDigits: 2 })}`;
-  const routeLabel = inv.route === "second_approval" ? "second approval" : "single approval";
+  const routeLabel = routeLabelOf(inv.route);
+  const ccEmpty = !inv.costCenter;
 
   return (
     <div className="erp-invoice">
-      <section className="erp-card">
-        <div className="erp-doc-head">
-          <div>
-            <p className="erp-label">Supplier invoice</p>
-            <h1 className="erp-id">INV-{inv.id}</h1>
-            {queueProgress && <p className="erp-meta">{queueProgress.position} of {queueProgress.total} · {queueProgress.remainingOpen} still open</p>}
-          </div>
-          <div className="erp-doc-side">
-            <p className="erp-label">Amount</p>
-            <p className="erp-amount">{money(inv.amount)}</p>
-            <span className={`erp-badge erp-badge-${badge.tone}`} data-testid="erp-status-badge">{badge.label}</span>
-          </div>
+      <p className="erp-crumbs">
+        Expenses &amp; Bills <span aria-hidden>›</span> Bills <span aria-hidden>›</span>{" "}
+        <Link href={`/erp?queue=${queue}`}>{QUEUE_LABEL[queue] ?? QUEUE_LABEL.expert}</Link>
+      </p>
+
+      <div className="erp-title-row">
+        <h1 className="erp-title">Bill INV-{inv.id}</h1>
+        <span className={`erp-pill erp-pill-${badge.tone}`} data-testid="erp-status-badge">{badge.label}</span>
+        {queueProgress && (
+          <span className="erp-muted">
+            {progressLine({ ...queueProgress, remainingOpen: queueProgress.remainingOpen - (invoice.status === "open" && locked ? 1 : 0) }, inv.mode)}
+          </span>
+        )}
+        <div className="erp-title-actions">
+          {nextId && !locked && (
+            <button type="button" className="erp-btn" data-testid="erp-next" onClick={() => router.push(`/erp/invoice/${nextId}`)}>Next invoice →</button>
+          )}
+          {locked && nextId && (
+            <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-next" onClick={() => router.push(`/erp/invoice/${nextId}`)}>Next invoice →</button>
+          )}
+          {!locked && (
+            <div className="erp-save-anchor">
+              <button
+                type="button"
+                className="erp-btn erp-btn-primary erp-btn-save"
+                data-testid="erp-save"
+                data-erp-target="save"
+                aria-haspopup="dialog"
+                aria-expanded={confirm}
+                disabled={locked || saving}
+                onClick={confirm ? undefined : openIntent}
+              >
+                {decision === "hold" ? "Save as held" : "Post invoice"}
+              </button>
+              {confirm && (
+                <div className="erp-confirm" role="dialog" aria-label="Save this bill" data-testid="erp-confirm-popover">
+                  <span className="erp-confirm-caret" aria-hidden />
+                  <p className="erp-confirm-text">{confirmCopy(inv)}</p>
+                  <div className="erp-confirm-actions">
+                    <button type="button" className="erp-btn" data-testid="erp-cancel" onClick={() => setConfirm(false)}>Cancel</button>
+                    <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-confirm" disabled={!arm || saving} onClick={() => void save()}>
+                      {saving ? "Saving…" : "Confirm"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        <dl className="erp-facts">
-          <Fact k="Supplier" v={inv.supplier} />
-          <Fact k="Entity" v={inv.entity === "subsidiary" ? "Subsidiary (intercompany)" : "Parent company"} />
-          <Fact k="Invoice date" v={inv.date} />
-          <Fact k="Category" v={inv.category.replace(/_/g, " ")} />
-          <Fact k="Purchase order" v={inv.hasPO ? inv.poNumber ?? "yes" : "none"} />
-          <Fact k="Supplier status" v={inv.knownSupplier ? "Known supplier" : "New supplier, not in master data"} />
-          {inv.contactName && <Fact k="Contact" v={inv.contactName} pii="name" />}
-          {inv.contactEmail && <Fact k="Email" v={inv.contactEmail} pii="email" />}
-          {inv.contactPhone && <Fact k="Phone" v={inv.contactPhone} pii="phone" />}
-          {inv.iban && <Fact k="Bank (IBAN)" v={inv.iban} pii="iban" />}
-        </dl>
-        <div className="erp-line">
-          <p className="erp-label">Line item</p>
-          <p>{inv.description}</p>
+      </div>
+
+      {(locked || error || held) && (
+        <div className="erp-banner-slot">
+          {locked && (
+            <div className="erp-banner erp-banner-ok">
+              <p data-testid="erp-posted-banner">POSTED · INV-{inv.id} · cost center {inv.costCenter} · {routeLabel}</p>
+              {!nextId && <p className="erp-banner-sub">Queue complete. Return to the Simon panel to finish.</p>}
+            </div>
+          )}
+          {error && <p className="erp-banner erp-banner-blocked" data-testid="erp-error" role="alert">{error}</p>}
+          {held && (
+            <div className="erp-banner erp-banner-blocked" data-testid="erp-held-panel" role="alert">
+              <p className="erp-banner-head">Not posted. {held.title}</p>
+              {held.missing && <p>Missing: {held.missing}</p>}
+              {held.quote && <p className="erp-banner-quote">“{held.quote}”</p>}
+              {held.who && <p>Check with {held.who}</p>}
+            </div>
+          )}
         </div>
+      )}
+
+      <section className="erp-card erp-head-card" aria-label="Bill header">
+        <Fact k="Vendor" v={inv.supplier} target="vendor" />
+        <Fact k="Bill date" v={inv.date} />
+        <Fact k="Purchase order" v={inv.hasPO ? inv.poNumber ?? "yes" : "none"} />
+        <Fact k="Entity" v={inv.entity === "subsidiary" ? "Subsidiary (intercompany)" : "Parent company"} />
+        <div className="erp-amount-cell">
+          <div className="erp-k">Amount due</div>
+          <div className="erp-amount" data-erp-target="amount">{money(inv.amount)}</div>
+          <div className="erp-k erp-k-gap">Supplier status</div>
+          <div className="erp-supplier">{inv.knownSupplier ? "Known supplier" : "New supplier, not in master data"}</div>
+        </div>
+        {inv.contactName && <Fact k="Contact" v={inv.contactName} pii="name" />}
+        {inv.contactEmail && <Fact k="Email" v={inv.contactEmail} pii="email" />}
+        {inv.contactPhone && <Fact k="Phone" v={inv.contactPhone} pii="phone" />}
+        {inv.iban && <Fact k="Bank (IBAN)" v={inv.iban} pii="iban" wide />}
       </section>
 
-      <section className="erp-card">
-        <p className="erp-label">Coding and approval</p>
-        <label className="erp-field">
-          <span>Cost center</span>
+      <section className="erp-card erp-card-flush" aria-label="Category details">
+        <div className="erp-card-title">
+          <h2>Category details</h2>
+          <span className="erp-muted">Category <b className="erp-cat">{inv.category.replace(/_/g, " ")}</b></span>
+        </div>
+        <div className="erp-lines-head" aria-hidden>
+          <span>#</span>
+          <span>Account · cost center</span>
+          <span>Description</span>
+          <span>Asset number</span>
+          <span className="is-num">Amount</span>
+        </div>
+        <div className="erp-line-row">
+          <span className="erp-line-n">1</span>
           <select
             ref={costRef}
+            className={`erp-select${ccEmpty ? " is-empty" : ""}`}
+            aria-label="Cost center"
             data-testid="erp-cost-center"
+            data-erp-target="cc"
             value={inv.costCenter}
             disabled={locked}
             onChange={(e) => {
@@ -232,13 +310,12 @@ export function InvoiceForm({
               <option key={c.code} value={c.code}>{c.code} · {c.label}</option>
             ))}
           </select>
-          {fieldError && <p className="erp-field-error" role="alert">{fieldError}</p>}
-        </label>
-        <label className="erp-field">
-          <span>Asset number</span>
+          <span className="erp-line-desc" data-erp-target="line">{inv.description}</span>
           <input
+            aria-label="Asset number"
             data-testid="erp-asset-number"
-            className="erp-mono"
+            data-erp-target="asset"
+            className="erp-input erp-mono"
             placeholder="A-2025-000"
             value={asset}
             disabled={locked}
@@ -247,11 +324,22 @@ export function InvoiceForm({
             onBlur={() => commitText("assetNumber", assetRef.current)}
             onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); commitText("assetNumber", assetRef.current); } }}
           />
-        </label>
+          <span className="erp-line-amt is-num">{money(inv.amount)}</span>
+        </div>
+        {fieldError && <p className="erp-field-error erp-line-error" role="alert">{fieldError}</p>}
+        <div className="erp-lines-foot">
+          <span className="erp-add-lines" aria-disabled="true">+ Add lines</span>
+          <span>Total <b className="erp-total">{money(inv.amount)}</b></span>
+        </div>
+      </section>
+
+      <section className="erp-card erp-approval-card" aria-label="Approval">
         <label className="erp-field">
-          <span>Approval route</span>
+          <span className="erp-k">Approval route</span>
           <select
+            className="erp-select"
             data-testid="erp-route"
+            data-erp-target="route"
             value={inv.route}
             disabled={locked}
             onChange={(e) => {
@@ -268,17 +356,19 @@ export function InvoiceForm({
           </select>
         </label>
         <div className="erp-field">
-          <span>Status</span>
-          <div className="erp-seg" role="group" aria-label="Status">
-            <button type="button" data-testid="erp-decision-post" className={decision === "post" ? "is-on" : ""} disabled={locked} onClick={() => setStatus("open")}>Post</button>
-            <button type="button" data-testid="erp-decision-hold" className={decision === "hold" ? "is-on" : ""} disabled={locked} onClick={() => setStatus("hold")}>Hold</button>
+          <span className="erp-k" id="erp-status-label">Status</span>
+          <div className={`erp-seg is-${decision}`} role="group" aria-labelledby="erp-status-label" data-erp-target="status">
+            <span className="erp-seg-thumb" aria-hidden />
+            <button type="button" data-testid="erp-decision-post" aria-pressed={decision === "post"} className={decision === "post" ? "is-on" : ""} disabled={locked} onClick={() => setStatus("open")}>Post</button>
+            <button type="button" data-testid="erp-decision-hold" aria-pressed={decision === "hold"} className={decision === "hold" ? "is-on" : ""} disabled={locked} onClick={() => setStatus("hold")}>Hold</button>
           </div>
         </div>
         <label className="erp-field">
-          <span>Note</span>
+          <span className="erp-k">Memo</span>
           <textarea
+            className="erp-input erp-memo"
             data-testid="erp-note"
-            rows={2}
+            rows={1}
             value={notes}
             disabled={locked}
             onFocus={() => { focusVal.current = { field: "notes", value: notesRef.current }; }}
@@ -286,50 +376,16 @@ export function InvoiceForm({
             onBlur={() => commitText("notes", notesRef.current)}
           />
         </label>
-
-        {locked && <p className="erp-banner" data-testid="erp-posted-banner">POSTED · INV-{inv.id} · cost center {inv.costCenter} · {routeLabel}</p>}
-        {error && <p className="erp-banner erp-banner-blocked" data-testid="erp-error" role="alert">{error}</p>}
-        {held && (
-          <div className="erp-banner erp-banner-blocked" data-testid="erp-held-panel">
-            <p>Not posted. {held.title}</p>
-            {held.missing && <p>Missing: {held.missing}</p>}
-            {held.quote && <p>“{held.quote}”</p>}
-            {held.who && <p>Check with {held.who}</p>}
-          </div>
-        )}
-
-        <div className="erp-actions">
-          {!confirm ? (
-            <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-save" disabled={locked || saving} onClick={openIntent}>
-              {decision === "hold" ? "Save as held" : "Post invoice"}
-            </button>
-          ) : (
-            <div className="erp-confirm">
-              <span>Post INV-{inv.id} to cost center {inv.costCenter || "—"}, {routeLabel}?</span>
-              <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-confirm" disabled={!arm || saving} onClick={() => void save()}>
-                {saving ? "Saving…" : "Confirm"}
-              </button>
-              <button type="button" className="erp-btn" data-testid="erp-cancel" onClick={() => setConfirm(false)}>Cancel</button>
-            </div>
-          )}
-          {nextId && !locked && (
-            <button type="button" className="erp-btn" data-testid="erp-next" onClick={() => router.push(`/erp/invoice/${nextId}`)}>Next invoice →</button>
-          )}
-          {locked && nextId && (
-            <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-next" onClick={() => router.push(`/erp/invoice/${nextId}`)}>Next invoice →</button>
-          )}
-          {locked && !nextId && <p className="erp-banner">Queue complete. Return to the Simon panel to finish.</p>}
-        </div>
       </section>
     </div>
   );
 }
 
-function Fact({ k, v, pii }: { k: string; v: string; pii?: string }) {
+function Fact({ k, v, pii, target, wide }: { k: string; v: string; pii?: string; target?: string; wide?: boolean }) {
   return (
-    <div>
-      <dt>{k}</dt>
-      <dd data-pii={pii}>{v}</dd>
+    <div className={`erp-fact${wide ? " erp-fact-wide" : ""}`}>
+      <div className="erp-k">{k}</div>
+      <div className="erp-ro" data-pii={pii} data-erp-target={target}>{v}</div>
     </div>
   );
 }

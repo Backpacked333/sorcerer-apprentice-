@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Banner } from "./Banner";
 
+/** Renders nothing until mounted (no hydration mismatch); then warns if this browser cannot share a screen. */
 export function BrowserCheck() {
   const [blocked, setBlocked] = useState(false);
   useEffect(() => {
@@ -11,5 +13,5 @@ export function BrowserCheck() {
     setBlocked(!(chromium && share));
   }, []);
   if (!blocked) return null;
-  return <p className="banner banner-error" role="alert">This browser cannot share a screen. Use desktop Chrome or Edge.</p>;
+  return <Banner tone="error">This browser cannot share a screen. Use desktop Chrome or Edge.</Banner>;
 }

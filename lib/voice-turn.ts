@@ -31,6 +31,7 @@ export interface TurnOptions {
   watchdogSecs?: number;
   silenceCloseSecs?: number;
   ackMaxSecs?: number;
+  answerTool?: ToolName;
   onPhase?: (phase: TurnPhase, at: number) => void;
 }
 
@@ -50,6 +51,17 @@ export interface TurnResult {
   heardSource?: "scribe" | "agent_asr" | "typed";
   command?: "off_record" | "not_now";
   abortReason?: "resumed" | "user" | "superseded" | "paused" | "disconnected" | "silent";
+}
+
+export function withVoiceQualityWindow(options: TurnOptions): TurnOptions {
+  return { ...options, watchdogSecs: options.watchdogSecs ?? 8 };
+}
+
+export function withAnswerConfirmation(options: TurnOptions): TurnOptions {
+  if (options.listen && (options.tag === "ASK" || options.tag === "DEBRIEF")) {
+    return { ...options, answerTool: options.answerTool ?? "log_answer" };
+  }
+  return options;
 }
 
 export type TurnEvent =
@@ -171,6 +183,21 @@ function heard(state: TurnState): Pick<TurnClose, "heard" | "heardSource"> {
   return { heard: "" };
 }
 
+function requiresAnswerTool(state: TurnState): boolean {
+  return Boolean(state.options?.answerTool && state.spokenBy === "agent");
+}
+
+function acceptedAnswer(state: TurnState, tool?: TurnResult["tool"]): Pick<TurnClose, "heard" | "heardSource"> {
+  if (!requiresAnswerTool(state)) return heard(state);
+  if (!tool || tool.name !== state.options?.answerTool) return { heard: "" };
+  if (tool.name !== "log_answer") return heard(state);
+  const reason = typeof tool.params.reason === "string" ? tool.params.reason.trim() : "";
+  // The tool selects the answer, but only a literal transcript match is evidence.
+  if (reason && state.scribeText.includes(reason)) return { heard: reason, heardSource: "scribe" };
+  if (reason && state.agentAsrText.includes(reason)) return { heard: reason, heardSource: "agent_asr" };
+  return { heard: "" };
+}
+
 function resultFrom(state: TurnState, close: TurnClose, closedAt: number): TurnResult {
   const askedAt = state.askedAt ?? state.sentAt ?? closedAt;
   const spoke = state.spokeAt !== undefined && (state.askedAt !== undefined || audibleFor(state, closedAt) + EPSILON >= 1);
@@ -250,7 +277,7 @@ function finishSpeech(state: TurnState, at: number): TurnTransition {
 }
 
 function closeListening(state: TurnState, at: number, via: TurnClose["via"], extra: Partial<TurnClose> = {}): TurnTransition {
-  const captured = heard(state);
+  const captured = acceptedAnswer(state, extra.tool);
   const answeredAt = captured.heard && Number.isFinite(state.lastHumanSpeechAt) ? state.lastHumanSpeechAt : undefined;
   return enterClosing(state, {
     via,
@@ -361,10 +388,10 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
       lastHumanSpeechAt: event.at,
     };
     if (state.phase === "closing" && state.close) {
-      const captured = heard(next);
+      const captured = acceptedAnswer(next, state.close.tool);
       next.close = {
         ...state.close,
-        ...(state.close.via === "timeout" ? { via: "scribe" as const } : {}),
+        ...(state.close.via === "timeout" && captured.heard ? { via: "scribe" as const } : {}),
         ...captured,
         answeredAt: captured.heard ? event.at : state.close.answeredAt,
       };
@@ -391,6 +418,15 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
 
   if (event.type === "TOOL") {
     const tool = { name: event.name, params: event.params };
+    if (requiresAnswerTool(state)) {
+      if (event.name !== state.options?.answerTool) return { state, effects: [] };
+      if (state.phase === "closing" && state.close) {
+        if (state.close.via === "typed" || state.close.via === "aborted" || state.close.via === "spoken") return { state, effects: [] };
+        const captured = acceptedAnswer(state, tool);
+        const answeredAt = captured.heard && Number.isFinite(state.lastHumanSpeechAt) ? state.lastHumanSpeechAt : undefined;
+        return { state: { ...state, close: { ...state.close, via: "tool", tool, ...captured, answeredAt } }, effects: [] };
+      }
+    }
     if (state.phase === "listening") return closeListening(state, event.at, "tool", { tool });
     if (state.phase === "closing" && state.close) {
       return { state: { ...state, close: { ...state.close, tool } }, effects: [] };
@@ -517,6 +553,16 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
 
   if (state.phase === "listening") {
     const askedAt = state.askedAt ?? state.sentAt ?? event.at;
+    if (requiresAnswerTool(state)) {
+      const maxSecs = state.options?.maxSecs ?? 60;
+      const timeoutSecs = state.options?.timeoutSecs ?? 12;
+      const anchor = Math.max(askedAt, state.lastHumanSpeechAt, state.lastAgentSpeechEnd);
+      const freshPartial = Boolean(state.partial) && event.at - state.lastPartialAt < 3;
+      if (event.at - askedAt + EPSILON >= maxSecs || (!freshPartial && event.at - anchor + EPSILON >= timeoutSecs)) {
+        return closeListening(state, event.at, "timeout");
+      }
+      return { state, effects: [] };
+    }
     const silenceCloseSecs = state.options?.silenceCloseSecs ?? 2.5;
     const effectiveSilence = Number.isFinite(state.lastAgentSpeechEnd) && state.lastAgentSpeechEnd > askedAt ? 8 : silenceCloseSecs;
     const captured = heard(state);

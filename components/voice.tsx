@@ -7,7 +7,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe, type ScribeCallbacks } from "@elevenlabs/react";
-import { composedVoiceGateState, initialTurnState, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
+import { composedVoiceGateState, initialTurnState, withAnswerConfirmation, withVoiceQualityWindow, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
 import { stopAndClearMediaStream, VoiceTurnAdapter } from "@/lib/voice-turn-adapter";
 import { uploadRecordingWithConsent } from "@/lib/recording-consent";
 export type { TurnOptions, TurnPhase, TurnResult } from "@/lib/voice-turn";
@@ -1177,7 +1177,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, [nowTurn, turnState.phase]);
 
   const turn = useCallback<VoiceApi["turn"]>((opts) => {
-    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, opts);
+    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, withAnswerConfirmation(withVoiceQualityWindow(opts)));
   }, []);
   const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
   const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => turnAdapterRef.current!.submitTyped(text), []);

@@ -29,7 +29,6 @@ export interface TurnOptions {
   recordClip?: { sessionId: string };
   abortOnHumanSpeech?: boolean;
   watchdogSecs?: number;
-  fallbackOnTimeout?: boolean;
   silenceCloseSecs?: number;
   ackMaxSecs?: number;
   onPhase?: (phase: TurnPhase, at: number) => void;
@@ -51,6 +50,10 @@ export interface TurnResult {
   heardSource?: "scribe" | "agent_asr" | "typed";
   command?: "off_record" | "not_now";
   abortReason?: "resumed" | "user" | "superseded" | "paused" | "disconnected" | "silent";
+}
+
+export function withVoiceQualityWindow(options: TurnOptions): TurnOptions {
+  return { ...options, watchdogSecs: options.watchdogSecs ?? 8 };
 }
 
 export type TurnEvent =
@@ -489,7 +492,6 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
   if (state.phase === "waiting_for_speech") {
     const watchdogSecs = state.options?.watchdogSecs ?? 4;
     if (event.at - (state.sentAt ?? event.at) + EPSILON >= watchdogSecs) {
-      if (state.options?.fallbackOnTimeout === false) return immediateAbort(state, event.at, "silent");
       return {
         state: {
           ...state,

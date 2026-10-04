@@ -1,7 +1,7 @@
 ## Oct 4 · Voice-quality timeout correction [M1-M3, S1]
 
 - Live diagnostic reproduction: both roles disconnected themselves after roughly four seconds without detected speech and invoked browser TTS. `FALLBACK_SPEAK` called `endSession()`, so the SDK's `user` disconnect reason did not mean a human clicked Disconnect. Subsequent tutor turns remained on browser speech. Audible fallback quality was not human-verified.
-- Configured-agent turns now wait eight seconds by default and resolve silent on timeout without requesting browser speech or terminating the healthy agent. Keyless and labeled connection-failure fallback are unchanged. New regression coverage checks delayed real speech, honest timeout/late-audio squelching, recovery on the next turn, and keyless speech.
+- Configured-agent turns now wait eight seconds by default before the existing labeled timeout fallback. This preserves V4 for the 6.867 s and 7.231 s live responses observed in local browser retesting while retaining transport-failure recovery and the existing late-response quarantine. New regressions cover delayed real speech, the full timeout window, and keyless speech.
 - Both tested sessions negotiated PCM/Opus at 48 kHz; the saved 16 kHz setting is not proof of the browser transport rate. Remote TTS usage reported `eleven_v4_turbo`. No voice/model/provider settings changed.
 - Human listening remains required. Tutor greeting/authorization overlap and duplicated responses were observed in diagnostics but are separate, unresolved investigations, not claimed as the cause of Roy's original complaint.
 

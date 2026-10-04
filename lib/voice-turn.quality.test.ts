@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { VoiceTurnAdapter } from "./voice-turn-adapter";
-import type { TurnEffect } from "./voice-turn";
+import { withVoiceQualityWindow, type TurnEffect } from "./voice-turn";
 
 function harness(connected = true) {
   let now = 10;
@@ -14,9 +14,14 @@ function harness(connected = true) {
   return { adapter, effects, tick(at: number) { now = at; adapter.tick(); } };
 }
 
-const options = { tag: "CONFIRMED", text: "Say: go ahead.", spoken: "Go ahead.", listen: false, watchdogSecs: 8, fallbackOnTimeout: false };
+const options = { tag: "CONFIRMED", text: "Say: go ahead.", spoken: "Go ahead.", listen: false, watchdogSecs: 8 };
 
 describe("V4 voice quality policy", () => {
+  it("uses eight seconds unless the caller explicitly chooses another window", () => {
+    expect(withVoiceQualityWindow({ tag: "ASK", text: "Why?" }).watchdogSecs).toBe(8);
+    expect(withVoiceQualityWindow({ tag: "ASK", text: "Why?", watchdogSecs: 12 }).watchdogSecs).toBe(12);
+  });
+
   it("accepts speech after four seconds without changing voice", async () => {
     const h = harness();
     const result = h.adapter.turn(options);
@@ -31,23 +36,15 @@ describe("V4 voice quality policy", () => {
     expect(h.effects.some((effect) => effect.type === "FALLBACK_SPEAK")).toBe(false);
   });
 
-  it("resolves a silent turn honestly, squelches late audio and permits the next agent turn", async () => {
+  it("waits the full quality window before requesting labeled fallback speech", () => {
     const h = harness();
-    const result = h.adapter.turn(options);
+    void h.adapter.turn(options);
     h.tick(10);
+    h.tick(17.99);
+    expect(h.effects.some((effect) => effect.type === "FALLBACK_SPEAK")).toBe(false);
     h.tick(18);
-    expect(h.effects.some((effect) => effect.type === "FALLBACK_SPEAK")).toBe(false);
-    await expect(result).resolves.toMatchObject({ spoke: false, via: "aborted", abortReason: "silent" });
-    expect(h.adapter.snapshot().phase).toBe("idle");
+    expect(h.effects.at(-1)).toEqual({ type: "FALLBACK_SPEAK", text: "Go ahead." });
     expect(h.adapter.isSquelched()).toBe(true);
-    expect(h.effects.some((effect) => effect.type === "FALLBACK_SPEAK")).toBe(false);
-    h.adapter.dispatch({ type: "SPEAK_START", at: 18.1, source: "agent" });
-    expect(h.adapter.isSquelched()).toBe(true);
-    const next = h.adapter.turn(options);
-    expect(h.adapter.isSquelched()).toBe(false);
-    expect(h.effects.at(-1)).toMatchObject({ type: "SEND_TAG", tag: "CONFIRMED" });
-    h.adapter.cancel();
-    await expect(next).resolves.toMatchObject({ abortReason: "user" });
   });
 
   it("preserves immediate, labeled keyless browser speech", async () => {

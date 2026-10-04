@@ -267,6 +267,24 @@ const decisions = await teach.locator("text=Sabine would stop here").count();
 assert.ok(decisions > 0, "Tutor must intervene on a new-hire mistake");
 assert.ok((await teach.locator("text=needed the guard").count()) > 0, "Independent miss must appear in mastery");
 assert.ok((await teach.locator("text=independent: correct without help").count()) > 0, "Independent success must be recorded");
+
+// 6. Every other surface renders without errors: landing, demo mode, claims sandbox, platform (real + demo).
+const tour = await ctx.newPage();
+const visit = async (path) => {
+  const response = await tour.goto(`${BASE}${path}`);
+  assert.equal(response?.status(), 200, `${path} must render`);
+  await tour.waitForTimeout(600);
+};
+for (const path of ["/", "/demo", "/demo/companion", "/claims", "/claims/CLM-30412", "/capture?app=claims&share=0", "/map", "/teach",
+  "/platform", "/platform/sessions", "/platform/demo", "/platform/demo/role/tier-2-escalation-lead", "/platform/demo/role/tier-2-escalation-lead/ontology"]) {
+  await visit(path);
+}
+await visit("/platform");
+const roleHref = await tour.locator("a[href^='/platform/role/']").first().getAttribute("href");
+assert.ok(roleHref, "The seeded confirmed map must appear as a role on the platform");
+await visit(roleHref);
+await visit(`${roleHref.split("?")[0]}/ontology`);
+await shot(tour, "22-platform-ontology");
 assert.deepEqual(errors, [], "Smoke must have no page errors");
 assert.equal(serverError, undefined, "Smoke server must remain alive");
 console.log("PASS: capture, map, confirmation, tutor, independent guard, and page errors");

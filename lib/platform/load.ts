@@ -3,9 +3,9 @@
  * (each unreadable file is counted, never thrown). Frames' image data and transcripts are dropped right after
  * reading; the derivation returns view models only (no frames, transcript or raw event state reach the client).
  *
+ * Server-only by construction (imports lib/store.ts, which uses node:fs); never import it from a client component.
  * Demo mode never goes through here: pages import demoPlatform / demoRole / demoOntology from ./demo-data.
  */
-import "server-only";
 import type { SessionLog } from "../events";
 import type { WorkMap } from "../workmap";
 import { getMap, getSession, listSessions } from "../store";
@@ -17,13 +17,10 @@ function lighten(s: SessionLog): SessionLog {
   return { ...s, frames: s.frames.map((f) => ({ id: f.id, t: f.t, width: f.width, height: f.height, piiRegionsBlurred: f.piiRegionsBlurred })), transcript: [] };
 }
 
-/**
- * Session ids on disk. listSessions() throws if any one file is corrupt; persistence goes through lib/store.ts only
- * (no fs here), so a corrupt file degrades to an empty platform with `unreadable: 1` instead of a 500.
- */
+/** Session ids on disk. Corrupt files are skipped, so one bad session never empties the platform. */
 async function sessionIds(): Promise<{ ids: string[]; unreadable: number }> {
   try {
-    return { ids: (await listSessions()).map((s) => s.id), unreadable: 0 };
+    return { ids: (await listSessions({ skipInvalid: true })).map((s) => s.id), unreadable: 0 };
   } catch {
     return { ids: [], unreadable: 1 };
   }

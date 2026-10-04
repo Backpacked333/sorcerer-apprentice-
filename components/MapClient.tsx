@@ -33,6 +33,8 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
   const [debriefOn, setDebriefOn] = useState(false);
   const [autopilot, setAutopilot] = useState<AutopilotStep[] | null>(null);
   const [running, setRunning] = useState(false);
+  const [debriefStartedAt, setDebriefStartedAt] = useState<number | null>(null);
+  const [knowledge, setKnowledge] = useState(false);
   const heardRef = useRef("");
   const currentRef = useRef<Slot | null>(null);
   currentRef.current = current;
@@ -132,6 +134,7 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
       const data = await res.json();
       setMap(data.map);
       if (confirmed) {
+        setKnowledge(!!data.knowledge?.synced);
         setPhase("confirmed");
         voiceRef.current.say("CONFIRMED", "The expert confirmed the teach-back. Say thank you in one short sentence and stop.", "Thank you. That is how it works. I have it.");
         voiceRef.current.setMicMuted(true);
@@ -167,6 +170,7 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
   const startDebrief = async () => {
     if (!map) return;
     setDebriefOn(true);
+    setDebriefStartedAt(Date.now());
     await voice.connect({ firstMessage: "Thanks, that was clear. I have a few things I am still unsure about." });
     window.setTimeout(() => askNext(map), 2500);
   };
@@ -240,6 +244,12 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
     recompile,
     runAutopilot,
     onMapChange,
+    knowledge,
+    partial: debriefOn ? transcriber.partial : "",
+    debriefStartedAt,
+    micOpen: !voice.micMuted,
+    selectedStepId: current?.stepId ?? null,
+    confirmed: !!map?.confirmedAt || phase === "confirmed",
   };
   return <MapView vm={vm} />;
 }

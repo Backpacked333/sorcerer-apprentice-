@@ -40,7 +40,7 @@ describe("demo-data: private role card stays out", () => {
       ...filesUnder("lib/platform/derive.ts"), ...filesUnder("lib/platform/load.ts"),
     ];
     expect(live.length).toBeGreaterThan(5);
-    const importers = live.filter((f) => /demo-data/.test(readFileSync(f, "utf8")));
+    const importers = live.filter((f) => /(from\s*|import\s*\(\s*|require\s*\(\s*)["'][^"']*demo-data(\.ts)?["']/.test(readFileSync(f, "utf8")));
     expect(importers).toEqual([]);
   });
 });

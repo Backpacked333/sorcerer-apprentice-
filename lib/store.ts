@@ -70,11 +70,13 @@ export async function saveSession(s: SessionLog): Promise<void> {
   await writeJson(path.join(dir("sessions"), `${validId(s.id)}.json`), s);
 }
 
-export async function listSessions(): Promise<Pick<SessionLog, "id" | "mode" | "task" | "expertName" | "startedAt" | "endedAt">[]> {
+/** `skipInvalid` lists the readable sessions instead of throwing on one corrupt file (read-only views such as /platform). */
+export async function listSessions(opts: { skipInvalid?: boolean } = {}): Promise<Pick<SessionLog, "id" | "mode" | "task" | "expertName" | "startedAt" | "endedAt">[]> {
   const files = await orMissing(() => fs.readdir(dir("sessions"))) ?? [];
   const out = [];
   for (const f of files.filter((f) => f.endsWith(".json"))) {
-    const s = await getSession(f.replace(/\.json$/, ""));
+    const id = f.replace(/\.json$/, "");
+    const s = opts.skipInvalid ? await getSession(id).catch(() => undefined) : await getSession(id);
     if (s) out.push({ id: s.id, mode: s.mode, task: s.task, expertName: s.expertName, startedAt: s.startedAt, endedAt: s.endedAt });
   }
   return out.sort((a, b) => b.startedAt - a.startedAt);

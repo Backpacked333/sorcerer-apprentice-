@@ -188,7 +188,12 @@ interface RoleGroup {
   teaches: SessionLog[];
   experts: string[];
   newHires: string[];
+  /** captures with no events and no map (counted, not shown) */
+  empties: number;
 }
+
+/** A capture with nothing in it (no events, no map) counts as a session but contributes no people, tasks or beads. */
+const substantive = (s: SessionLog, maps: Record<string, WorkMap>) => s.events.length > 0 || !!maps[s.id];
 
 function groupRoles(input: PlatformInput): RoleGroup[] {
   const captures = input.sessions.filter((s) => s.mode === "capture").sort((a, b) => a.startedAt - b.startedAt);
@@ -198,7 +203,7 @@ function groupRoles(input: PlatformInput): RoleGroup[] {
     const id = slug(s.task);
     let g = byId.get(id);
     if (!g) {
-      g = { id, task: s.task, captures: [], pairs: [], memory: null, display: null, teaches: [], experts: [], newHires: [] };
+      g = { id, task: s.task, captures: [], pairs: [], memory: null, display: null, teaches: [], experts: [], newHires: [], empties: 0 };
       byId.set(id, g);
       order.push(id);
     }
@@ -216,10 +221,13 @@ function groupRoles(input: PlatformInput): RoleGroup[] {
     const latest = (ps: Pair[]) => ps.slice().sort((a, b) => stamp(b) - stamp(a))[0] ?? null;
     g.memory = latest(g.pairs.filter((p) => !!p.m.confirmedAt));
     g.display = g.memory ?? latest(g.pairs.filter((p) => p.m.steps.length > 0 || p.m.rules.length > 0)) ?? latest(g.pairs);
+    g.empties = g.captures.filter((s) => !substantive(s, input.maps)).length;
+    g.captures = g.captures.filter((s) => substantive(s, input.maps));
     g.experts = uniq([...g.captures.map((s) => s.expertName), ...g.pairs.map((p) => p.m.expert.name)].map((x) => x.trim()).filter(Boolean));
     g.newHires = uniq(g.teaches.map((t) => t.expertName.trim()).filter(Boolean));
   }
-  return order.map((id) => byId.get(id)!);
+  const rank = (g: RoleGroup) => (g.memory ? 0 : g.display ? 1 : 2);
+  return order.map((id) => byId.get(id)!).sort((a, b) => rank(a) - rank(b) || (a.captures[0]?.startedAt ?? Number.MAX_SAFE_INTEGER) - (b.captures[0]?.startedAt ?? Number.MAX_SAFE_INTEGER));
 }
 
 function statusOf(g: RoleGroup): { status: RoleNode["status"]; label: string } {
@@ -340,7 +348,7 @@ export function derivePlatform(input: PlatformInput): PlatformData {
       id: g.id, title: g.task, dept: "seen", team: null,
       onet: p?.m.onet ? { code: p.m.onet.code, occupation: p.m.onet.occupation } : null,
       status, statusLabel: label, isMain: i === 0,
-      at: g.captures[0].startedAt,
+      at: g.captures[0]?.startedAt ?? input.now,
       people: peopleOf(g),
       coverage: coverageSeries(p),
       rules: p ? cumulative(p.m.rules.map((r) => ruleLearnedAt(r, p.s, p.m).at)) : [],
@@ -531,7 +539,7 @@ export function deriveRole(input: PlatformInput, roleId: string): { data: Platfo
         const sat = sq ? quoteAt(sq, s, m) : at;
         items.push({
           id: `stop-${r.id}`, displayId: `${ids.get(r.id)}·S`, ruleId: r.id, kind: "escalation",
-          title: `Stop and ask ${normWho(r.stopAndAsk.who)} when ${describeCond(r.stopAndAsk.when)}`,
+          title: `Stop and ask ${r.stopAndAsk.who.trim()} when ${describeCond(r.stopAndAsk.when)}`,
           quote: sq?.text ?? null, noQuoteLabel: sq ? null : m.confirmedAt ? noQuoteLabel(expert) : "No words from the expert yet",
           source: `${expert} · ${sq ? quoteSourceLabel(sq.source) + " · " : ""}${stampLabel(sat.at, sat.approx, tl)}`,
           learnedAt: sat.at, approx: sat.approx, correction: null, mastery: null,
@@ -604,7 +612,9 @@ function synopsisFor(p: Pair | null, expert: string): RoleMemory["synopsis"] {
     const at = quoteAt(n.quote, s, m);
     sentences.push({ id: `syn-note-${i}`, text: `Described, not shown: "${n.quote.text}"`, at: at.at, approx: at.approx, described: true });
   });
-  return { sentences, draftBanner: confirmed ? null : `Draft — not yet confirmed by ${expert}`, empty: sentences.length ? null : "Nothing understood yet." };
+  const seenText = new Set<string>();
+  const unique = sentences.filter((x) => (seenText.has(x.text) ? false : (seenText.add(x.text), true)));
+  return { sentences: unique, draftBanner: confirmed ? null : `Draft — not yet confirmed by ${expert}`, empty: unique.length ? null : "Nothing understood yet." };
 }
 
 function knowledgeFor(items: MemoryItem[]): KnowledgeSeries {

@@ -51,6 +51,17 @@ export interface MapVM {
   canonical?: { steps: number; judgment: number; guardrails: number } | null;
   /** P-20. The view renders a matrix only when this is an array of rows. */
   matrix?: { stepId: string; cells: { key: string; word: string }[] }[] | null;
+  /** True after a confirm whose response says the tutor knowledge base was synced. */
   knowledge?: boolean;
   llm?: boolean;
+  /** WP3. Live partial transcript while the debrief listens (not yet committed, never stored). */
+  partial?: string;
+  /** WP3. Epoch ms when the spoken debrief started (companion clock). Null before. */
+  debriefStartedAt?: number | null;
+  /** WP3. The governor-opened mic window is open (drives the answer bubble bars only). */
+  micOpen?: boolean;
+  /** WP3. The step the current debrief question is about (the detail follows it). */
+  selectedStepId?: string | null;
+  /** WP3. The map carries confirmedAt (true on load of an already confirmed map, whatever the phase). */
+  confirmed?: boolean;
 }

@@ -2,6 +2,8 @@
 
 - Capture evaluates bounded background proposals (shadow by default). Explicit live mode
   chooses/rephrases eligible candidates through the unchanged governor and tagged ASK.
+- Adversarial follow-up: preference now filters through governor value eligibility,
+  falling back to a useful question when the model's first choice is unaskable.
 - Pause, off-record, end and unmount invalidate packets. No remote agent changes or human
   timing/voice acceptance performed; live evaluation awaits credentials.
 

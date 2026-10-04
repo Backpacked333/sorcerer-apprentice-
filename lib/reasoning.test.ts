@@ -4,6 +4,7 @@ import { buildMemory } from "./memory";
 import { emptySession } from "./events";
 import { PreparedQuestions } from "./prepared-question";
 import { buildCandidates, CandidateQueue, newContext } from "./curiosity";
+import { Governor } from "./governor";
 
 const { generate } = vi.hoisted(() => ({ generate: vi.fn() }));
 vi.mock("ai", () => ({ generateText: generate, Output: { object: (o: unknown) => o } }));
@@ -52,6 +53,14 @@ describe("bounded background reasoning", () => {
 });
 
 describe("prepared question dispatch", () => {
+  it("falls back when the preferred question fails governor value eligibility", () => {
+    const queue = new CandidateQueue(), governor = new Governor();
+    queue.add(buildCandidates({ id: "edit", t: 10, kind: "field_changed", source: "dom", invoice: "9", field: "costCenter", from: "1", to: "2" }, newContext(), 10));
+    const why = queue.items.find((c) => c.kind === "why")!;
+    queue.add([{ ...why, id: "low", stepRef: "9:other", value: 0.2 }]);
+    const signals = { now: 120, lastSpeechAt: 0, lastScreenChangeAt: 0, lastTypingAt: 0, lastBoundaryAt: 0, lastInvoiceOpenedAt: 0, agentSpeaking: false };
+    expect(queue.pick(false, 120, 3, "low", (c) => governor.canOpen(signals, c.value))?.id).toBe(why.id);
+  });
   it("never lets model preference bypass age, parent or forced guardrail eligibility", () => {
     const queue = new CandidateQueue();
     queue.add(buildCandidates({ id: "edit", t: 10, kind: "field_changed", source: "dom", invoice: "9", field: "costCenter", from: "1", to: "2" }, newContext(), 10));

@@ -293,7 +293,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       }
       const force = queue.current.askedCount >= 2 && !queue.current.guardrailAsked;
       const preferredId = prepared.current.preferred(buildMemory(log.current, queue.current.items));
-      const c = queue.current.pick(force, t, 3, preferredId);
+      const c = queue.current.pick(force, t, 3, preferredId, (candidate) => g.canOpen(s, candidate.value));
       if (c && g.canOpen(s, c.value)) openQuestion(c);
     }, 500);
     return () => window.clearInterval(id);

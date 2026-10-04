@@ -26,6 +26,13 @@ export const normalizeVisionState = (state: InvoiceState): InvoiceState => {
   return clean;
 };
 
+/** Invoice fields compared between frames, and the event kind each change emits. */
+const FIELD_CHANGE_KIND = {
+  costCenter: "field_changed",
+  route: "route_changed",
+  status: "status_changed",
+} as const satisfies Partial<Record<keyof InvoiceState, ScreenEvent["kind"]>>;
+
 /** Only compare visual observations; ERP state is never evidence for a vision event. */
 export function diffVision(prev: VisionFrame | null, next: VisionFrame) {
   if (next.app === "claims") return diffClaims(prev, next);
@@ -52,9 +59,9 @@ export function diffVision(prev: VisionFrame | null, next: VisionFrame) {
   if (!list && visible.invoice && !same) {
     add({ kind: "invoice_opened", invoice, state });
   } else if (!list && same) {
-    for (const field of ["costCenter", "route", "status"] as const) {
+    for (const field of Object.keys(FIELD_CHANGE_KIND) as (keyof typeof FIELD_CHANGE_KIND)[]) {
       if (visible[field] !== undefined && before[field] !== undefined && visible[field] !== before[field])
-        add({ kind: field === "costCenter" ? "field_changed" : field === "route" ? "route_changed" : "status_changed", invoice, field, from: before[field], to: visible[field], state });
+        add({ kind: FIELD_CHANGE_KIND[field], invoice, field, from: before[field], to: visible[field], state });
     }
     if (visible.hasAssetNumber !== undefined && before.hasAssetNumber !== undefined && visible.hasAssetNumber !== before.hasAssetNumber)
       add({ kind: "field_changed", invoice, field: "assetNumber", to: visible.hasAssetNumber ? "entered" : "cleared", state });

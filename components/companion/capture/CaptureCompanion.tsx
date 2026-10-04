@@ -187,7 +187,12 @@ function Notices({ vm }: { vm: CaptureVM }) {
         The shared surface is not this tab, so no vision frames are sent{app.telemetry ? "; ERP telemetry continues" : ""}.
       </p>,
     );
-  if (vm.voice.lastError) out.push(<p key="voice" style={{ ...NOTE, color: "#8a5200" }}>{vm.voice.lastError}</p>);
+  if (vm.voice.lastError)
+    out.push(
+      <p key="voice" title={vm.voice.lastError} style={{ fontSize: 11.5, lineHeight: 1.4, color: "#8a5200", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+        {vm.voice.lastError}
+      </p>,
+    );
   return out.length ? <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-start" }}>{out}</div> : null;
 }
 
@@ -239,7 +244,8 @@ function AskBody({ vm, card }: { vm: CaptureVM; card: CardState }) {
   const answering = w?.phase === "answering";
   const answer = w ? w.answerText ?? "" : last?.answerText ?? "";
   const listening = answering && !vm.holding;
-  const showBubble = answering || !!answer || (card.understoodLinger && !!last?.answerText);
+  // After the answer: the understood card carries the literal answer itself, so the bubble is not repeated.
+  const showBubble = w ? answering || !!answer : card.understoodLinger && !!last?.answerText && !last.isQuote;
   const highlight = card.understoodLinger && last && !last.isQuote && last.text && answer.includes(last.text) ? last.text : undefined;
   return (
     <>

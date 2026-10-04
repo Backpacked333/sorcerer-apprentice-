@@ -80,7 +80,7 @@ export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: bo
             <section style={BLOCK}>
               <p style={H3}>Screen events</p>
               <ul style={{ marginTop: 6, display: "flex", flexDirection: "column", fontSize: 12.5 }}>
-                {vm.events.length === 0 && <li style={SMALL}>Nothing yet. Open a {noun} in {where}.</li>}
+                {vm.events.length === 0 && <li style={SMALL}>Nothing yet. Open {/^[aeiou]/i.test(noun) ? "an" : "a"} {noun} in {where}.</li>}
                 {vm.events.map((e) => {
                   const cand = vm.candidateFor(e.id);
                   return (

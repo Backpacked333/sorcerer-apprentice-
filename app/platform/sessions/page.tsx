@@ -12,7 +12,7 @@ export default async function SessionsPage() {
   let sessions: { id: string; mode: string; task: string; expertName: string; startedAt: number; endedAt?: number | null }[] = [];
   let failed = false;
   try {
-    sessions = (await listSessions()).map((s) => ({ id: s.id, mode: s.mode, task: s.task, expertName: s.expertName, startedAt: s.startedAt, endedAt: s.endedAt ?? null }));
+    sessions = (await listSessions({ skipInvalid: true })).map((s) => ({ id: s.id, mode: s.mode, task: s.task, expertName: s.expertName, startedAt: s.startedAt, endedAt: s.endedAt ?? null }));
   } catch {
     failed = true;
   }

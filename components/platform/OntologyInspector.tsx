@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { IridescentRim, Orb } from "@/components/glass";
 import type { Ontology, OntNode, OntRule } from "@/lib/platform/types";
-import { KIND, MASTERY, PASTEL, PROV, hexA, when } from "./meta";
+import { KIND, MASTERY, PASTEL, PROV, hexA, trunc, when } from "./meta";
 
 type Props = {
   ont: Ontology;
@@ -104,7 +104,7 @@ function NodeMode({ ont, node, t, nodeName, onPickNode, onTrace }: { ont: Ontolo
               <div key={f.name} title={fp.label} style={{ display: "grid", gridTemplateColumns: "8px 104px 1fr auto", gap: 10, alignItems: "baseline", padding: "7px 0", borderTop: ".5px solid rgba(0,0,0,.06)", opacity: known ? 1 : 0.38, transition: "opacity .4s" }}>
                 <span aria-hidden style={{ width: 6, height: 6, borderRadius: 3, background: fp.color, alignSelf: "center" }} />
                 <span style={{ fontSize: 13.5 }}>{f.name}</span>
-                <span style={{ fontSize: 13, color: "#6e6e73", minWidth: 0, overflowWrap: "anywhere" }}>{f.value}</span>
+                <span style={{ fontSize: 13, color: "#6e6e73", minWidth: 0, overflowWrap: "anywhere" }}>{trunc(f.value, 140)}</span>
                 <span style={{ fontSize: 11.5, color: "#aeaeb2", whiteSpace: "nowrap" }}>{when(tl, f.at, f.approx)}</span>
               </div>
             );

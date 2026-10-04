@@ -20,8 +20,8 @@ export function DecisionPaths({ ont, t, active, onTrace, defaultOpen = true }: {
           <span key={k} style={{ width: 18, height: 18, borderRadius: 9, marginLeft: i ? -7 : 0, background: KIND[k].color, boxShadow: "0 0 0 2px #fff" }} />
         ))}
       </span>
-      <span style={{ fontSize: 14, fontWeight: 600 }}>Decision paths</span>
-      <span style={{ fontSize: 13, color: "#8e8e93" }}>{known} of {ont.rules.length} known</span>
+      <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>Decision paths</span>
+      <span style={{ fontSize: 13, color: "#8e8e93", whiteSpace: "nowrap" }}>{known} of {ont.rules.length} known</span>
       <span aria-hidden style={{ marginLeft: "auto", fontSize: 11, color: "#8e8e93", transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }}>⌄</span>
     </button>
   );

@@ -29,6 +29,7 @@ export function MasterySheet({ vm, learner, expert, floating }: { vm: TeachVM; l
         overscrollBehavior: "contain",
         borderRadius: 28,
         padding: 20,
+        background: "linear-gradient(180deg,rgba(255,255,255,.92),rgba(250,250,252,.82))",
         color: "#1d1d1f",
         animation: "tc-rise .6s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both",
       }}

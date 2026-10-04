@@ -118,7 +118,8 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
       }
       box = { x: x0 - 20, y: y0 - 20, w: x1 - x0 + 40, h: y1 - y0 + 40 };
     }
-    cam.fly(fitBox(box, viewBox(), 10, 1.1, 0.2), ms);
+    const v = viewBox();
+    cam.fly(fitBox(box, v, 10, 1.1, v.w >= 700 ? 0.55 : 0.2), ms);
   }, [cam, nodes, mode, viewBox]);
 
   const traceTo = useCallback((id: string | null, fly = true) => {
@@ -275,7 +276,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
     <div
       key={`l${g.e.id}`}
       aria-hidden
-      style={{ position: "absolute", left: g.m.x + g.nx * 15, top: g.m.y + g.ny * 15, transform: "translate(-50%,-50%)", whiteSpace: "nowrap", fontSize: 11, color: "#3a3a3c", padding: "2px 7px", borderRadius: 8, background: "rgba(255,255,255,.88)", boxShadow: "0 0 0 .5px rgba(0,0,0,.06)", pointerEvents: "none", opacity: dimEdge(g.e) ? 0.2 : 1, transition: "opacity .4s", zIndex: 2 }}
+      style={{ position: "absolute", left: g.m.x + g.nx * (g.e.ruleIds.length ? 26 : 15), top: g.m.y + g.ny * (g.e.ruleIds.length ? 26 : 15), transform: "translate(-50%,-50%)", whiteSpace: "nowrap", fontSize: 11, color: "#3a3a3c", padding: "2px 7px", borderRadius: 8, background: "rgba(255,255,255,.88)", boxShadow: "0 0 0 .5px rgba(0,0,0,.06)", pointerEvents: "none", opacity: dimEdge(g.e) ? 0.2 : 1, transition: "opacity .4s", zIndex: 2 }}
     >
       {g.e.verb}
       {g.e.card ? <span style={{ fontFamily: "var(--font-mono)", color: "#8e8e93", marginLeft: 5, fontSize: 10.5 }}>{g.e.card}</span> : null}
@@ -444,7 +445,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
       </div>
 
       {/* decision paths */}
-      {ont.rules.length || nodes.length ? (
+      {ready && (ont.rules.length || nodes.length) ? (
         <div style={{ position: "absolute", left: 16, top: narrow ? 72 : 76, bottom: 126, display: "flex", alignItems: "flex-start", maxWidth: "calc(100% - 32px)", pointerEvents: "none" }}>
           <div style={{ pointerEvents: "auto", maxHeight: "100%", display: "flex" }}>
             <DecisionPaths key={narrow ? "n" : "w"} ont={ont} t={ph.t} active={rule} onTrace={(id) => traceTo(id)} defaultOpen={!narrow && vw - inspW - 32 >= 900} />

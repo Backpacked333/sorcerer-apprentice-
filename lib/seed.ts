@@ -19,10 +19,70 @@ const inv = seedInvoices();
 const byId = (id: string) => inv.find((i) => i.id === id)!;
 
 function frameFor(i: Invoice, t: number, overrides: Partial<Invoice> = {}, highlight?: string): Frame {
+  // A synthetic, already-masked still of the MB-ERP bill page (contact and IBAN are painted black, as a stored frame would be).
   const v = { ...i, ...overrides };
-  const row = (y: number, k: string, val: string, hl = false) =>
-    `<text x="40" y="${y}" fill="#7f8c99" font-size="14" font-family="Inter,Arial">${k}</text><text x="260" y="${y}" fill="${hl ? "#f5a623" : "#d7dee6"}" font-size="16" font-family="JetBrains Mono,monospace" font-weight="${hl ? 700 : 400}">${val}</text>${hl ? `<rect x="250" y="${y - 20}" width="420" height="30" fill="none" stroke="#f5a623" stroke-width="2" rx="4"/>` : ""}`;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540"><rect width="960" height="540" fill="#0a0d10"/><rect x="0" y="0" width="960" height="44" fill="#11161b"/><rect x="16" y="16" width="12" height="12" fill="#f5a623"/><text x="36" y="29" fill="#d7dee6" font-size="15" font-family="Inter,Arial" font-weight="600">MB-ERP</text><text x="110" y="29" fill="#7f8c99" font-size="13" font-family="Inter,Arial">Maschinenbau Stuttgart GmbH · sandbox · Invoice INV-${v.id}</text><rect x="24" y="64" width="560" height="440" fill="#11161b" stroke="#1f2a33"/><text x="40" y="96" fill="#7f8c99" font-size="11" font-family="Inter,Arial" letter-spacing="2">SUPPLIER INVOICE</text><text x="40" y="128" fill="#d7dee6" font-size="26" font-family="JetBrains Mono,monospace" font-weight="700">INV-${v.id}</text><text x="560" y="128" fill="#d7dee6" font-size="26" font-family="JetBrains Mono,monospace" font-weight="700" text-anchor="end">€${v.amount.toLocaleString("en-IE")}</text>${row(180, "Supplier", v.supplier)}${row(214, "Entity", v.entity === "subsidiary" ? "Subsidiary (intercompany)" : "Parent company")}${row(248, "Invoice date", v.date)}${row(282, "Category", v.category)}${row(316, "Purchase order", v.poNumber ?? "none")}${row(350, "Line item", v.description.slice(0, 38))}<rect x="608" y="64" width="328" height="440" fill="#11161b" stroke="#1f2a33"/><text x="624" y="96" fill="#7f8c99" font-size="11" font-family="Inter,Arial" letter-spacing="2">CODING AND APPROVAL</text><text x="624" y="140" fill="#7f8c99" font-size="13" font-family="Inter,Arial">Cost center</text><rect x="624" y="150" width="296" height="36" fill="#0a0d10" stroke="${highlight === "costCenter" ? "#f5a623" : "#1f2a33"}" stroke-width="${highlight === "costCenter" ? 2 : 1}"/><text x="636" y="174" fill="#d7dee6" font-size="15" font-family="JetBrains Mono,monospace">${v.costCenter} · ${v.costCenter === "0400" ? "Capex · Machinery" : v.costCenter === "4120" ? "Opex · Freight" : "Opex · Maintenance"}</text><text x="624" y="220" fill="#7f8c99" font-size="13" font-family="Inter,Arial">Approval route</text><rect x="624" y="230" width="296" height="36" fill="#0a0d10" stroke="${highlight === "route" ? "#f5a623" : "#1f2a33"}" stroke-width="${highlight === "route" ? 2 : 1}"/><text x="636" y="254" fill="#d7dee6" font-size="15" font-family="Inter,Arial">${v.route === "second_approval" ? "Second approval (M. Weber)" : "Single approval (S. Koch)"}</text><text x="624" y="300" fill="#7f8c99" font-size="13" font-family="Inter,Arial">Status</text><rect x="624" y="310" width="80" height="32" fill="${v.status === "open" ? "#f5a623" : "#161d24"}" stroke="#1f2a33"/><text x="664" y="331" fill="${v.status === "open" ? "#0a0d10" : "#d7dee6"}" font-size="13" text-anchor="middle" font-family="Inter,Arial">open</text><rect x="712" y="310" width="80" height="32" fill="${v.status === "hold" ? "#ff4d4f" : "#161d24"}" stroke="${highlight === "status" ? "#f5a623" : "#1f2a33"}" stroke-width="${highlight === "status" ? 2 : 1}"/><text x="752" y="331" fill="#d7dee6" font-size="13" text-anchor="middle" font-family="Inter,Arial">hold</text><rect x="800" y="310" width="100" height="32" fill="${v.status === "approved" ? "#f5a623" : "#161d24"}" stroke="#1f2a33"/><text x="850" y="331" fill="${v.status === "approved" ? "#0a0d10" : "#d7dee6"}" font-size="13" text-anchor="middle" font-family="Inter,Arial">approved</text><rect x="624" y="440" width="140" height="36" fill="#f5a623"/><text x="694" y="463" fill="#0a0d10" font-size="14" text-anchor="middle" font-family="Inter,Arial" font-weight="600">Save and post</text></svg>`;
+  const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const F = `font-family="IBM Plex Sans,Arial,sans-serif"`;
+  const INK = "#17202a", MUTED = "#52606d", LINE = "#e3e7eb", CTL = "#d0d7de", BLUE = "#0a5fb4", AMBER = "#f5a623";
+  const txt = (x: number, y: number, s: string, size = 12, fill = INK, extra = "") => `<text x="${x}" y="${y}" fill="${fill}" font-size="${size}" ${F} ${extra}>${esc(s)}</text>`;
+  const box = (x: number, y: number, w: number, h: number, fill = "#fff", stroke = CTL, rx = 4) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" fill="${fill}" stroke="${stroke}"/>`;
+  const hl = (on: boolean, x: number, y: number, w: number, h: number) => (on ? `<rect x="${x - 3}" y="${y - 3}" width="${w + 6}" height="${h + 6}" rx="6" fill="none" stroke="${AMBER}" stroke-width="2"/>` : "");
+  const caret = (x: number, y: number) => `<path d="M${x} ${y}l4 4 4-4" fill="none" stroke="#7b8794" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>`;
+  const row = (x: number, y: number, k: string, val: string) => `${txt(x, y, k, 11, MUTED)}${txt(x, y + 18, val, 12.5, INK, `font-weight="500"`)}`;
+  const masked = (x: number, y: number, k: string, w: number) => `${txt(x, y, k, 11, MUTED)}<rect x="${x}" y="${y + 6}" width="${w}" height="15" fill="#111"/>`;
+  const money = `€${v.amount.toLocaleString("en-IE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const cc = `${v.costCenter} · ${v.costCenter === "0400" ? "Capex · Machinery" : v.costCenter === "4120" ? "Opex · Freight" : "Opex · Maintenance"}`;
+  const routeLabel = v.route === "second_approval" ? "Second approval (M. Weber)" : "Single approval (S. Koch)";
+  const hold = v.status === "hold";
+  const pill = hold ? { label: "ON HOLD", bg: "#fff1cc", fg: "#7a4b00", bd: "#e6d7a8", w: 62 } : v.status === "approved" || v.status === "posted" ? { label: "POSTED", bg: "#dff5e7", fg: "#0b5d33", bd: "#b7e0c6", w: 56 } : { label: "OPEN", bg: "#eef1f4", fg: "#3a4753", bd: CTL, w: 44 };
+  const desc = v.description.length > 34 ? `${v.description.slice(0, 33)}…` : v.description;
+  const nav = ["Dashboard", "Banking", "Expenses & Bills", "Sales", "Payroll", "Reports", "Taxes", "Accounting"]
+    .map((n, k) => {
+      const y = 104 + k * 28, on = n === "Expenses & Bills";
+      return `${on ? `<rect x="8" y="${y - 17}" width="134" height="26" rx="4" fill="#ffffff" fill-opacity=".12"/><rect x="8" y="${y - 17}" width="3" height="26" fill="#fff"/>` : ""}<rect x="22" y="${y - 10}" width="10" height="10" rx="2" fill="none" stroke="#fff" stroke-opacity="${on ? 1 : 0.7}" stroke-width="1.3"/><text x="42" y="${y}" fill="#fff" fill-opacity="${on ? 1 : 0.8}" font-size="12" ${F} font-weight="${on ? 600 : 400}">${esc(n)}</text>`;
+    })
+    .join("");
+  const L = 166, R = 944; // content column
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540"><rect width="960" height="540" fill="#f4f6f8"/>`
+    // sidebar
+    + `<rect x="0" y="0" width="150" height="540" fill="#16324f"/><rect x="16" y="20" width="11" height="11" rx="2" fill="#fff"/><text x="35" y="30" fill="#fff" font-size="14" ${F} font-weight="700">MB-ERP</text>`
+    + `<rect x="12" y="46" width="126" height="28" rx="6" fill="#ffffff" fill-opacity=".08" stroke="#fff" stroke-opacity=".35"/><text x="26" y="64" fill="#fff" font-size="12.5" ${F} font-weight="600">+  New</text>${nav}`
+    // top bar
+    + `<rect x="150" y="0" width="810" height="44" fill="#fff"/><rect x="150" y="43.5" width="810" height="1" fill="${LINE}"/>`
+    + `${box(L, 10, 300, 24, "#f3f5f7", LINE, 6)}<circle cx="${L + 14}" cy="21" r="4.5" fill="none" stroke="#7b8794" stroke-width="1.4"/><path d="M${L + 17.5} 24.5l3 3" stroke="#7b8794" stroke-width="1.4"/>${txt(L + 26, 26, "Search bills, vendors, POs", 11.5, "#7b8794")}`
+    + `${txt(860, 27, "Posting period 12/2025", 11.5, MUTED, `text-anchor="end"`)}<circle cx="880" cy="22" r="11" fill="none" stroke="${CTL}"/>${txt(880, 26, "?", 11, MUTED, `text-anchor="middle"`)}<circle cx="910" cy="22" r="11" fill="${BLUE}"/>${txt(910, 26, "AP", 10, "#fff", `text-anchor="middle" font-weight="600"`)}`
+    // breadcrumb + title row
+    + txt(L, 64, "Expenses & Bills  ›  Bills  ›  Expert queue", 11.5, MUTED)
+    + txt(L, 92, `Bill INV-${v.id}`, 20, INK, `font-weight="600"`)
+    + `<rect x="${L + 140}" y="77" width="${pill.w}" height="20" rx="10" fill="${pill.bg}" stroke="${pill.bd}"/>${txt(L + 140 + pill.w / 2, 91, pill.label, 10.5, pill.fg, `text-anchor="middle" font-weight="600" letter-spacing=".4"`)}`
+    + `<rect x="${R - 112}" y="74" width="112" height="28" rx="4" fill="${BLUE}"/>${txt(R - 56, 92, hold ? "Save as held" : "Post invoice", 12.5, "#fff", `text-anchor="middle" font-weight="600"`)}`
+    // header card
+    + box(L, 112, R - L, 110, "#fff", LINE, 8)
+    + row(L + 16, 134, "Vendor", v.supplier) + row(L + 196, 134, "Bill date", v.date) + row(L + 296, 134, "Purchase order", v.poNumber ?? "none")
+    + row(L + 412, 134, "Entity", v.entity === "subsidiary" ? "Subsidiary (intercompany)" : "Parent company")
+    + txt(R - 16, 134, "Amount due", 11, MUTED, `text-anchor="end"`) + txt(R - 16, 162, money, 24, INK, `text-anchor="end" font-weight="600"`)
+    + txt(R - 16, 186, "Supplier status", 11, MUTED, `text-anchor="end"`) + txt(R - 16, 203, v.knownSupplier ? "Known supplier" : "New supplier", 12, INK, `text-anchor="end"`)
+    + (v.contactName ? masked(L + 16, 180, "Contact", 120) : "") + (v.iban ? masked(L + 196, 180, "Bank (IBAN)", 200) : "")
+    // category details card
+    + box(L, 234, R - L, 124, "#fff", LINE, 8)
+    + txt(L + 16, 256, "Category details", 13, INK, `font-weight="600"`) + `<text x="${R - 16}" y="256" fill="${MUTED}" font-size="11.5" ${F} text-anchor="end">Category <tspan fill="${INK}" font-weight="600">${esc(v.category.replace(/_/g, " "))}</tspan></text>`
+    + `<rect x="${L + 0.5}" y="266" width="${R - L - 1}" height="22" fill="#f8fafb"/><rect x="${L}" y="266" width="${R - L}" height="1" fill="${LINE}"/>`
+    + txt(L + 16, 281, "#", 11, MUTED) + txt(L + 40, 281, "Account · cost center", 11, MUTED) + txt(L + 286, 281, "Description", 11, MUTED) + txt(L + 534, 281, "Asset number", 11, MUTED) + txt(R - 16, 281, "Amount", 11, MUTED, `text-anchor="end"`)
+    + `<rect x="${L}" y="288" width="${R - L}" height="1" fill="${LINE}"/>`
+    + txt(L + 16, 312, "1", 12, MUTED) + box(L + 40, 296, 230, 26) + txt(L + 48, 313, cc, 12, INK) + caret(L + 254, 307) + hl(highlight === "costCenter", L + 40, 296, 230, 26)
+    + txt(L + 286, 313, desc, 12, INK) + box(L + 534, 296, 110, 26) + (v.assetNumber ? txt(L + 542, 313, v.assetNumber, 12, INK) : txt(L + 542, 313, "A-2025-000", 12, "#9aa5b1"))
+    + txt(R - 16, 313, money, 12, INK, `text-anchor="end"`)
+    + `<rect x="${L}" y="330" width="${R - L}" height="1" fill="${LINE}"/>` + txt(L + 16, 348, "+ Add lines", 11.5, BLUE, `font-weight="500"`)
+    + `<text x="${R - 16}" y="348" fill="${INK}" font-size="11.5" ${F} text-anchor="end">Total <tspan font-weight="600">${esc(money)}</tspan></text>`
+    // approval card
+    + box(L, 370, R - L, 76, "#fff", LINE, 8)
+    + txt(L + 16, 392, "Approval route", 11, MUTED) + box(L + 16, 400, 230, 28) + txt(L + 24, 418, routeLabel, 12, INK) + caret(L + 230, 412) + hl(highlight === "route", L + 16, 400, 230, 28)
+    + txt(L + 266, 392, "Status", 11, MUTED) + box(L + 266, 400, 160, 28)
+    + (hold ? `<rect x="${L + 346}" y="400.75" width="79.25" height="26.5" fill="#fff1cc" stroke="${AMBER}" stroke-width="1.5"/>` : `<rect x="${L + 266.5}" y="400.5" width="80" height="27" rx="3.5" fill="${BLUE}"/>`)
+    + txt(L + 306, 418, "Post", 12, hold ? INK : "#fff", `text-anchor="middle" font-weight="${hold ? 400 : 600}"`) + txt(L + 386, 418, "Hold", 12, hold ? "#7a4b00" : INK, `text-anchor="middle" font-weight="${hold ? 600 : 400}"`)
+    + hl(highlight === "status", L + 266, 400, 160, 28)
+    + txt(L + 446, 392, "Memo", 11, MUTED) + box(L + 446, 400, R - L - 462, 28)
+    + `</svg>`;
   return { id: `frame_${i.id}_${Math.round(t)}`, t, dataUrl: `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`, width: 960, height: 540, piiRegionsBlurred: 0 };
 }
 

@@ -171,7 +171,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
         </div>
       ) : null}
 
-      {vm.replay ? <ReplayRow replay={vm.replay} expert={expert} onClose={vm.closeReplay} /> : null}
+      {vm.replay && !vm.ended ? <ReplayRow replay={vm.replay} expert={expert} onClose={vm.closeReplay} /> : null}
 
       {vm.pipeline.degraded === "wrong_surface" ? (
         <p style={{ fontSize: 12.5, color: "#a35f00", margin: "0 2px" }}>A different surface is shared, so no frames are sent. ERP telemetry continues.</p>
@@ -183,7 +183,6 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
         </Pill>
         <span style={{ fontSize: 11, fontWeight: 600, color: "#8e8e93", marginLeft: 2 }}>{learner}</span>
         {chips.length ? chips.map((c) => <LearnedChip key={`${c.id}|${c.text}`} kind={c.kind} text={c.text} />) : <span style={{ fontSize: 11.5, color: "#aeaeb2" }}>{expert}&apos;s {map.rules.length} rules loaded</span>}
-        <span style={{ marginLeft: "auto", fontSize: 10.5, color: "#aeaeb2" }}>speaks only when {expert} would</span>
       </div>
 
       {earlier.length > 0 ? (
@@ -223,9 +222,12 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
           {!vm.pipeline.sharing && !workspace ? <GlassButton size={30} onClick={() => void vm.pipeline.start({ mode: "tab", app: "erp", queue: "newhire" })}>Share screen</GlassButton> : null}
         </Drawer>
       ) : (
-        <button type="button" onClick={() => setMech(true)} style={{ alignSelf: "flex-start", fontSize: 11.5, color: "#8e8e93", padding: "0 2px", background: "none", border: 0, cursor: "pointer" }}>
-          Show the mechanism
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px" }}>
+          <button type="button" onClick={() => setMech(true)} style={{ fontSize: 11.5, color: "#8e8e93", padding: 0, background: "none", border: 0, cursor: "pointer" }}>
+            Show the mechanism
+          </button>
+          <span style={{ marginLeft: "auto", fontSize: 10.5, color: "#aeaeb2" }}>speaks only when {expert} would</span>
+        </div>
       )}
     </CompanionCard>
   );

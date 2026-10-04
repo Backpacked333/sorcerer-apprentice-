@@ -252,13 +252,13 @@ export function cardState(i: CardInput): CardState {
   if (linger) return { ...base, title: "Understood", sub: "Saved with your own words" };
   if (within(ago(i.now, i.lastDeferredAt), DEFERRED_MS)) return { ...base, title: "Okay — I'll ask in the debrief", sub: "Added to the list of open questions" };
   if (mood === "heard") return { ...base, title: "Reason heard — not asking", sub: i.lastHeard?.about ? `You explained the ${i.lastHeard.about} while you worked` : "You explained it while you worked" };
-  if (mood === "notice" && i.lastNotice) return { ...base, title: `Noticed: ${i.lastNotice.text}`, sub: "Holding one question for your next pause" };
+  if (mood === "notice" && i.lastNotice) return { ...base, title: `Noticed: ${i.lastNotice.text}`, sub: "Holding a question for a pause" };
   if (mood === "typing") return { ...base, title: "Quiet — you're typing", sub: "I won't interrupt while you type" };
   if (mood === "reading") return { ...base, title: "Quiet — you're reading", sub: "Reading isn't a pause · I'll wait" };
   if (mood === "pausing") return { ...base, title: "You paused…", sub: i.decision?.reasons?.[0] ? `Waiting — ${i.decision.reasons[0]}` : "Waiting to be sure" };
   if (!i.watching) return { ...base, title: "Not watching", sub: "No screen shared and no ERP telemetry" };
   if (i.queued > 0) return { ...base, title: "Quiet while you work", sub: `${i.queued} question${i.queued > 1 ? "s" : ""} waiting for a pause` };
-  return { ...base, title: "Quiet while you work", sub: `Watching, saying nothing · open a ${i.noun} to begin` };
+  return { ...base, title: "Quiet while you work", sub: "Watching, saying nothing" };
 }
 
 /** Footer status line in ask mode. */

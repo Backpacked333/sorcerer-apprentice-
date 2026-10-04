@@ -71,7 +71,7 @@ export function Workspace({
     <OccluderProvider onChange={onOccluders}>
       <FrameCtx.Provider value={ctx}>
         <div
-          className={`workspace${presenter ? " presenter" : ""}`}
+          className={`workspace workspace-float${presenter ? " presenter" : ""}`}
           style={{ display: "block", position: "relative", height: "100dvh", overflow: "hidden", background: "#f2f4f7" }}
         >
           <div

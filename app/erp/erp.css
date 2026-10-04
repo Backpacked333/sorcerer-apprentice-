@@ -40,7 +40,7 @@ body:has(.erp) {
 }
 .erp *, .erp *::before, .erp *::after { box-sizing: border-box; }
 .erp p, .erp h1, .erp h2 { margin: 0; }
-.erp a { color: inherit; }
+:where(.erp) a { color: inherit; }
 html.erp-embedded .erp-external-nav { display: none; }
 
 /* ---------- shell ---------- */
@@ -217,7 +217,7 @@ a.erp-nav-item.is-active:hover { background: rgba(255, 255, 255, .17); }
 .erp-card-flush { overflow: hidden; }
 .erp-card-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 20px; }
 .erp-card-title h2 { font-size: 15px; line-height: 20px; font-weight: 600; }
-.erp-cat { font-weight: 600; color: var(--erp-ink); margin-left: 6px; text-transform: capitalize; }
+.erp-cat { font-weight: 600; color: var(--erp-ink); margin-left: 6px; }
 .erp-k { font-size: 14px; line-height: 18px; color: var(--erp-muted); margin-bottom: 4px; }
 .erp-k-gap { margin-top: 10px; }
 .erp-ro {
@@ -232,7 +232,7 @@ a.erp-nav-item.is-active:hover { background: rgba(255, 255, 255, .17); }
 .erp-head-card {
   padding: 18px 20px;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) 200px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, .85fr) minmax(0, .85fr) minmax(0, 1.2fr) 200px;
   gap: 16px 20px;
 }
 .erp-fact { min-width: 0; }
@@ -307,13 +307,14 @@ a.erp-nav-item.is-active:hover { background: rgba(255, 255, 255, .17); }
   transition: transform .22s var(--erp-ease-slide), background-color .22s;
   pointer-events: none;
 }
-.erp-seg.is-hold .erp-seg-thumb { transform: translateX(100%); background: #7a4b00; }
+.erp-seg.is-hold .erp-seg-thumb { transform: translateX(100%); background: #fff1cc; box-shadow: inset 0 0 0 1.5px #f5a623; }
 .erp-seg button {
   position: relative; z-index: 1; flex: 1; border: 0; background: transparent;
   font: inherit; font-size: 14px; color: var(--erp-ink); cursor: pointer;
   transition: color .22s;
 }
 .erp-seg button.is-on { color: #fff; font-weight: 600; }
+.erp-seg.is-hold button.is-on { color: #7a4b00; }
 .erp-seg button:disabled { cursor: default; }
 .erp-seg button:focus-visible { outline: 2px solid var(--erp-blue); outline-offset: -3px; }
 .erp-seg:has(button:disabled) { opacity: .7; }

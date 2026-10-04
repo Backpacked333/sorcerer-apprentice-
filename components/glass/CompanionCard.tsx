@@ -75,6 +75,7 @@ export function CompanionCard(p: {
       style={{
         position: "relative",
         width,
+        flexShrink: 0,
         height: measured ? h : undefined,
         maxHeight: "calc(100dvh - 56px)",
         transition: sprung ? `width .64s ${SPRING}, height .64s ${SPRING}` : "none",

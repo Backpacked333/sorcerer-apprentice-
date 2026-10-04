@@ -12,6 +12,7 @@ export function Stepper({ current, sessionId, confirmed }: { current: 1 | 2 | 3;
   return (
     <ol
       className="stepper m-0 flex list-none items-center gap-0.5 p-[3px]"
+      data-current={current}
       style={{ borderRadius: 17, background: "rgba(0,0,0,.045)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.05)" }}
     >
       {steps.map((s) => {
@@ -25,6 +26,7 @@ export function Stepper({ current, sessionId, confirmed }: { current: 1 | 2 | 3;
               style={{
                 width: 17,
                 height: 17,
+                lineHeight: 1,
                 borderRadius: 9,
                 background: isCurrent ? "linear-gradient(180deg,#ffc552,#f5a623)" : state === "done" ? "rgba(34,180,94,.16)" : "rgba(0,0,0,.06)",
                 color: isCurrent ? "#1d1300" : state === "done" ? "#1b8a4b" : "#8e8e93",
@@ -43,6 +45,8 @@ export function Stepper({ current, sessionId, confirmed }: { current: 1 | 2 | 3;
             title={s.reason}
             aria-current={isCurrent ? "step" : undefined}
             style={{
+              padding: 0,
+              lineHeight: "18px",
               borderRadius: 14,
               background: isCurrent ? "#fff" : "transparent",
               boxShadow: isCurrent ? "0 1px 3px rgba(0,0,0,.08), 0 0 0 .5px rgba(0,0,0,.05)" : "none",
@@ -53,9 +57,9 @@ export function Stepper({ current, sessionId, confirmed }: { current: 1 | 2 | 3;
             }}
           >
             {s.href && s.n !== current ? (
-              <Link href={s.href} className="block px-2.5 py-[5px] no-underline hover:text-[#1d1d1f]" style={{ color: "inherit" }}>{inner}</Link>
+              <Link href={s.href} className="block px-2 py-[4px] no-underline hover:text-[#1d1d1f]" style={{ color: "inherit" }}>{inner}</Link>
             ) : (
-              <span className="block px-2.5 py-[5px]" style={{ cursor: state === "locked" ? "not-allowed" : "default" }}>{inner}</span>
+              <span className="block px-2 py-[4px]" style={{ cursor: state === "locked" ? "not-allowed" : "default" }}>{inner}</span>
             )}
           </li>
         );

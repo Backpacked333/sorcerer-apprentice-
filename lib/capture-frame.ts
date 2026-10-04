@@ -25,6 +25,11 @@ export const OCCLUDER_PAD: Padding = { t: 32, r: 52, b: 72, l: 52 };
 export const OCCLUDER_WINDOW_MS = 750;
 /** A browser-surface capture whose aspect is within 2 % of this viewport is taken to be this tab. */
 export const SELF_ASPECT_TOLERANCE = 0.02;
+/** A painted box grows at once but shrinks only after this long, so a breathing/jittering surface does not move
+ * the black box's edges every tick (moving edges would read as screen change or typing to the governor). */
+export const OCCLUDER_HOLD_MS = 5000;
+/** Painted occluder boxes snap outward to this CSS-px grid, for the same reason. */
+export const OCCLUDER_SNAP = 8;
 
 const finite = (...n: number[]) => n.every(Number.isFinite);
 const validRect = (r: Rect | null | undefined): r is Rect => !!r && finite(r.x, r.y, r.w, r.h) && r.w > 0 && r.h > 0;
@@ -78,10 +83,14 @@ export function isSelfCapture(surface: string | undefined, videoW: number, video
 }
 
 /** Timestamped ring buffer of occluder rects (CSS px). `rects(now)` is, per occluder, the bounding union of
- * every rect it had in the last `windowMs`, padded. An occluder that just vanished stays painted for `windowMs`. */
+ * every rect it had in the last max(windowMs, holdMs) (always at least the last 750 ms), padded and snapped
+ * outward to `snap` px. An occluder that just vanished stays painted for that long. */
 export class OccluderHistory {
   private samples: { t: number; key: unknown; rect: Rect }[] = [];
-  constructor(readonly windowMs = OCCLUDER_WINDOW_MS, readonly pad: Padding = OCCLUDER_PAD) {}
+  readonly windowMs: number;
+  constructor(windowMs = OCCLUDER_WINDOW_MS, readonly pad: Padding = OCCLUDER_PAD, readonly holdMs = OCCLUDER_HOLD_MS, readonly snap = OCCLUDER_SNAP) {
+    this.windowMs = Math.max(windowMs, holdMs);
+  }
   record(t: number, items: readonly { key: unknown; rect: Rect }[]): void {
     for (const it of items) if (validRect(it.rect)) this.samples.push({ t, key: it.key, rect: { ...it.rect } });
     this.prune(t);
@@ -94,7 +103,13 @@ export class OccluderHistory {
       if (!b) boxes.set(key, { x0: r.x, y0: r.y, x1: r.x + r.w, y1: r.y + r.h });
       else { b.x0 = Math.min(b.x0, r.x); b.y0 = Math.min(b.y0, r.y); b.x1 = Math.max(b.x1, r.x + r.w); b.y1 = Math.max(b.y1, r.y + r.h); }
     }
-    return [...boxes.values()].map((b) => padRect({ x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }, this.pad));
+    const g = this.snap > 0 ? this.snap : 0;
+    return [...boxes.values()].map((b) => {
+      const p = padRect({ x: b.x0, y: b.y0, w: b.x1 - b.x0, h: b.y1 - b.y0 }, this.pad);
+      if (!g) return p;
+      const x = Math.floor(p.x / g) * g, y = Math.floor(p.y / g) * g;
+      return { x, y, w: Math.ceil((p.x + p.w) / g) * g - x, h: Math.ceil((p.y + p.h) / g) * g - y };
+    });
   }
   get size(): number { return this.samples.length; }
   clear(): void { this.samples = []; }

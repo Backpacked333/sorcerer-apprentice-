@@ -140,7 +140,7 @@ export interface RuleChip {
 export interface RoleNode {
   id: string;
   title: string;
-  /** department id, null in real mode (no org source) */
+  /** department id; real mode uses one neutral "Seen by Tacit" cloud (no org source) */
   dept: string | null;
   team: string | null;
   /** O*NET chip shown instead of department in real mode */

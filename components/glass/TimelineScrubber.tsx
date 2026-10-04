@@ -227,7 +227,7 @@ export function TimelineScrubber({ range, t, onT, beads, ticks, today, playing, 
         {today != null && span > 0 ? (
           <div aria-hidden style={{ position: "absolute", left: pos(today), top: 6, width: 1, height: 20, background: "rgba(0,0,0,.2)" }} />
         ) : null}
-        {groups.map((g) => {
+        {groups.map((g, gi) => {
           const first = g.beads[0];
           const n = g.beads.length;
           const future = g.at > t + 1e-9 && first.type !== "planned";
@@ -236,7 +236,7 @@ export function TimelineScrubber({ range, t, onT, beads, ticks, today, playing, 
           const size = n > 1 ? 16 : 10;
           return (
             <div
-              key={`${g.at}-${first.title}`}
+              key={`${g.at}-${gi}`}
               title={title}
               style={{
                 position: "absolute",

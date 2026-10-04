@@ -193,7 +193,11 @@ export function InvoiceForm({
       <div className="erp-title-row">
         <h1 className="erp-title">Bill INV-{inv.id}</h1>
         <span className={`erp-pill erp-pill-${badge.tone}`} data-testid="erp-status-badge">{badge.label}</span>
-        {queueProgress && <span className="erp-muted">{progressLine(queueProgress, inv.mode)}</span>}
+        {queueProgress && (
+          <span className="erp-muted">
+            {progressLine({ ...queueProgress, remainingOpen: queueProgress.remainingOpen - (invoice.status === "open" && locked ? 1 : 0) }, inv.mode)}
+          </span>
+        )}
         <div className="erp-title-actions">
           {nextId && !locked && (
             <button type="button" className="erp-btn" data-testid="erp-next" onClick={() => router.push(`/erp/invoice/${nextId}`)}>Next invoice →</button>
@@ -201,32 +205,34 @@ export function InvoiceForm({
           {locked && nextId && (
             <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-next" onClick={() => router.push(`/erp/invoice/${nextId}`)}>Next invoice →</button>
           )}
-          <div className="erp-save-anchor">
-            <button
-              type="button"
-              className="erp-btn erp-btn-primary erp-btn-save"
-              data-testid="erp-save"
-              data-erp-target="save"
-              aria-haspopup="dialog"
-              aria-expanded={confirm}
-              disabled={locked || saving}
-              onClick={confirm ? undefined : openIntent}
-            >
-              {decision === "hold" ? "Save as held" : "Post invoice"}
-            </button>
-            {confirm && (
-              <div className="erp-confirm" role="dialog" aria-label="Save this bill" data-testid="erp-confirm-popover">
-                <span className="erp-confirm-caret" aria-hidden />
-                <p className="erp-confirm-text">{confirmCopy(inv)}</p>
-                <div className="erp-confirm-actions">
-                  <button type="button" className="erp-btn" data-testid="erp-cancel" onClick={() => setConfirm(false)}>Cancel</button>
-                  <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-confirm" disabled={!arm || saving} onClick={() => void save()}>
-                    {saving ? "Saving…" : "Confirm"}
-                  </button>
+          {!locked && (
+            <div className="erp-save-anchor">
+              <button
+                type="button"
+                className="erp-btn erp-btn-primary erp-btn-save"
+                data-testid="erp-save"
+                data-erp-target="save"
+                aria-haspopup="dialog"
+                aria-expanded={confirm}
+                disabled={locked || saving}
+                onClick={confirm ? undefined : openIntent}
+              >
+                {decision === "hold" ? "Save as held" : "Post invoice"}
+              </button>
+              {confirm && (
+                <div className="erp-confirm" role="dialog" aria-label="Save this bill" data-testid="erp-confirm-popover">
+                  <span className="erp-confirm-caret" aria-hidden />
+                  <p className="erp-confirm-text">{confirmCopy(inv)}</p>
+                  <div className="erp-confirm-actions">
+                    <button type="button" className="erp-btn" data-testid="erp-cancel" onClick={() => setConfirm(false)}>Cancel</button>
+                    <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-confirm" disabled={!arm || saving} onClick={() => void save()}>
+                      {saving ? "Saving…" : "Confirm"}
+                    </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 

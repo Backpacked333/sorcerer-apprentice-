@@ -117,7 +117,7 @@ Helpers: `emptySession(id, mode, task, expertName)` · `describeEvent(e): string
 
 All added fields are optional; existing logs remain valid. `save_intent` describes a save requested but not yet posted, unlike `save_clicked`. `Frame.dataUrl` is now optional so URL-only frames are valid; consumers must render `frame.url ?? frame.dataUrl`. `sample` marks sample sessions; `ws` is metadata, not automatic session isolation. Adding fields does not wire their producers or consumers.
 
-`stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change it.
+Persisted `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change the persisted form. Capture's transient `[ASK]` tool payload appends `::window:<QuestionWindow.id>` so a delayed `log_answer.stepRef` can be correlated to one turn; Capture strips that suffix before any lookup or persistence.
 
 ### Telemetry channel — `lib/telemetry.ts` · Owner **B**
 
@@ -187,7 +187,7 @@ type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise
 type TurnPhase = "idle"|"sending"|"waiting_for_speech"|"speaking"|"listening"|"closing";
 interface TurnOptions {
   tag: string; text: string; spoken?: string; listen?: boolean; timeoutSecs?: number; maxSecs?: number;
-  recordClip?: { sessionId: string }; abortOnHumanSpeech?: boolean; watchdogSecs?: number;
+  recordClip?: { sessionId: string; consentEpoch?: () => number; onError?: (error: unknown) => void }; abortOnHumanSpeech?: boolean; watchdogSecs?: number;
   silenceCloseSecs?: number; ackMaxSecs?: number; onPhase?: (phase: TurnPhase, at: number) => void;
 }
 interface TurnResult {
@@ -378,6 +378,8 @@ Optional fields a view already reads, and which stay absent until the owning lan
 | `TeachVM` | `practice` | C | no "Practice this" button |
 | `TeachVM` | `pipeline.setCropTarget` | C | same companion fallback as Capture |
 
+Capture exposes the WA-4/WA-5 controller state additively: `turnPhase`, `gateOpen`, `stt`, `deferred`, `deferredCount`, `reasonHeardItems`, `noisy`, `chainedCount`, and `forced`. `reasonHeard` remains the latest display string for the current view; `reasonHeardItems` is the timestamped evidence list. `deferred` is the persisted P-15 payload and `deferredCount` is its render-ready count. Views may ignore these fields until their presentation lands.
+
 `CropHandle` (`setCropTarget?`, `surface?`) lives on `capture.vm.ts` and is shared by the teach pipeline pick.
 
 ---
@@ -436,7 +438,7 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 | P-10 | `GET /api/health` → `{ ok, keys: { elevenlabs, gateway }, agents: { interviewer, tutor, private, ttsModel }, sample: { present }, store: "fs", commit }`. Credential/agent presence is boolean; commit is a safe SHA or `unknown`. No-store; 200 only when both sample session/map pairs are complete and the Teach sample is confirmed, otherwise 503 without internal errors. | B | D (preflight screen) |
 
 | P-11 | `EventKind` gains **`"save_intent"`**: posted by the ERP when the save-confirm opens, carrying the *proposed* `state`. A sandbox verdict like `save_blocked`: delivered in every source mode, never a vision event, never a compiled step. | B (type, pipeline) · D (`InvoiceForm` posts it) | C (matcher intervenes on it) |
-| P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
+| P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. Optional `recordClip.consentEpoch()` invalidates pending clip acquisition/uploads when Capture strikes evidence; `onError` reports upload/withdrawal failures. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
 | P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`), `sessionStartMs?: number`, and `keyterms?: string[]`; it resolves only when the agent session is connected | A | C passes names in Map and Teach; A/C pass the app clock and session vocabulary |
 | P-14 | `TelemetryMessage` gains optional `queue?: Queue`, `sandboxSession?: string`, `reannounce?: boolean`; `postHello/subscribeHello` use the separate hello control contract (§2). ERP re-announcement of `invoice_opened` still requires publisher integration. | B · D | A, C |
 | P-15 | `SessionLog.deferred?: { kind: string; question: string; stepRef: string }[]` — live candidates that were deferred, stale or never asked | B (type) · A (writes) | C (`buildSlots` asks them first) |

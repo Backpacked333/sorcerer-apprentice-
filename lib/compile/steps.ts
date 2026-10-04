@@ -114,12 +114,24 @@ export function compileDeterministic(log: SessionLog): WorkMap {
   });
   const narrationPairs = log.transcript
     .filter((segment) => isQuotableTranscript(segment, log.windows))
-    .flatMap((segment) => narrationCandidates.flatMap(({ step, candidate }) => {
-      const delta = segment.t - candidate.createdAt;
-      if (delta < -20 || delta > 25 || !narrationMatch(segment.text, candidate).fills) return [];
-      return [{ step, segment, distance: Math.abs(delta) }];
-    }))
-    .sort((left, right) => left.distance - right.distance || left.segment.t - right.segment.t || left.step.index - right.step.index);
+    .flatMap((segment) => {
+      const explicitlyNamedInvoices = new Set(narrationCandidates.flatMap(({ candidate }) => {
+        if (!candidate.invoice) return [];
+        const token = candidate.invoice.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`(?:^|[^\\p{L}\\p{N}])${token}(?:$|[^\\p{L}\\p{N}])`, "iu").test(segment.text)
+          ? [candidate.invoice]
+          : [];
+      }));
+      return narrationCandidates.flatMap(({ step, candidate }) => {
+        const delta = segment.t - candidate.createdAt;
+        if (explicitlyNamedInvoices.size && (!candidate.invoice || !explicitlyNamedInvoices.has(candidate.invoice))) return [];
+        const match = narrationMatch(segment.text, candidate);
+        if (delta < -20 || delta > 25 || !match.fills) return [];
+        const specificity = match.target === "invoice" ? 0 : match.target === "value" ? 1 : match.target === "field" ? 2 : 3;
+        return [{ step, segment, distance: Math.abs(delta), specificity }];
+      });
+    })
+    .sort((left, right) => left.specificity - right.specificity || left.distance - right.distance || left.segment.t - right.segment.t || left.step.index - right.step.index);
   const assignedSteps = new Set<string>();
   const assignedSegments = new Set<string>();
   for (const { step, segment } of narrationPairs) {

@@ -118,6 +118,22 @@ describe("compiled reason evidence integrity", () => {
     expect(map.steps.find((step) => step.invoice === "9002")?.reason?.text).toBe(log.transcript[0].text);
   });
 
+  it("prefers an explicitly named bare invoice over a closer shared-field step", () => {
+    const log = emptySession("s_bare_invoice", "capture", "Process invoices", "Expert");
+    log.events.push(changed("9001", 10, "1000", "2000"), changed("9002", 19, "3000", "4000"));
+    log.transcript.push({
+      id: "tr_bare_invoice",
+      t: 18,
+      text: "9001 cost center changed because the documented policy requires it.",
+      speaker: "expert",
+      final: true,
+    });
+
+    const map = compileDeterministic(log);
+    expect(map.steps.find((step) => step.invoice === "9001")?.reason?.text).toBe(log.transcript[0].text);
+    expect(map.steps.find((step) => step.invoice === "9002")?.reason).toBeUndefined();
+  });
+
   it("does not treat procedural bare-so narration as a reason", () => {
     const log = emptySession("s_procedural", "capture", "Process invoices", "Expert");
     log.events.push(changed("9001", 10, "1000", "2000"));
@@ -130,5 +146,19 @@ describe("compiled reason evidence integrity", () => {
     });
 
     expect(compileDeterministic(log).steps.find((step) => step.invoice === "9001")?.reason).toBeUndefined();
+  });
+
+  it("keeps a genuine causal cue after a leading conversational so", () => {
+    const log = emptySession("s_so_because", "capture", "Process invoices", "Expert");
+    log.events.push(changed("9001", 10, "1000", "2000"));
+    log.transcript.push({
+      id: "tr_so_because",
+      t: 11,
+      text: "So I changed the cost center on invoice 9001 because policy requires 2000.",
+      speaker: "expert",
+      final: true,
+    });
+
+    expect(compileDeterministic(log).steps.find((step) => step.invoice === "9001")?.reason?.text).toBe(log.transcript[0].text);
   });
 });

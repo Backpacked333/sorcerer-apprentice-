@@ -99,8 +99,7 @@ summary { cursor: pointer; }
 .timeline { display: flex; gap: 8px; overflow: auto; }
 .timeline-node { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; min-width: 140px; text-align: left; background: var(--color-panel); border: 1px solid var(--color-line); border-radius: 12px; padding: 8px; color: inherit; }
 .timeline-node.is-on { border-color: var(--color-amber); }
-.frame-sm img, .frame-lg img { width: 100%; border-radius: 8px; border: 1px solid var(--color-line); }
-.frame-lg img { max-height: 420px; object-fit: contain; }
+.frame-sm img, .frame-lg img { display: block; width: 100%; height: auto; border-radius: 8px; outline: 1px solid var(--color-line); outline-offset: -1px; }
 .frame-sm { max-width: 120px; }
 .frame-region { position: absolute; border: 2px solid var(--color-amber); }
 .doors { display: grid; gap: 16px; }

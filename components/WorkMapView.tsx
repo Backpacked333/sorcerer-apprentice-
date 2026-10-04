@@ -146,7 +146,7 @@ export function WorkMapView({ map, frames, sessionId, onChange, editable, matrix
           <div className="panel overflow-hidden">
             <div className="border-b border-line px-6 py-4"><p className="panel-title">The screen moment</p><p className="mt-1 text-sm text-muted">Evidence attached to this decision, not a live screen.</p></div>
             {src ? (
-              <FrameThumb src={src} t={selected.screenMoment.t} blurred={frame?.piiRegionsBlurred} region={selected.screenMoment.region} size="lg" />
+              <FrameThumb src={src} width={frame?.width} height={frame?.height} t={selected.screenMoment.t} blurred={frame?.piiRegionsBlurred} region={selected.screenMoment.region} size="lg" />
             ) : (
               <div className="flex min-h-32 items-center justify-center p-6 text-sm text-muted">No screen evidence attached to this step.</div>
             )}

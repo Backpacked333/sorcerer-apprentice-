@@ -128,7 +128,7 @@ function Column({ vm, presenter, mode }: { vm: TeachVM; presenter: boolean; mode
               {vm.replay && (
                 <section className="panel replay-in border-amber p-4">
                   <p className="panel-title" data-testid="teach-replay">Replay · {expert}&apos;s screen{vm.replay.step ? `, ${vm.replay.step.screenMoment.t.toFixed(0)} s into their session` : ""} — captured still</p>
-                  <FrameThumb src={frameSrc(vm.replay.frame as { dataUrl: string; url?: string } | undefined)} t={vm.replay.step?.screenMoment.t} region={vm.replay.step?.screenMoment.region} blurred={vm.replay.frame?.piiRegionsBlurred} size="lg" />
+                  <FrameThumb src={frameSrc(vm.replay.frame)} width={vm.replay.frame?.width} height={vm.replay.frame?.height} t={vm.replay.step?.screenMoment.t} region={vm.replay.step?.screenMoment.region} blurred={vm.replay.frame?.piiRegionsBlurred} size="lg" />
                   {vm.replay.step && (
                     <p className="mt-2 t-body">What {expert} did: {vm.replay.step.title}. {vm.replay.step.decision}
                       {"field" in vm.replay.step.action && <span className="tag ml-2">{vm.replay.step.action.field}: {vm.replay.step.action.from || "empty"} → {vm.replay.step.action.to}</span>}

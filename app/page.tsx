@@ -14,9 +14,13 @@ const knowledge = [
   { title: "The boundaries", body: "When the approach changes. When to stop and ask." },
 ];
 
-export default async function Home() {
+async function latestSample() {
   const sessions = (await listSessions()).filter((s) => s.mode === "capture" && s.id.startsWith("demo_"));
-  const sample = pickSample(await Promise.all(sessions.map(async (session) => ({ ...session, map: await getMap(session.id) }))));
+  return pickSample(await Promise.all(sessions.map(async (session) => ({ ...session, map: await getMap(session.id) }))));
+}
+
+export default async function Home() {
+  const sample = await latestSample();
   const sampleId = sample ? encodeURIComponent(sample.id) : undefined;
   return (
     <main className="min-h-screen">
@@ -51,7 +55,9 @@ export default async function Home() {
               </> : <form action={async () => {
                 "use server";
                 await seedDemo({ ifMissing: true });
-                redirect("/map/demo_sabine_confirmed");
+                const loaded = await latestSample();
+                if (!loaded) throw new Error("No confirmed, nonempty sample Work Map is available. Existing samples were left unchanged.");
+                redirect(`/map/${encodeURIComponent(loaded.id)}`);
               }}>
                 <p className="mb-3 max-w-lg text-sm text-muted">A scripted example with synthetic evidence, separate from your own captures.</p>
                 <button type="submit" className="btn btn-primary px-5 py-3">Load the sample Work Map</button>

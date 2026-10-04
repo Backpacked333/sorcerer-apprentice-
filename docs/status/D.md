@@ -25,6 +25,7 @@ Not yet merged. Implemented on this branch:
 - WD-7 / M3: decision and literal expert reasoning before screenshots; evidence counts rather than confidence labels; draft/confirmed state; guardrail summaries separated from verbatim `quote.text`; missing evidence disclosed.
 - Integration: the companion keeps its state/label/privacy copy and uses the quiet dot; the Work Map keeps frame URLs, regions, translations and the optional evidence matrix. Editing calls the existing `onMapChange` callback, which now persists in the controller, rather than sending a duplicate PUT from the view. The demo room uses the same safe sample selector as the landing page.
 - New D-owned server-rendered presentation regression tests. No additional controller, runtime-contract, dependency or engine changes beyond main.
+- Review follow-ups: sample loading re-reads eligible maps after seeding and refuses to redirect to a missing, draft or empty map without overwriting existing data. FrameThumb caps the shared image/region wrapper using the recorded aspect ratio; Work Map and Teach replay pass frame dimensions, and uncapped natural sizing is used if dimensions are unavailable. Private evidence remains on the existing native-image path rather than introducing an image-optimization proxy.
 
 ## Verified live by a human (who, when, what they did)
 
@@ -32,7 +33,7 @@ None. No live-provider, deployed, voice or screen-sharing verification claimed.
 
 ## Not verified yet (and the script to verify)
 
-- Automated with main `bf29290` integrated: typecheck, all 565 tests (63 files, including 31 D presentation/selection cases), production build and diff whitespace check passed. Coverage includes Simon branding, URL-only frames, explicit sample-loading submission and no redirect when seeding fails. Build output confirms `/` and `/demo` render dynamically. No lint script is configured. A non-failing Vite config warning remains.
+- Automated with main `bf29290` integrated: typecheck, all 574 tests (63 files, including 40 D presentation/selection cases), production build and diff whitespace check passed. Coverage includes Simon branding, URL-only frames, explicit sample-loading submission, post-seed eligibility/error handling and frame sizing markup/CSS contracts. Build output confirms `/` and `/demo` render dynamically. No lint script is configured. A non-failing Vite config warning remains. Frame layout has not been visually inspected in a browser.
 - Browser/keyless smoke not run in this session; UI testing needs approval.
 - Prior `d/experience` status reported a keyless smoke pass and a capture hydration warning. That result is not verification of this integrated revision.
 - UI check: open home at desktop and narrow widths; follow Work Maps/Capture/Practice/ERP links; tab to controls; open governor details; inspect a map's decision, literal reason, guardrail source and missing-frame state; verify the selected step is apparent; enable reduced motion.

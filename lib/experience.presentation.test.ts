@@ -1,4 +1,5 @@
 import { Children, createElement, isValidElement, type ReactNode } from "react";
+import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
@@ -6,6 +7,7 @@ import DemoPage from "@/app/demo/page";
 import { Meter } from "@/components/Meter";
 import { WorkMapView } from "@/components/WorkMapView";
 import { Presence } from "@/components/ui/Presence";
+import { FrameThumb } from "@/components/ui/FrameThumb";
 import type { Decision } from "./governor";
 import { presenceOf, type PresenceInput } from "./ui/presence";
 import { WorkMapSchema } from "./workmap";
@@ -101,6 +103,8 @@ describe("knowledge-first presentation", () => {
   it("seeds missing samples only on explicit submission, before opening the confirmed example", async () => {
     vi.mocked(seedDemo).mockImplementation(async () => {
       expect(redirect).not.toHaveBeenCalled();
+      vi.mocked(listSessions).mockResolvedValue([{ id: "demo_sabine_confirmed", startedAt: 1, mode: "capture", task: map.task, expertName: map.expert.name }]);
+      vi.mocked(getMap).mockResolvedValue({ ...map, sessionId: "demo_sabine_confirmed", confirmedAt: 100 });
       return { samples: ["demo_sabine", "demo_sabine_confirmed"] };
     });
     const action = sampleAction(await Home());
@@ -117,6 +121,31 @@ describe("knowledge-first presentation", () => {
     expect(action).toBeTypeOf("function");
     await expect(action!()).rejects.toThrow("storage unavailable");
     expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, map, { ...map, confirmedAt: 100, steps: [] }])("rejects an ineligible sample left unchanged by ifMissing seeding: %j", async (storedMap) => {
+    vi.mocked(listSessions).mockResolvedValue([{ id: "demo_sabine_confirmed", startedAt: 1, mode: "capture", task: map.task, expertName: map.expert.name }]);
+    vi.mocked(getMap).mockResolvedValue(storedMap);
+    vi.mocked(seedDemo).mockResolvedValue({ samples: ["demo_sabine", "demo_sabine_confirmed"] });
+    const action = sampleAction(await Home());
+    expect(action).toBeTypeOf("function");
+    await expect(action!()).rejects.toThrow("No confirmed, nonempty sample Work Map is available");
+    expect(seedDemo).toHaveBeenCalledExactlyOnceWith({ ifMissing: true });
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
+  it("selects a freshly validated destination rather than assuming the fixed sample ID is eligible", async () => {
+    const action = sampleAction(await Home());
+    vi.mocked(seedDemo).mockImplementation(async () => {
+      vi.mocked(listSessions).mockResolvedValue([
+        { id: "demo_sabine_confirmed", startedAt: 2, mode: "capture", task: map.task, expertName: map.expert.name },
+        { id: "demo_other", startedAt: 1, mode: "capture", task: map.task, expertName: map.expert.name },
+      ]);
+      vi.mocked(getMap).mockImplementation(async (id) => ({ ...map, sessionId: id, confirmedAt: id === "demo_other" ? 100 : undefined }));
+      return { samples: ["demo_sabine", "demo_sabine_confirmed"] };
+    });
+    await action!();
+    expect(redirect).toHaveBeenCalledExactlyOnceWith("/map/demo_other");
   });
 
   it("puts the decision and literal evidence before the screen moment", () => {
@@ -163,6 +192,8 @@ describe("knowledge-first presentation", () => {
       map: translated, sessionId: map.sessionId, onChange: () => {}, editable: false, frames,
     }));
     expect(html).toContain(`src="${url ?? "data:image/png;base64,AAAA"}"`);
+    expect(html).toContain('style="max-width:420px"');
+    expect(html).toContain('width="100" height="100"');
     expect(html).toContain('class="frame-region"');
     expect(html).toContain("left:10%;top:20%;width:30%;height:40%");
     expect(html).toContain("Translated explanation");
@@ -179,6 +210,39 @@ describe("knowledge-first presentation", () => {
     expect(html).toContain("Replay-verified");
     expect(html).toContain("Reason captured");
     expect(renderMap()).not.toContain("<table");
+  });
+});
+
+describe("evidence frame geometry", () => {
+  it.each([
+    [960, 540],
+    [540, 960],
+    [800, 800],
+  ])("caps the shared image/region wrapper at a 420px-high aspect ratio for %dx%d", (width, height) => {
+    const html = renderToStaticMarkup(createElement(FrameThumb, {
+      src: "/frame.jpg", width, height, size: "lg",
+      region: { x: 0, y: 0.2, w: 0.3, h: 0.4 },
+    }));
+    expect(html).toContain(`<div class="relative" style="max-width:${420 * width / height}px">`);
+    expect(html).toContain(`width="${width}" height="${height}"`);
+    expect(html).toContain('class="frame-region" style="left:0%;top:20%;width:30%;height:40%"');
+  });
+
+  it("does not impose a mismatched aspect ratio when dimensions are unavailable", () => {
+    const html = renderToStaticMarkup(createElement(FrameThumb, { src: "/frame.jpg", size: "lg" }));
+    expect(html).toContain('<div class="relative">');
+    expect(html).not.toContain("max-width");
+    expect(html).not.toContain("NaN");
+  });
+
+  it("sizes the image naturally within the wrapper without letterboxing or border offsets", () => {
+    const css = readFileSync("app/globals.css", "utf8");
+    const frameRule = css.match(/\.frame-sm img, \.frame-lg img \{([^}]+)\}/)?.[1];
+    expect(frameRule).toContain("display: block;");
+    expect(frameRule).toContain("width: 100%;");
+    expect(frameRule).toContain("height: auto;");
+    expect(frameRule).not.toContain("border:");
+    expect(css).not.toMatch(/\.frame-lg img\s*\{[^}]*(max-height|object-fit)/);
   });
 });
 

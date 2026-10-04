@@ -39,6 +39,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/elevenlabs-sync.ts`, `lib/elevenlabs-sync.test.ts` | **A** | tutor knowledge-base sync and keyless regression tests |
 | `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
+| `lib/merge.ts`, `lib/merge.test.ts` | **B** | Task6 pure event merger and fake-timer regressions; hook wiring is separate |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
 | `lib/events.contract.test.ts`, `lib/store.fs.test.ts`, `lib/workspace.ts` | **B** | WB-4 event/hello and filesystem regressions; local-only workspace resolver stub |
 | `lib/redact.ts` | **B** | privacy |

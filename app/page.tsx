@@ -27,10 +27,10 @@ export default async function Home() {
     <main className="grid-bg min-h-screen">
       <div className="mx-auto max-w-5xl px-6 py-12">
         <BrowserCheck />
-        <p className="t-meta">Tacit · the AI Apprentice</p>
+        <p className="t-meta">Simon · the AI Apprentice</p>
         <h1 className="mt-3 t-display">We know more than we can tell.</h1>
         <p className="mt-4 max-w-3xl t-body">
-          Tacit sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
+          Simon sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
         </p>
         <div className="mt-4"><HealthStrip /></div>
         <div className="doors mt-8">

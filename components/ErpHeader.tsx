@@ -17,7 +17,7 @@ export function ErpHeader({ title, queue = "expert" }: { title: string; queue?: 
       <span className="erp-quiet">{title}</span>
       <nav>
         <Link href={`/erp?queue=${queue}`}>Queue</Link>
-        <Link href="/" className="erp-external-nav">Tacit</Link>
+        <Link href="/" className="erp-external-nav">Simon</Link>
       </nav>
     </header>
   );

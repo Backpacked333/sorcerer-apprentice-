@@ -1,6 +1,6 @@
-# Tacit · the AI Apprentice
+# Simon · the AI Apprentice
 
-Tacit sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
+Simon sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
 
 One pipeline. One artifact, the Work Map. Three readers: the expert who confirms it, the new hire who is tutored from it, and an agent that can load the same rules.
 
@@ -15,7 +15,7 @@ npm run dev
 Open [http://localhost:3000](http://localhost:3000).
 
 1. **See a finished Work Map** and try the tutor from the front page. No microphone.
-2. **Run it yourself.** `/capture` is one window: the sandbox ERP on the left, Tacit on the right. Tick consent, start, and in the share dialog choose **This tab**. Work the expert queue, then **Done · start the debrief**. Answer the open slots, confirm the teach-back, and open Teach.
+2. **Run it yourself.** `/capture` is one window: the sandbox ERP on the left, Simon on the right. Tick consent, start, and in the share dialog choose **This tab**. Work the expert queue, then **Done · start the debrief**. Answer the open slots, confirm the teach-back, and open Teach.
 3. **Two windows.** `/capture?layout=companion` plus **Open the ERP window**. Both pages must be the same origin.
 4. **Presenter reset.** `/demo` resets the three queues and disarms the save guard. Sample sessions come back with `npm run seed:session`.
 

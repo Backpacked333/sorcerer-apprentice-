@@ -31,7 +31,7 @@ export default async function ErpQueue({ searchParams }: { searchParams: Promise
           <span className="erp-meta">{processed} of {invoices.length} processed</span>
           {processed >= 1 && <ResetQueueButton queue={queue} />}
         </div>
-        {done && <p className="erp-banner">Queue complete. Return to the Tacit panel to finish.</p>}
+        {done && <p className="erp-banner">Queue complete. Return to the Simon panel to finish.</p>}
         <table className="erp-table">
           <thead>
             <tr>

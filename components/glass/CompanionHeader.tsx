@@ -45,6 +45,7 @@ export function CompanionHeader(p: {
           </div>
           {sub ? (
             <div
+              title={sub}
               style={{
                 fontSize: eyebrow ? 12 : 12.5,
                 color: "#6e6e73",

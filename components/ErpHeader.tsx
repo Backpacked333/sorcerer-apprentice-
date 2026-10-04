@@ -1,21 +1,24 @@
 import Link from "next/link";
 
-export function ErpHeader({ title }: { title: string }) {
+const QUEUE_LABEL: Record<string, string> = {
+  expert: "Invoice queue · expert",
+  newhire: "Invoice queue · new hire",
+  autopilot: "Routine queue · agent",
+};
+
+export function ErpHeader({ title, queue = "expert" }: { title: string; queue?: string }) {
   return (
-    <header className="border-b border-line bg-panel">
-      <div className="mx-auto flex max-w-6xl items-center gap-4 px-6 py-3">
-        <div className="flex items-center gap-2">
-          <span className="inline-block h-3 w-3 rounded-sm bg-amber" />
-          <span className="font-semibold tracking-tight">MB-ERP</span>
-          <span className="text-xs text-muted">Maschinenbau Stuttgart GmbH · sandbox</span>
-        </div>
-        <span className="text-muted">·</span>
-        <span className="text-sm">{title}</span>
-        <nav className="ml-auto flex items-center gap-3 text-sm text-muted">
-          <Link href="/erp" className="hover:text-ink">Queue</Link>
-          <Link href="/" className="hover:text-ink">Tacit</Link>
-        </nav>
-      </div>
+    <header className="erp-header">
+      <span className="erp-mark" aria-hidden />
+      <span className="erp-brand">MB-ERP</span>
+      <span className="erp-quiet">Maschinenbau Stuttgart GmbH</span>
+      <span className="erp-quiet">Posting period 12/2025</span>
+      <span>{QUEUE_LABEL[queue] ?? title}</span>
+      <span className="erp-quiet">{title}</span>
+      <nav>
+        <Link href={`/erp?queue=${queue}`}>Queue</Link>
+        <Link href="/" className="erp-external-nav">Tacit</Link>
+      </nav>
     </header>
   );
 }

@@ -2,7 +2,7 @@ import type { QuestionWindow, ScreenEvent, SessionLog } from "../events";
 import { labelField } from "../events";
 import { narrationMatch, type Candidate } from "../curiosity";
 import { emptyMap, type Quote, type Step, type WorkMap, uid } from "../workmap";
-import { isQuotableTranscript, isQuotableWindow } from "./evidence";
+import { isQuotableTranscript, isQuotableWindow, sourceForWindowKind } from "./evidence";
 import { COST_CENTER_LABEL, deriveRules } from "./rules-regex";
 import { buildSlots, seenCases } from "./slots";
 
@@ -84,7 +84,7 @@ export function compileDeterministic(log: SessionLog): WorkMap {
 
   // ---- attach verbatim quotes from question windows ----
   const quoteOf = (w: QuestionWindow): Quote | undefined =>
-    isQuotableWindow(w) ? { text: w.answerText!, t: w.answeredAt!, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" } : undefined;
+    isQuotableWindow(w) ? { text: w.answerText!, t: w.answeredAt!, audioId: w.answerAudioId, source: sourceForWindowKind(w.kind) } : undefined;
 
   const answered = log.windows.filter(isQuotableWindow);
   for (const w of answered) {

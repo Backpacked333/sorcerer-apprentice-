@@ -1,4 +1,5 @@
 import type { QuestionWindow, TranscriptSegment } from "../events";
+import type { Quote, Rule } from "../workmap";
 
 /** A window answer is quotable only when its persisted clock proves it followed listen-open. */
 export function isQuotableWindow(window: QuestionWindow): boolean {
@@ -21,4 +22,14 @@ export function isQuotableTranscript(segment: TranscriptSegment, windows: Questi
     }
     return end >= speechStarted && end < window.askedAt;
   });
+}
+
+/** Provenance of an answer quote, from the kind of question window it answered. */
+export function sourceForWindowKind(kind: QuestionWindow["kind"]): Quote["source"] {
+  return kind === "counterfactual" ? "counterfactual" : kind === "debrief" ? "debrief" : "live";
+}
+
+/** How each quote confirms a rule; narration and live answers both count as live. */
+export function confirmedByOf(quotes: Quote[]): Rule["confirmedBy"] {
+  return quotes.map((q) => (q.source === "counterfactual" ? "counterfactual" : q.source === "debrief" ? "debrief" : "live"));
 }

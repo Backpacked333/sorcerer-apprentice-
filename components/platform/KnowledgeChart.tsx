@@ -60,7 +60,7 @@ export function KnowledgeChart({ knowledge, timeline, t }: { knowledge: Knowledg
           <span key={k.kind} style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, color: "#3a3a3c" }}>
             <span aria-hidden style={{ width: 9, height: 9, borderRadius: 2, background: k.color }} />
             {k.label}
-            <span style={{ color: "#8e8e93", fontVariantNumeric: "tabular-nums" }}>· {now?.counts[k.kind] ?? 0}</span>
+            <span style={{ color: "#6e6e73", fontVariantNumeric: "tabular-nums" }}>· {now?.counts[k.kind] ?? 0}</span>
           </span>
         ))}
       </div>
@@ -89,7 +89,7 @@ export function KnowledgeChart({ knowledge, timeline, t }: { knowledge: Knowledg
             </circle>
           ))}
           {timeline.ticks.map((k) => (
-            <text key={k.at} x={X(k.at)} y={H - 4} fontSize="11" fill="#8e8e93" textAnchor="middle">{k.label}</text>
+            <text key={k.at} x={X(k.at)} y={H - 4} fontSize="11" fill="#6e6e73" textAnchor="middle">{k.label}</text>
           ))}
           <line x1={xt} x2={xt} y1={TOP - 6} y2={H - 28} stroke="rgba(120,110,255,.6)" strokeWidth={1.5} />
         </svg>

@@ -47,7 +47,7 @@ export function newContext(): CuriosityContext {
 export type EventClass = "edit_prefilled" | "hold_or_reroute" | "threshold_adjacent" | "unusual_entity" | "repeat" | "navigation";
 
 export function classifyEvent(e: ScreenEvent, ctx: CuriosityContext): { cls: EventClass; value: number } {
-  const key = `${e.invoice ?? "?"}:${e.field ?? e.kind}`;
+  const key = `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
   if (e.kind === "field_changed") {
     const freeText = new Set(["notes", "note", "assetNumber", "hasAssetNumber", "description"]);
     const from = e.from ?? "";
@@ -168,7 +168,7 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
   const { cls, value } = classifyEvent(e, ctx);
   if (value === 0) return [];
   const tpl = templates(e);
-  const stepRef = `${e.invoice ?? "?"}:${e.field ?? e.kind}`;
+  const stepRef = `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
   const label = e.to ? ctx.valueLabels?.[e.to] : undefined;
   const fieldLabel = labelField(e.field).toLowerCase();
   const aliases = Array.from(

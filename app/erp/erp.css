@@ -409,3 +409,10 @@ a.erp-nav-item.is-active:hover { background: rgba(255, 255, 255, .17); }
   .erp-table th:nth-child(3), .erp-table td:nth-child(3) { display: none; }
   .erp-table th, .erp-table td { padding-left: 12px; padding-right: 12px; }
 }
+
+/* ---------- inside Tacit's workspace (floating companion over the full-width ERP) ----------
+   The --tacit-reserve-* vars are injected by components/ui/Workspace.tsx (default 0 elsewhere). The lower blocks end left of the card,
+   so the queue's amount/status and the line items stay visible; the bottom pad lets anything else scroll clear. */
+html.erp-embedded .erp-main { padding-bottom: calc(var(--tacit-reserve-h, 0px) + 28px); }
+html.erp-embedded .erp-main .erp-card-flush,
+html.erp-embedded .erp-main .erp-approval-card { margin-right: max(0px, calc(var(--tacit-reserve-w, 0px) - 28px)); }

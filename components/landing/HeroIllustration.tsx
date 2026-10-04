@@ -68,7 +68,8 @@ export function HeroIllustration() {
         <div style={{ position: "relative", borderRadius: 28, overflow: "hidden", padding: 14, display: "flex", flexDirection: "column", gap: 10, background: "linear-gradient(180deg,rgba(255,255,255,.72),rgba(255,255,255,.5))", backdropFilter: "blur(28px) saturate(1.9)", WebkitBackdropFilter: "blur(28px) saturate(1.9)", boxShadow: "inset 0 1px 0 #fff,0 20px 50px rgba(15,23,42,.14)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             <Orb mood={b.mood} size={40} full rippleKey={M.ripple ? i : undefined} />
-            <div style={{ flex: 1, minWidth: 0, minHeight: 40, display: "flex", flexDirection: "column", justifyContent: "center" }}>
+            {/* Reserve two title lines so the card never snaps taller/shorter between beats. */}
+            <div style={{ flex: 1, minWidth: 0, minHeight: 56, display: "flex", flexDirection: "column", justifyContent: "center" }}>
               <div key={i} style={{ animation: "tc-rise .55s var(--ease-rise) both" }}>
                 <div style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.25, color: "#1d1d1f", letterSpacing: "-.01em" }}>{b.t}</div>
                 <div style={{ fontSize: 12, color: "#6e6e73", marginTop: 2 }}>{b.s}</div>

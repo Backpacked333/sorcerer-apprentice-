@@ -78,7 +78,7 @@ export function MapView({ vm }: { vm: MapVM }) {
     return (
       <AppShell step={2}>
         <main className="mx-auto max-w-xl px-6 py-24 text-center" style={{ background: "#fbfbfd" }}>
-          <p className="text-[12px] font-semibold text-[#8e8e93]">2 · Map</p>
+          <p className="text-[12px] font-semibold text-[#6e6e73]">2 · Map</p>
           <p className="mt-4 text-[19px] font-semibold text-[#1d1d1f]" style={{ animation: RISE }}>
             {vm.compiling ? "Compiling the Work Map from events, transcript and answers…" : "Loading session…"}
           </p>
@@ -98,7 +98,7 @@ export function MapView({ vm }: { vm: MapVM }) {
   const cableOn = wide && !!asking;
 
   return (
-    <AppShell step={2} sessionId={vm.sessionId} confirmed={confirmed} presenter={presenter} status={<span className="truncate font-mono text-[12px] text-[#8e8e93]">{vm.note}</span>}>
+    <AppShell step={2} sessionId={vm.sessionId} confirmed={confirmed} presenter={presenter} status={<span className="truncate font-mono text-[12px] text-[#6e6e73]">{vm.note}</span>}>
       <div style={{ background: "#fbfbfd", minHeight: "calc(100dvh - 52px)" }}>
         <main className="mx-auto grid max-w-[1600px] gap-6 px-4 pb-10 pt-4 xl:grid-cols-[280px_minmax(0,500px)_minmax(0,1fr)] xl:gap-x-10 xl:px-3 xl:pt-3">
           {/* The companion comes first in the DOM (its buttons are the first matches), floating at xl. */}
@@ -110,7 +110,7 @@ export function MapView({ vm }: { vm: MapVM }) {
           <section className="flex min-w-0 flex-col gap-[22px] xl:col-start-2 xl:row-start-1 xl:pt-[22px]">
             <header>
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-[13px] font-semibold text-[#8e8e93]">{name}&apos;s Work Map · rev {map.revision}</p>
+                <p className="text-[13px] font-semibold text-[#6e6e73]">{name}&apos;s Work Map · rev {map.revision}</p>
                 {!wide && (
                   <div className="flex items-center gap-2">
                     {confirmed && <ExportMenu sessionId={vm.sessionId} />}
@@ -147,8 +147,8 @@ export function MapView({ vm }: { vm: MapVM }) {
             )}
 
             <div className="flex flex-col">
-              <p className="pb-1.5 text-[12px] font-semibold text-[#8e8e93]">Open questions from the task</p>
-              {map.slots.length === 0 && <p className="py-2 text-[13.5px] text-[#8e8e93]" style={{ borderTop: ".5px solid rgba(0,0,0,.08)" }}>The capture left no open questions.</p>}
+              <p className="pb-1.5 text-[12px] font-semibold text-[#6e6e73]">Open questions from the task</p>
+              {map.slots.length === 0 && <p className="py-2 text-[13.5px] text-[#6e6e73]" style={{ borderTop: ".5px solid rgba(0,0,0,.08)" }}>The capture left no open questions.</p>}
               {map.slots.map((s) => {
                 const filled = s.status === "filled";
                 const on = asking?.id === s.id;
@@ -168,7 +168,7 @@ export function MapView({ vm }: { vm: MapVM }) {
                     <span className="min-w-0 flex-1 text-[14px] leading-[1.4]" style={{ color: filled ? "#8e8e93" : "#1d1d1f", textDecoration: filled ? "line-through" : "none", transition: "color .6s" }}>
                       {s.question}
                     </span>
-                    <span className="flex-none text-[11.5px] text-[#8e8e93]">{on ? "asking now" : slotTag(s)}</span>
+                    <span className="flex-none text-[11.5px] text-[#6e6e73]">{on ? "asking now" : slotTag(s)}</span>
                   </>
                 );
                 const style = {

@@ -7,7 +7,7 @@ export const KIND: Record<ItemKind, { label: string; color: string }> = {
   guardrail: { label: "Guardrail", color: "#e5484d" },
   exception: { label: "Exception", color: "#8f7bff" },
   escalation: { label: "Who to ask", color: "#3b82f6" },
-  described: { label: "Described case", color: "#8e8e93" },
+  described: { label: "Described case", color: "#6e6e73" },
 };
 
 /** Provenance chips. `seen` (vision) and `erp` (dom telemetry) stay separate (non-negotiable 5). */
@@ -18,14 +18,14 @@ export const PROV: Record<Provenance, { label: string; short: string; color: str
   described: { label: "Described, not shown", short: "described", color: "#9a9aa2", bg: "rgba(0,0,0,.05)", ink: "#6e6e73" },
   inferred: { label: "Inferred", short: "inferred", color: "#8f7bff", bg: "rgba(143,123,255,.14)", ink: "#6a55d8" },
   teachback: { label: "Confirmed in the teach-back", short: "teach-back", color: "#22b45e", bg: "rgba(34,180,94,.12)", ink: "#1b8a4b" },
-  mapped: { label: "Mapped by you", short: "mapped", color: "#8e8e93", bg: "rgba(0,0,0,.05)", ink: "#6e6e73" },
+  mapped: { label: "Mapped by you", short: "mapped", color: "#6e6e73", bg: "rgba(0,0,0,.05)", ink: "#6e6e73" },
 };
 
 export const MASTERY: Record<MasteryLabel, { color: string; ink: string; short: string }> = {
   "correct without help": { color: "#22b45e", ink: "#1b8a4b", short: "alone" },
   "correct after a hint": { color: "#f5a623", ink: "#a35f00", short: "hint" },
   "corrected after intervention": { color: "#f0642f", ink: "#b4501f", short: "caught" },
-  "not tested": { color: "#c7c7cc", ink: "#8e8e93", short: "—" },
+  "not tested": { color: "#c7c7cc", ink: "#6e6e73", short: "—" },
 };
 
 export const PASTEL = ["#ffb8d9", "#ffe2a8", "#b9f0d3", "#b5dcff", "#d4c6ff", "#ffb8d9"];

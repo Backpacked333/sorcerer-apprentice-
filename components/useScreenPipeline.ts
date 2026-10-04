@@ -39,6 +39,8 @@ export type PiiMode = "dom" | "manual-only";
 /** PII rects from another window older than this are not trusted (the publisher heartbeats every second). */
 const PII_FRESH_MS = 3000;
 const OCCLUDER_SAMPLE_MS = 100;
+/** The local "last frame sent" preview updates at most this often. */
+const LAST_SENT_PUBLISH_MS = 1000;
 const STILL_W = 960;
 const VISION_W = 1024;
 
@@ -54,6 +56,9 @@ const uid = (p: string) => `${p}_${Math.random().toString(36).slice(2, 9)}`;
 const DOM_HOLD_MS = 2500;
 /** The brief's cadence: a frame every one to two seconds; a visible change sends sooner. */
 const VISION_CADENCE_SECS = 1.5;
+/** Dedupe / hold key. A claims event (no invoice) adds its claim id, so two claims never merge; invoice keys are unchanged. */
+const eventKey = (e: Pick<ScreenEvent, "kind" | "invoice" | "field" | "to" | "subject">) =>
+  `${e.kind}:${e.invoice ?? ""}:${e.field ?? ""}:${e.to ?? ""}${!e.invoice && e.subject?.id ? `:${e.subject.type}:${e.subject.id}` : ""}`;
 const normalizeIdentity = <T extends { invoice?: string; state?: InvoiceState }>(e: T): T => ({
   ...e, invoice: normalizeInvoiceId(e.invoice),
   state: e.state?.invoice === undefined ? e.state : { ...e.state, invoice: normalizeInvoiceId(e.state.invoice) },
@@ -114,14 +119,40 @@ export function useScreenPipeline(opts: PipelineOptions) {
   /** undefined until the surface is decided for the current stream */
   const selfRef = useRef<boolean | undefined>(undefined);
   const captureHandle = useRef<string | null>(null);
+  /** Bumped by every start() and stop(): a getDisplayMedia that resolves after a newer start/stop is stopped, not used. */
+  const startEpoch = useRef(0);
   const [degraded, setDegraded] = useState<"wrong_surface" | null>(null);
   const degradedRef = useRef<"wrong_surface" | null>(null);
-  const [lastSentUrl, setLastSentUrl] = useState<string | null>(null);
+  /** The last frame that left the browser, for the local preview. Kept in a ref and published at most once a second
+   * (large base64 JPEGs in state re-render the whole client); cleared on a consent-epoch bump (strike / pause). */
+  const [lastSentUrl, setLastSentUrlState] = useState<string | null>(null);
+  const lastSentRef = useRef<string | null>(null);
+  const lastSentPublishedAt = useRef(-Infinity);
+  const lastSentTimer = useRef<number | null>(null);
   const [piiMode, setPiiModeState] = useState<PiiMode>("manual-only");
   const piiModeRef = useRef<PiiMode>("manual-only");
   const channelPii = useRef<PiiRectsMessage | null>(null);
   const optsRef = useRef(opts);
   optsRef.current = opts;
+
+  const setLastSentUrl = useCallback((url: string | null) => {
+    lastSentRef.current = url;
+    if (url === null) {
+      if (lastSentTimer.current !== null) window.clearTimeout(lastSentTimer.current);
+      lastSentTimer.current = null;
+      setLastSentUrlState(null);
+      return;
+    }
+    if (lastSentTimer.current !== null) return; // a publish is already scheduled; it takes the latest frame
+    const wait = lastSentPublishedAt.current + LAST_SENT_PUBLISH_MS - Date.now();
+    const publish = () => {
+      lastSentTimer.current = null;
+      lastSentPublishedAt.current = Date.now();
+      setLastSentUrlState(lastSentRef.current);
+    };
+    if (wait <= 0) publish();
+    else lastSentTimer.current = window.setTimeout(publish, wait);
+  }, []);
 
   const now = useCallback(() => (Date.now() - optsRef.current.sessionStart) / 1000, []);
 
@@ -238,13 +269,13 @@ export function useScreenPipeline(opts: PipelineOptions) {
     const dataUrl = c.toDataURL("image/jpeg", 0.6);
     setLastSentUrl(dataUrl);
     return { id: uid("frame"), t: now(), dataUrl, width: w, height: h, piiRegionsBlurred: n + spec.masks.length + spec.pii.length };
-  }, [now, planCurrentFrame]);
+  }, [now, planCurrentFrame, setLastSentUrl]);
 
   const emit = useCallback(
     (e: Omit<ScreenEvent, "id" | "t"> & { t?: number }) => {
       if (captureExpired.current) return;
       e = normalizeIdentity(e);
-      const key = `${e.kind}:${e.invoice ?? ""}:${e.field ?? ""}:${e.to ?? ""}`;
+      const key = eventKey(e);
       const t = e.t ?? now();
       const held = heldDom.current.get(key);
       if (held && e.source === "vision") {
@@ -346,7 +377,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
       if (request.current === controller) request.current = null;
       inFlight.current = false;
     }
-  }, [applyVisionState, now, planCurrentFrame]);
+  }, [applyVisionState, now, planCurrentFrame, setLastSentUrl]);
 
   // ---- the 500 ms tick: diff, activity, maybe vision ----
   useEffect(() => {
@@ -417,7 +448,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
       // save_blocked is the sandbox's own verdict; it is never a vision event
       if (optsRef.current.source === "both" && visionAlive.current && visionCanSee) {
         // give the vision model a moment to see it first; the ERP only confirms
-        const key = `${event.kind}:${event.invoice ?? ""}:${event.field ?? ""}:${event.to ?? ""}`;
+        const key = eventKey(event);
         const timer = window.setTimeout(() => {
           heldDom.current.delete(key);
           emit(event);
@@ -430,6 +461,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
   }, [opts.source, emit]);
 
   const stop = useCallback(() => {
+    startEpoch.current += 1; // a share still being picked when stop() runs is discarded when it resolves
     epoch.current += 1;
     visionAlive.current = false;
     request.current?.abort();
@@ -451,6 +483,7 @@ export function useScreenPipeline(opts: PipelineOptions) {
     // tolerate being passed straight to onClick (a click event is not options)
     const so = o && typeof o === "object" && !("target" in o) ? o : undefined;
     stop();
+    const myStart = ++startEpoch.current;
     const mode: CaptureMode = so?.mode === "workspace" ? "workspace" : "tab";
     startOpts.current = { mode, app: so?.app === "claims" ? "claims" : "erp", queue: so?.queue };
     const md = navigator.mediaDevices as MediaDevices & { setCaptureHandleConfig?: (c: { handle: string; exposeOrigin: boolean; permittedOrigins: string[] }) => void };
@@ -474,6 +507,12 @@ export function useScreenPipeline(opts: PipelineOptions) {
     }
     return (async () => {
       const stream = await pending;
+      const stale = () => myStart !== startEpoch.current;
+      if (stale()) {
+        // stop() ran (e.g. the session POST failed) while the picker was open: no orphan share
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       streamRef.current = stream;
       captureExpired.current = false;
       visionDisabled.current = false;
@@ -490,11 +529,12 @@ export function useScreenPipeline(opts: PipelineOptions) {
         videoRef.current.srcObject = stream;
         await videoRef.current.play();
       }
+      if (stale()) return; // stop() already ended these tracks via streamRef
       stream.getVideoTracks()[0].addEventListener("ended", stop);
       decideSurface();
       setSharing(true);
     })();
-  }, [stop, decideSurface]);
+  }, [stop, decideSurface, setLastSentUrl]);
 
   useEffect(() => {
     if (!sharing) return;
@@ -510,12 +550,14 @@ export function useScreenPipeline(opts: PipelineOptions) {
     epoch.current += 1;
     for (const h of heldDom.current.values()) window.clearTimeout(h.timer);
     heldDom.current.clear();
-  }, []);
+    setLastSentUrl(null);
+  }, [setLastSentUrl]);
 
-  /** A strike invalidates in-flight results without pausing. */
+  /** A strike invalidates in-flight results without pausing, and drops the struck frame from the local preview. */
   const bumpEpoch = useCallback(() => {
     epoch.current += 1;
-  }, []);
+    setLastSentUrl(null);
+  }, [setLastSentUrl]);
 
   const addMask = useCallback((m: PiiRegion) => setMasks((xs) => [...xs, m]), []);
   const clearMasks = useCallback(() => setMasks([]), []);

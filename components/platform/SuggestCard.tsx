@@ -60,7 +60,7 @@ export function SuggestCard({ items, onFocusRole, defaultOpen = true }: { items:
           <div style={{ fontSize: 14.5, fontWeight: 600 }}>Tacit suggests</div>
           <div style={{ fontSize: 12, color: "#6e6e73" }}>From the sessions so far</div>
         </div>
-        <button type="button" onClick={() => setOpen(false)} aria-label="Collapse suggestions" style={{ width: 28, height: 28, borderRadius: 14, border: 0, background: "transparent", color: "#8e8e93", cursor: "pointer", fontSize: 13 }}>
+        <button type="button" onClick={() => setOpen(false)} aria-label="Collapse suggestions" style={{ width: 28, height: 28, borderRadius: 14, border: 0, background: "transparent", color: "#6e6e73", cursor: "pointer", fontSize: 13 }}>
           ✕
         </button>
       </div>

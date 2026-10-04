@@ -22,7 +22,7 @@ function Head({ mood, eyebrow, sub, startedAt, rippleKey }: { mood: OrbMood; eye
         <div key={eyebrow} style={{ animation: RISE() }}>
           <Eyebrow text={eyebrow} mood={mood} />
         </div>
-        <div key={sub} className="mt-0.5 truncate text-[12px] text-[#8e8e93]" style={{ animation: RISE() }}>{sub}</div>
+        <div key={sub} className="mt-0.5 truncate text-[12px] text-[#6e6e73]" style={{ animation: RISE() }}>{sub}</div>
       </div>
       {startedAt !== undefined && <SessionClock startedAt={startedAt ?? null} />}
     </div>
@@ -107,7 +107,7 @@ export function DebriefCard({ vm, mood, justFilled, floating }: { vm: MapVM; moo
 
   const engine = vm.sttEngine === "scribe" ? "Scribe v2 is listening" : vm.sttEngine === "webspeech" ? "browser STT is listening" : "no STT: type the answer";
   const voiceTag = (
-    <span className="flex-none truncate text-[11px] text-[#8e8e93]" title="Voice connection">
+    <span className="flex-none truncate text-[11px] text-[#6e6e73]" title="Voice connection">
       {vm.voice.status}
     </span>
   );
@@ -181,18 +181,18 @@ export function DebriefCard({ vm, mood, justFilled, floating }: { vm: MapVM; moo
         }
       >
         <Sentences text={tb.text} previous={prevText} />
-        <p className="text-[11.5px] text-[#8e8e93]" style={{ padding: "0 2px" }}>
+        <p className="text-[11.5px] text-[#6e6e73]" style={{ padding: "0 2px" }}>
           {teachbackMeta(tb)}
           {prevText ? " · underlined = changed in this round" : ""}
         </p>
         {vm.lastPatch && vm.lastPatch.length > 0 && (
           <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[12.5px]">
             {vm.lastPatch.map((p) => (
-              <li key={p.ruleTitle}><span className="text-[#8e8e93]">{p.ruleTitle}:</span> {p.before} → {p.after}</li>
+              <li key={p.ruleTitle}><span className="text-[#6e6e73]">{p.ruleTitle}:</span> {p.before} → {p.after}</li>
             ))}
           </ul>
         )}
-        {(vm.heard || vm.partial) && <AnswerBubble text={vm.heard} partial={vm.partial || undefined} listening={!!vm.micOpen && vm.debriefOn && !vm.voice.isSpeaking} />}
+        {(vm.heard || vm.partial) && <AnswerBubble text={vm.heard} partial={vm.partial || undefined} listening={!!vm.micOpen && vm.debriefOn && !vm.voice.isSpeaking && vm.sttEngine !== "none"} />}
       </CompanionCard>
     );
   }
@@ -200,8 +200,9 @@ export function DebriefCard({ vm, mood, justFilled, floating }: { vm: MapVM; moo
   // 3. Asking one open question.
   if (vm.phase === "asking" && vm.currentSlot) {
     const slot = vm.currentSlot;
-    const listening = !!vm.micOpen && vm.debriefOn && !vm.voice.isSpeaking;
-    const status = vm.voice.isSpeaking ? "Asking…" : justFilled ? "Saved with your own words" : listening && vm.sttEngine !== "none" ? "Listening to your answer" : engine;
+    // the bars only move when something can actually hear (no STT engine = typed answers only)
+    const listening = !!vm.micOpen && vm.debriefOn && !vm.voice.isSpeaking && vm.sttEngine !== "none";
+    const status = vm.voice.isSpeaking ? "Asking…" : justFilled ? "Saved with your own words" : listening ? "Listening to your answer" : engine;
     return (
       <CompanionCard
         {...common}

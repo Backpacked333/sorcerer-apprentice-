@@ -90,6 +90,12 @@ describe("health chips", () => {
   it("wrong surface is reported honestly", () => {
     expect(healthItems({ ...h, sharing: true, degraded: "wrong_surface" }).map((x) => x.label)).toContain("Wrong surface — no frames sent");
   });
+  it("a shared screen with source dom never claims vision is seeing", () => {
+    const labels = healthItems({ ...h, sharing: true, source: "dom" }).map((x) => x.label);
+    expect(labels).toContain("Screen shared · ERP telemetry only");
+    expect(labels.some((l) => l.startsWith("Seeing"))).toBe(false);
+    expect(healthItems({ ...h, sharing: true, source: "both" }).map((x) => x.label)).toContain("Seeing the ERP");
+  });
   it("is empty before start", () => {
     expect(healthItems({ ...h, started: false })).toEqual([]);
   });

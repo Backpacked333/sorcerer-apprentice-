@@ -105,7 +105,7 @@ function NodeMode({ ont, node, t, nodeName, onPickNode, onTrace }: { ont: Ontolo
                 <span aria-hidden style={{ width: 6, height: 6, borderRadius: 3, background: fp.color, alignSelf: "center" }} />
                 <span style={{ fontSize: 13.5 }}>{f.name}</span>
                 <span style={{ fontSize: 13, color: "#6e6e73", minWidth: 0, overflowWrap: "anywhere" }}>{trunc(f.value, 140)}</span>
-                <span style={{ fontSize: 11.5, color: "#aeaeb2", whiteSpace: "nowrap" }}>{when(tl, f.at, f.approx)}</span>
+                <span style={{ fontSize: 11.5, color: "#6e6e73", whiteSpace: "nowrap" }}>{when(tl, f.at, f.approx)}</span>
               </div>
             );
           })}
@@ -125,7 +125,7 @@ function NodeMode({ ont, node, t, nodeName, onPickNode, onTrace }: { ont: Ontolo
                 className="hover:bg-[rgba(0,0,0,.035)]"
                 style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 8px", margin: "0 -8px", border: 0, borderRadius: 10, background: "transparent", cursor: "pointer", font: "inherit", color: "inherit", textAlign: "left", opacity: e.at <= t ? 1 : 0.38 }}
               >
-                <span aria-hidden style={{ color: "#8e8e93", fontSize: 12 }}>{out ? "→" : "←"}</span>
+                <span aria-hidden style={{ color: "#6e6e73", fontSize: 12 }}>{out ? "→" : "←"}</span>
                 <span style={{ fontSize: 13, color: "#6e6e73" }}>{e.verb}</span>
                 <span style={{ fontSize: 13.5, fontWeight: 600, flex: 1, minWidth: 0 }}>{nodeName(other)}</span>
                 <span aria-hidden title={PROV[e.prov].label} style={{ width: 6, height: 6, borderRadius: 3, background: PROV[e.prov].color, flex: "none" }} />
@@ -214,7 +214,7 @@ function RuleMode({ ont, rule, t, nodeName, onPickNode, onTrace }: { ont: Ontolo
           rule.quotes.map((q, i) => (
             <div key={i} style={{ padding: "8px 0", borderTop: i ? ".5px solid rgba(0,0,0,.06)" : "none" }}>
               <p style={{ margin: 0, fontSize: 14.5, lineHeight: 1.5 }}>“{q.text}”</p>
-              <div style={{ fontSize: 12, color: "#8e8e93", marginTop: 3 }}>{q.source}{q.t && q.t !== "—" ? ` · ${q.t}` : ""}</div>
+              <div style={{ fontSize: 12, color: "#6e6e73", marginTop: 3 }}>{q.source}{q.t && q.t !== "—" ? ` · ${q.t}` : ""}</div>
             </div>
           ))
         ) : (
@@ -222,7 +222,7 @@ function RuleMode({ ont, rule, t, nodeName, onPickNode, onTrace }: { ont: Ontolo
         )}
         {corrected && rule.correction ? (
           <div style={{ marginTop: 10, padding: 12, borderRadius: 16, background: "linear-gradient(180deg,rgba(255,240,214,.9),rgba(255,228,180,.6))" }}>
-            {rule.correction.before ? <p style={{ margin: "0 0 4px", fontSize: 13, color: "#8e8e93", textDecoration: "line-through" }}>{rule.correction.before}</p> : null}
+            {rule.correction.before ? <p style={{ margin: "0 0 4px", fontSize: 13, color: "#6e6e73", textDecoration: "line-through" }}>{rule.correction.before}</p> : null}
             <p style={{ margin: 0, fontSize: 14, lineHeight: 1.45 }}>“{rule.correction.text}”</p>
             <div style={{ fontSize: 12, color: "#a35f00", marginTop: 3 }}>corrected {when(tl, rule.correction.at, rule.correction.approx)}</div>
           </div>

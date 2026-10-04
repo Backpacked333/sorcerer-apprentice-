@@ -35,7 +35,7 @@ export function RoleMemoryView({ role }: { role: RoleMemory }) {
     <div style={{ position: "relative", maxWidth: 1180, margin: "0 auto", padding: "16px clamp(12px,3vw,24px) 60px", display: "flex", flexDirection: "column", gap: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
         <SidebarToggle />
-        <nav aria-label="Breadcrumb" style={{ fontSize: 13, color: "#8e8e93", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+        <nav aria-label="Breadcrumb" style={{ fontSize: 13, color: "#6e6e73", minWidth: 0, flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {role.breadcrumb.join(" › ")}
         </nav>
         <div style={{ display: "flex", gap: 8 }}>
@@ -68,7 +68,7 @@ export function RoleMemoryView({ role }: { role: RoleMemory }) {
                 <span key={p.id} style={{ display: "inline-flex", alignItems: "center", gap: 8, height: 30, padding: "0 12px 0 4px", borderRadius: 15, background: "rgba(255,255,255,.8)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.07)", fontSize: 13 }}>
                   <span aria-hidden style={{ width: 22, height: 22, borderRadius: 11, background: av.bg, color: av.ink, fontSize: 10, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{initials(p.name)}</span>
                   <b style={{ fontWeight: 600 }}>{p.name}</b>
-                  <span style={{ color: "#8e8e93" }}>{p.descriptor}</span>
+                  <span style={{ color: "#6e6e73" }}>{p.descriptor}</span>
                 </span>
               );
             })}
@@ -196,8 +196,8 @@ function TaskCardView({ task, t, tl }: { task: RoleMemory["tasks"][number]; t: n
         <div style={{ padding: "0 16px 14px" }}>
           {task.steps.map((s, i) => (
             <div key={s.n} style={{ display: "grid", gridTemplateColumns: "22px 52px 1fr auto", gap: 8, alignItems: "center", padding: "6px 0", borderTop: ".5px solid rgba(0,0,0,.06)", animation: `tc-rise .4s var(--ease-rise) ${i * 0.03}s both` }}>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#8e8e93" }}>{s.n}</span>
-              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#aeaeb2" }}>{s.t}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#6e6e73" }}>{s.n}</span>
+              <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "#6e6e73" }}>{s.t}</span>
               <span style={{ fontSize: 13.5, fontWeight: s.judgment ? 600 : 400 }}>{s.title}</span>
               {s.rule ? (
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, color: "#3a3a3c" }}>
@@ -227,7 +227,7 @@ function MemoryList({ role, t, isNew }: { role: RoleMemory; t: number; isNew: (a
     <section style={card} aria-label="Everything it knows">
       <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
         <h2 style={h2}>Everything it knows</h2>
-        <span style={{ fontSize: 12.5, color: "#8e8e93" }}>{known} of {role.items.length} as of {when(tl, t)}</span>
+        <span style={{ fontSize: 12.5, color: "#6e6e73" }}>{known} of {role.items.length} as of {when(tl, t)}</span>
       </div>
       {role.items.length === 0 ? <p style={{ margin: "12px 0 0", fontSize: 13.5, color: "#6e6e73" }}>No rules yet.</p> : null}
       <div style={{ marginTop: 6 }}>
@@ -248,13 +248,13 @@ function MemoryList({ role, t, isNew }: { role: RoleMemory; t: number; isNew: (a
                     <span style={{ display: "block", fontSize: 13.5, color: "#3a3a3c", lineHeight: 1.45, marginTop: 2 }}>
                       {corrected && it.correction ? `“${it.correction.text}”` : it.quote ? `“${it.quote}”` : <i style={{ color: "#6e6e73" }}>{it.noQuoteLabel}</i>}
                     </span>
-                    <span style={{ display: "block", fontSize: 12, color: "#8e8e93", marginTop: 3 }}>
+                    <span style={{ display: "block", fontSize: 12, color: "#6e6e73", marginTop: 3 }}>
                       {it.source} · {when(tl, it.learnedAt, it.approx)}
                       {corrected && it.correction ? ` · corrected ${when(tl, it.correction.at, it.correction.approx)}` : ""}
                     </span>
                   </>
                 ) : (
-                  <span style={{ display: "block", fontSize: 13, color: "#8e8e93", marginTop: 2 }}>Not known yet. Learned {when(tl, it.learnedAt, it.approx)}</span>
+                  <span style={{ display: "block", fontSize: 13, color: "#6e6e73", marginTop: 2 }}>Not known yet. Learned {when(tl, it.learnedAt, it.approx)}</span>
                 )}
               </span>
               <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
@@ -313,7 +313,7 @@ function MasteryGrid({ role, t }: { role: RoleMemory; t: number }) {
     <section style={card} aria-label="New-hire mastery">
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
         <h2 style={h2}>{m.learner ? `${m.learner}, learning it` : "New-hire mastery"}</h2>
-        <span style={{ fontSize: 12, color: "#8e8e93" }}>a hint is not the same as mastery</span>
+        <span style={{ fontSize: 12, color: "#6e6e73" }}>a hint is not the same as mastery</span>
       </div>
       {m.empty || !m.columns.length ? (
         <p style={{ margin: "12px 0 0", fontSize: 13.5, color: "#6e6e73" }}>{m.empty ?? "No new hire has trained on this map yet."}</p>
@@ -358,7 +358,7 @@ function MasteryRow({ row, columns, t }: { row: RoleMemory["mastery"]["rows"][nu
             <span
               title={shown ? `${row.displayId} · ${label}` : undefined}
               aria-label={shown ? `${row.displayId}: ${label}` : `${row.displayId}: not yet`}
-              style={{ height: 24, minWidth: 24, padding: "0 7px", borderRadius: 12, fontSize: 10.5, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", background: shown ? hexA(MASTERY[label].color, label === "not tested" ? 0.25 : 0.9) : "rgba(0,0,0,.04)", color: shown ? (label === "not tested" ? "#8e8e93" : "#fff") : "transparent", transition: "background .35s, color .35s" }}
+              style={{ height: 24, minWidth: 24, padding: "0 7px", borderRadius: 12, fontSize: 10.5, fontWeight: 600, display: "inline-flex", alignItems: "center", justifyContent: "center", background: shown ? hexA(MASTERY[label].color, label === "not tested" ? 0.25 : 0.9) : "rgba(0,0,0,.04)", color: shown ? (label === "not tested" ? "#6e6e73" : "#fff") : "transparent", transition: "background .35s, color .35s" }}
             >
               {shown ? MASTERY[label].short : "·"}
             </span>
@@ -377,7 +377,7 @@ function OpenQuestions({ role, t }: { role: RoleMemory; t: number }) {
     <section style={card} aria-label="Open questions">
       <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
         <h2 style={h2}>Open questions</h2>
-        <span style={{ fontSize: 12.5, color: "#8e8e93" }}>{open} open</span>
+        <span style={{ fontSize: 12.5, color: "#6e6e73" }}>{open} open</span>
       </div>
       {qs.length === 0 ? <p style={{ margin: "12px 0 0", fontSize: 13.5, color: "#6e6e73" }}>No questions yet.</p> : null}
       <div style={{ marginTop: 6 }}>
@@ -388,7 +388,7 @@ function OpenQuestions({ role, t }: { role: RoleMemory; t: number }) {
               <span aria-hidden style={{ width: 8, height: 8, borderRadius: 4, marginTop: 6, flex: "none", background: closed ? (q.status === "skipped" ? "#aeaeb2" : "#22b45e") : "#f5a623", boxShadow: closed ? "none" : "0 0 8px rgba(245,166,35,.6)", transition: "background .4s" }} />
               <span style={{ minWidth: 0 }}>
                 <span style={{ display: "block", fontSize: 13.5, color: closed ? "#8e8e93" : "#1d1d1f", textDecoration: closed ? "line-through" : "none", lineHeight: 1.4 }}>{q.question}</span>
-                <span style={{ display: "block", fontSize: 12, color: "#8e8e93" }}>
+                <span style={{ display: "block", fontSize: 12, color: "#6e6e73" }}>
                   {closed ? `${q.how} · ${when(tl, q.closedAt!, q.approx)}` : q.status === "open" ? q.how : "open"}
                 </span>
               </span>

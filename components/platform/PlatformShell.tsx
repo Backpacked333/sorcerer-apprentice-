@@ -186,7 +186,7 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
         <Link href="/" onClick={onNavigate} style={{ display: "inline-flex", alignItems: "center", gap: 8, color: "#1d1d1f", textDecoration: "none" }}>
           <span aria-hidden style={{ width: 12, height: 12, borderRadius: 3, background: "#f5a623" }} />
           <span style={{ fontSize: 15, fontWeight: 700, letterSpacing: "-.01em" }}>Tacit</span>
-          <span style={{ fontSize: 15, color: "#8e8e93" }}>Platform</span>
+          <span style={{ fontSize: 15, color: "#6e6e73" }}>Platform</span>
         </Link>
         {data.mode === "demo" ? (
           <span style={{ marginLeft: "auto", height: 20, padding: "0 7px", borderRadius: 10, fontSize: 10.5, fontWeight: 700, letterSpacing: ".1em", color: "#6a55d8", background: "rgba(143,123,255,.14)", display: "inline-flex", alignItems: "center" }}>
@@ -197,7 +197,7 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
 
       <div style={{ margin: "14px 0 10px", padding: "7px 10px", borderRadius: 12, background: "rgba(255,255,255,.7)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.08)" }}>
         <div style={{ fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{data.company.name}</div>
-        <div style={{ fontSize: 11.5, color: "#8e8e93" }}>{data.company.sub}</div>
+        <div style={{ fontSize: 11.5, color: "#6e6e73" }}>{data.company.sub}</div>
       </div>
 
       <div data-scroll="" style={{ flex: 1, minHeight: 0, overflowY: "auto", margin: "0 -4px", padding: "0 4px" }}>
@@ -209,9 +209,9 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
           <span style={{ fontSize: 14 }}>Company map</span>
         </Link>
 
-        <div style={{ margin: "16px 10px 6px", fontSize: 11, fontWeight: 600, color: "#8e8e93" }}>Roles</div>
+        <div style={{ margin: "16px 10px 6px", fontSize: 11, fontWeight: 600, color: "#6e6e73" }}>Roles</div>
         {roles.length === 0 ? (
-          <p style={{ margin: "0 10px", fontSize: 12.5, color: "#8e8e93", lineHeight: 1.45 }}>Only roles Tacit has captured or heard named appear here.</p>
+          <p style={{ margin: "0 10px", fontSize: 12.5, color: "#6e6e73", lineHeight: 1.45 }}>Only roles Tacit has captured or heard named appear here.</p>
         ) : null}
         {shown.map((r) => {
           const isActive = r.id === active.roleId;
@@ -245,16 +245,16 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
           </button>
         ) : null}
 
-        <div style={{ margin: "16px 10px 6px", fontSize: 11, fontWeight: 600, color: "#8e8e93" }}>Library</div>
+        <div style={{ margin: "16px 10px 6px", fontSize: 11, fontWeight: 600, color: "#6e6e73" }}>Library</div>
         {data.mode === "real" ? (
           <Link href="/platform/sessions" onClick={onNavigate} style={item(active.page === "sessions")} aria-current={active.page === "sessions" ? "page" : undefined}>
             <span style={{ fontSize: 14, flex: 1 }}>Sessions</span>
-            <span style={{ fontSize: 12, color: "#8e8e93", fontVariantNumeric: "tabular-nums" }}>{data.sessionsCount}</span>
+            <span style={{ fontSize: 12, color: "#6e6e73", fontVariantNumeric: "tabular-nums" }}>{data.sessionsCount}</span>
           </Link>
         ) : (
           <div style={item(false)}>
             <span style={{ fontSize: 14, flex: 1 }}>Sessions</span>
-            <span style={{ fontSize: 12, color: "#8e8e93", fontVariantNumeric: "tabular-nums" }}>{data.sessionsCount}</span>
+            <span style={{ fontSize: 12, color: "#6e6e73", fontVariantNumeric: "tabular-nums" }}>{data.sessionsCount}</span>
           </div>
         )}
         {data.mode === "real" ? (
@@ -266,12 +266,12 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
               style={{ ...item(false), width: "100%", border: 0, cursor: "pointer", font: "inherit", textAlign: "left" }}
             >
               <span style={{ fontSize: 14, flex: 1 }}>Exports for agents</span>
-              <span aria-hidden style={{ fontSize: 11, color: "#8e8e93", transform: showExports ? "rotate(180deg)" : "none", transition: "transform .25s" }}>⌄</span>
+              <span aria-hidden style={{ fontSize: 11, color: "#6e6e73", transform: showExports ? "rotate(180deg)" : "none", transition: "transform .25s" }}>⌄</span>
             </button>
             {showExports ? (
               <div style={{ padding: "2px 10px 6px", animation: "tc-rise .35s var(--ease-rise) both" }}>
                 {data.exports.length === 0 ? (
-                  <p style={{ margin: 0, fontSize: 12.5, color: "#8e8e93" }}>No confirmed map yet. Exports appear once an expert confirms a map.</p>
+                  <p style={{ margin: 0, fontSize: 12.5, color: "#6e6e73" }}>No confirmed map yet. Exports appear once an expert confirms a map.</p>
                 ) : (
                   data.exports.map((x) => (
                     <div key={x.sessionId} style={{ padding: "6px 0", borderTop: ".5px solid rgba(0,0,0,.06)" }}>
@@ -298,7 +298,7 @@ function Sidebar({ data, active, open, base, onNavigate }: { data: PlatformData;
         >
           <span aria-hidden style={{ width: 8, height: 8, borderRadius: 4, background: "#22b45e", animation: "tc-dotpulse 1.8s ease-in-out infinite" }} />
           <span style={{ flex: 1, minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{data.live.label}</span>
-          <span aria-hidden style={{ color: "#8e8e93" }}>↗</span>
+          <span aria-hidden style={{ color: "#6e6e73" }}>↗</span>
         </Link>
       ) : null}
     </nav>

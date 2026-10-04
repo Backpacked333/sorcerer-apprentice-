@@ -282,7 +282,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
       style={{ position: "absolute", left: g.m.x + g.nx * (g.e.ruleIds.length ? 26 : 15), top: g.m.y + g.ny * (g.e.ruleIds.length ? 26 : 15), transform: "translate(-50%,-50%)", whiteSpace: "nowrap", fontSize: 11, color: "#3a3a3c", padding: "2px 7px", borderRadius: 8, background: "rgba(255,255,255,.88)", boxShadow: "0 0 0 .5px rgba(0,0,0,.06)", pointerEvents: "none", opacity: dimEdge(g.e) ? 0.2 : 1, transition: "opacity .4s", zIndex: 2 }}
     >
       {g.e.verb}
-      {g.e.card ? <span style={{ fontFamily: "var(--font-mono)", color: "#8e8e93", marginLeft: 5, fontSize: 10.5 }}>{g.e.card}</span> : null}
+      {g.e.card ? <span style={{ fontFamily: "var(--font-mono)", color: "#6e6e73", marginLeft: 5, fontSize: 10.5 }}>{g.e.card}</span> : null}
     </div>
   ));
 
@@ -371,7 +371,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
               </span>
               <span style={{ minWidth: 0, flex: 1 }}>
                 <span style={{ display: "block", fontSize: i === 0 && kind === "object" ? 15.5 : 14, fontWeight: 600, lineHeight: 1.2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.name}</span>
-                <span style={{ display: "block", fontSize: 11, color: "#8e8e93", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{meta}</span>
+                <span style={{ display: "block", fontSize: 11, color: "#6e6e73", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{meta}</span>
               </span>
               {fresh ? <span style={{ flex: "none", fontSize: 9.5, fontWeight: 700, letterSpacing: ".06em", color: "#1b8a4b", background: "rgba(34,180,94,.14)", padding: "2px 6px", borderRadius: 7, animation: "tc-pop .4s var(--ease-spring) both" }}>NEW</span> : null}
             </span>
@@ -381,7 +381,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
                   <span key={f.name} style={{ display: "grid", gridTemplateColumns: "8px 92px 1fr", gap: 8, alignItems: "center", height: ROW, borderRadius: 6, background: isNew(f.at) ? "rgba(34,180,94,.08)" : "transparent", animation: "tc-rise .5s var(--ease-rise) both" }}>
                     <span aria-hidden title={PROV[f.prov].label} style={{ width: 6, height: 6, borderRadius: 3, background: PROV[f.prov].color }} />
                     <span style={{ fontSize: 12, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.name}</span>
-                    <span style={{ fontSize: 11.5, color: "#8e8e93", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.value}</span>
+                    <span style={{ fontSize: 11.5, color: "#6e6e73", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{f.value}</span>
                   </span>
                 ))}
               </span>
@@ -435,7 +435,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
             ))}
           </span>
           <span style={{ minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 11.5, color: "#8e8e93", lineHeight: 1.2 }}>Ontology of</span>
+            <span style={{ display: "block", fontSize: 11.5, color: "#6e6e73", lineHeight: 1.2 }}>Ontology of</span>
             <span style={{ display: "block", fontSize: 14.5, fontWeight: 600, lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{roleTitle}</span>
           </span>
         </Link>

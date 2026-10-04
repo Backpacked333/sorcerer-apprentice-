@@ -17,7 +17,7 @@ export function AutopilotSheet({ vm, presenter }: { vm: MapVM; presenter: boolea
   return (
     <section className="glass-panel flex flex-col gap-3 p-4" style={{ borderRadius: 24 }} aria-label="Agent-ready guardrails">
       <div>
-        <p className="text-[12px] font-semibold text-[#8e8e93]">Agent-ready guardrails</p>
+        <p className="text-[12px] font-semibold text-[#6e6e73]">Agent-ready guardrails</p>
         <p className="mt-1 text-[13.5px] leading-[1.45] text-[#3a3a3c]">The Work Map as instructions an agent can load. People keep the judgment calls.</p>
       </div>
       <GlassButton
@@ -32,14 +32,14 @@ export function AutopilotSheet({ vm, presenter }: { vm: MapVM; presenter: boolea
       >
         {vm.autopilotRunning ? "running…" : "Prove it: load policy.json and run the routine queue"}
       </GlassButton>
-      {!confirmed && <p className="text-[12px] text-[#8e8e93]">Unlocks once {name} confirms the teach-back.</p>}
+      {!confirmed && <p className="text-[12px] text-[#6e6e73]">Unlocks once {name} confirms the teach-back.</p>}
       {vm.autopilot && (
         <ul className="m-0 flex list-none flex-col gap-2 p-0 text-[13px]">
           {vm.autopilot.map((s) => (
             <li key={s.invoice} className="flex items-start gap-2" style={{ animation: "tc-rise .5s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both" }}>
               <Pill tone={s.outcome === "halted" ? "red" : s.outcome === "flagged" ? "blue" : "green"} dot>{s.outcome}</Pill>
               <span className="min-w-0 flex-1 leading-[1.45]">
-                <span className="font-mono text-[12px] text-[#8e8e93]">INV-{s.invoice}</span>{" "}
+                <span className="font-mono text-[12px] text-[#6e6e73]">INV-{s.invoice}</span>{" "}
                 {s.supplier}, €{Math.abs(s.amount).toLocaleString("en-IE")}: {s.reason}
                 {s.quote && <span className="mt-0.5 block text-[#6e6e73]">“{s.quote}”</span>}
               </span>

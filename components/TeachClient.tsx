@@ -207,13 +207,14 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     const sharing = share ? pipeline.start({ mode: opts?.workspace ? "workspace" : "tab", app: "erp", queue: "newhire" }).catch(() => {}) : Promise.resolve();
     L.startedAt = Date.now();
     L.sourceMapRevision = map?.revision;
-    setStartedAt(L.startedAt);
-    setStarted(true);
     const armed = map?.confirmedAt
       ? fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "arm", mapSessionId: map.sessionId, teachSessionId: L.id }) }).then(() => {}, () => {})
       : Promise.resolve();
     return (async () => {
+      // the save guard is armed before the session counts as started (no unguarded save in the first ms)
       await armed;
+      setStartedAt(L.startedAt);
+      setStarted(true);
       await sharing;
       await voice.connect({ firstMessage: `I'll watch while you work. I only speak when ${map?.expert.name ?? "the expert"} would.` });
       voice.setMicMuted(true);

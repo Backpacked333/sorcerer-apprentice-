@@ -32,8 +32,8 @@ export function WorkMapRail({ map, selectedId, onSelect, askingStepId }: { map: 
   const steps = useMemo(() => sortedSteps(map), [map]);
   return (
     <nav aria-label="Steps of the Work Map" className="flex flex-col gap-0.5">
-      <p className="px-2.5 pb-1.5 text-[11px] font-semibold text-[#8e8e93]">{railHeadline(steps)}</p>
-      {steps.length === 0 && <p className="px-2.5 text-[13px] text-[#8e8e93]">No steps compiled yet.</p>}
+      <p className="px-2.5 pb-1.5 text-[11px] font-semibold text-[#6e6e73]">{railHeadline(steps)}</p>
+      {steps.length === 0 && <p className="px-2.5 text-[13px] text-[#6e6e73]">No steps compiled yet.</p>}
       <ol className="m-0 flex list-none flex-col gap-0.5 p-0">
         {steps.map((s) => {
           const on = s.id === selectedId;
@@ -54,7 +54,7 @@ export function WorkMapRail({ map, selectedId, onSelect, askingStepId }: { map: 
                 <span className="w-[18px] flex-none pt-[2px] font-mono text-[12px]" style={{ color: on ? "#a35f00" : "#8e8e93" }}>{s.index + 1}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-[14px] leading-[1.3] text-[#1d1d1f]" style={{ fontWeight: on ? 600 : 400 }}>{s.title}</span>
-                  <span className="mt-0.5 block text-[12px] text-[#8e8e93]" style={{ fontVariantNumeric: "tabular-nums" }}>{railMeta(s)}</span>
+                  <span className="mt-0.5 block text-[12px] text-[#6e6e73]" style={{ fontVariantNumeric: "tabular-nums" }}>{railMeta(s)}</span>
                 </span>
                 {s.judgment && (
                   <span
@@ -77,7 +77,7 @@ function StepStill({ frame, step }: { frame?: Frame; step: Step }) {
   const src = frameSrc(frame);
   if (!src) {
     return (
-      <div className="grid h-[118px] place-items-center rounded-[14px] text-[13px] text-[#8e8e93]" style={{ background: "rgba(0,0,0,.03)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.08)" }}>
+      <div className="grid h-[118px] place-items-center rounded-[14px] text-[13px] text-[#6e6e73]" style={{ background: "rgba(0,0,0,.03)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.08)" }}>
         No still kept for this step
       </div>
     );
@@ -109,7 +109,7 @@ function StepStill({ frame, step }: { frame?: Frame; step: Step }) {
           {mmssOf(step.screenMoment.t)}
         </span>
       </div>
-      <figcaption className="mt-1 text-[12px] text-[#8e8e93]">
+      <figcaption className="mt-1 text-[12px] text-[#6e6e73]">
         captured still{frame?.piiRegionsBlurred != null ? ` · ${frame.piiRegionsBlurred} regions blurred` : ""}
       </figcaption>
     </figure>
@@ -117,7 +117,7 @@ function StepStill({ frame, step }: { frame?: Frame; step: Step }) {
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
-  return <p className="text-[12px] font-semibold text-[#8e8e93]">{children}</p>;
+  return <p className="text-[12px] font-semibold text-[#6e6e73]">{children}</p>;
 }
 
 /** Right column: the selected step's evidence (still, verbatim quote, guardrails, rule, notes). */
@@ -139,24 +139,24 @@ export function WorkMapDetail({ map, frames, sessionId, step, matrix, onSelect }
           <div className="mt-1">
             <SectionLabel>Decision</SectionLabel>
             <p className="mt-1 text-[14.5px] leading-[1.45] text-[#1d1d1f]">{step.decision}</p>
-            <p className="mt-0.5 font-mono text-[12px] text-[#8e8e93]">{"field" in step.action ? `${step.action.field}: ${step.action.from || "empty"} → ${step.action.to}` : step.action.type}</p>
+            <p className="mt-0.5 font-mono text-[12px] text-[#6e6e73]">{"field" in step.action ? `${step.action.field}: ${step.action.from || "empty"} → ${step.action.to}` : step.action.type}</p>
           </div>
           <div className="mt-1">
             <SectionLabel>Reason, in {name}&apos;s words</SectionLabel>
             {step.reason ? (
               <div className="mt-1.5">
                 <p className="text-[15px] font-medium leading-[1.45] text-[#1d1d1f]" style={{ textWrap: "pretty" }}>“{step.reason.text}”</p>
-                <p className="mt-1 text-[12px] text-[#8e8e93]">{quoteCaption(name, step.reason)}</p>
-                {step.reason.translation && <p className="mt-0.5 text-[12px] text-[#8e8e93]">{step.reason.translation}</p>}
+                <p className="mt-1 text-[12px] text-[#6e6e73]">{quoteCaption(name, step.reason)}</p>
+                {step.reason.translation && <p className="mt-0.5 text-[12px] text-[#6e6e73]">{step.reason.translation}</p>}
                 {clip(step.reason.audioId) && <audio className="mt-2 w-full" controls src={clip(step.reason.audioId)} />}
               </div>
             ) : (
-              <p className="mt-1 text-[13.5px] text-[#8e8e93]">{step.judgment ? "Not yet explained — the debrief will ask" : "Routine step."}</p>
+              <p className="mt-1 text-[13.5px] text-[#6e6e73]">{step.judgment ? "Not yet explained — the debrief will ask" : "Routine step."}</p>
             )}
           </div>
           <div className="mt-1 flex flex-col gap-2">
             <SectionLabel>Guardrails</SectionLabel>
-            {step.guardrails.length === 0 && <p className="text-[13.5px] text-[#8e8e93]">None captured for this step.</p>}
+            {step.guardrails.length === 0 && <p className="text-[13.5px] text-[#6e6e73]">None captured for this step.</p>}
             {step.guardrails.map((g) => (
               <GuardrailCard
                 key={g.id}
@@ -193,13 +193,13 @@ export function WorkMapDetail({ map, frames, sessionId, step, matrix, onSelect }
           )}
         </article>
       ) : (
-        <p className="text-[14px] text-[#8e8e93]">No steps compiled yet.</p>
+        <p className="text-[14px] text-[#6e6e73]">No steps compiled yet.</p>
       )}
 
       {matrix && matrix.length > 0 && (
         <table className="w-full text-[13px]">
           <thead>
-            <tr className="text-left text-[12px] text-[#8e8e93]">
+            <tr className="text-left text-[12px] text-[#6e6e73]">
               {["Reason", "Trigger rule", "Replay-verified", "Limit", "Who", "Confirmed"].map((h) => <th key={h} className="px-2 py-1.5 font-semibold">{h}</th>)}
             </tr>
           </thead>

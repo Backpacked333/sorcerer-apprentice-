@@ -39,7 +39,7 @@ export function ExportMenu({ sessionId }: { sessionId: string }) {
             className="flex flex-col rounded-[12px] px-3 py-2 no-underline hover:bg-[rgba(255,255,255,.85)]"
           >
             <span className="font-mono text-[13px] text-[#1d1d1f]">{f.label}</span>
-            <span className="text-[12px] text-[#8e8e93]">{f.sub}</span>
+            <span className="text-[12px] text-[#6e6e73]">{f.sub}</span>
           </a>
         ))}
       </div>

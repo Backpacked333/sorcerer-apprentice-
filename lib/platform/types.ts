@@ -503,10 +503,14 @@ const pad = (n: number) => String(n).padStart(2, "0");
  * Deterministic date label (UTC, so server and client render the same string).
  * minute/hour: "14:05" (plus "Oct 4 " when `withDay`); day: "Oct 4"; month: "Oct 2026".
  */
-export function formatAt(at: number, unit: TimeUnit, withDay = false): string {
+/**
+ * Labels are formatted in UTC so server and client render the same text (hydration-safe). A time of day therefore says
+ * "UTC"; axis ticks pass `zone = false` because the "As of … UTC" headline above the axis already names the zone.
+ */
+export function formatAt(at: number, unit: TimeUnit, withDay = false, zone = true): string {
   const d = new Date(at);
   const day = `${MON[d.getUTCMonth()]} ${d.getUTCDate()}`;
-  if (unit === "minute" || unit === "hour") return `${withDay ? day + " " : ""}${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  if (unit === "minute" || unit === "hour") return `${withDay ? day + " " : ""}${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}${zone ? " UTC" : ""}`;
   if (unit === "month") return `${MON[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
   return day;
 }
@@ -549,7 +553,7 @@ export function makeTicks(start: number, end: number, unit: TimeUnit = unitFor(s
     : unit === "hour" ? [1, 2, 3, 6, 12, 24].map((x) => x * HOUR)
     : [1, 2, 7, 14].map((x) => x * DAY);
   const step = steps.find((s) => span / s <= 8) ?? steps[steps.length - 1];
-  for (let at = Math.ceil(start / step) * step; at <= end; at += step) out.push({ at, label: formatAt(at, unit) });
+  for (let at = Math.ceil(start / step) * step; at <= end; at += step) out.push({ at, label: formatAt(at, unit, false, false) });
   return out;
 }
 

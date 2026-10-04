@@ -169,7 +169,7 @@ export function RoleInspector({
                   className="hover:bg-[rgba(0,0,0,.035)]"
                   style={{ display: "flex", alignItems: "flex-start", gap: 10, width: "100%", padding: "8px 8px", margin: "0 -8px", border: 0, borderRadius: 12, background: "transparent", cursor: "pointer", textAlign: "left", font: "inherit", color: "inherit", opacity: e.at <= t ? 1 : 0.4, transition: "opacity .3s" }}
                 >
-                  <span aria-hidden style={{ color: "#8e8e93", fontSize: 13, marginTop: 1 }}>{out ? "→" : "←"}</span>
+                  <span aria-hidden style={{ color: "#6e6e73", fontSize: 13, marginTop: 1 }}>{out ? "→" : "←"}</span>
                   <span style={{ flex: 1, minWidth: 0 }}>
                     <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{other?.title ?? "Unknown role"}</span>
                     <span style={{ display: "block", fontSize: 12.5, color: "#6e6e73", lineHeight: 1.35 }}>{e.label}</span>

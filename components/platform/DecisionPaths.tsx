@@ -21,8 +21,8 @@ export function DecisionPaths({ ont, t, active, onTrace, defaultOpen = true }: {
         ))}
       </span>
       <span style={{ fontSize: 14, fontWeight: 600, whiteSpace: "nowrap" }}>Decision paths</span>
-      <span style={{ fontSize: 13, color: "#8e8e93", whiteSpace: "nowrap" }}>{known} of {ont.rules.length} known</span>
-      <span aria-hidden style={{ marginLeft: "auto", fontSize: 11, color: "#8e8e93", transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }}>⌄</span>
+      <span style={{ fontSize: 13, color: "#6e6e73", whiteSpace: "nowrap" }}>{known} of {ont.rules.length} known</span>
+      <span aria-hidden style={{ marginLeft: "auto", fontSize: 11, color: "#6e6e73", transform: open ? "rotate(180deg)" : "none", transition: "transform .25s" }}>⌄</span>
     </button>
   );
   const legend: { label: string; border: string; bg?: string }[] = [
@@ -59,7 +59,7 @@ export function DecisionPaths({ ont, t, active, onTrace, defaultOpen = true }: {
                 <RuleDot rule={r} />
                 <span style={{ minWidth: 0 }}>
                   <span style={{ display: "block", fontSize: 13.5, fontWeight: 600, lineHeight: 1.3 }}>{r.title}</span>
-                  <span style={{ display: "block", fontSize: 11.5, color: "#8e8e93" }}>{KIND[r.kind].label} · {when(ont.timeline, r.at, r.approx)}</span>
+                  <span style={{ display: "block", fontSize: 11.5, color: "#6e6e73" }}>{KIND[r.kind].label} · {when(ont.timeline, r.at, r.approx)}</span>
                 </span>
               </button>
             );

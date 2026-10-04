@@ -177,3 +177,6 @@ html.erp-embedded .clm-external-nav { display: none; }
   .clm-qtable .hide-sm { display: none; }
   .clm-doc { min-height: 0; }
 }
+
+/* Inside Tacit's workspace (set by components/ui/Workspace.tsx): pad the bottom so nothing stays stuck under the floating card. */
+html.erp-embedded .clm-main { padding-bottom: var(--tacit-reserve-h, 0px); }

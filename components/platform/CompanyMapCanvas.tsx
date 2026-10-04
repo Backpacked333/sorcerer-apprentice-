@@ -268,7 +268,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
           ) : null}
           <div style={{ position: "absolute", top: "100%", left: "50%", width: 230, marginLeft: -115, marginTop: 8, textAlign: "center", pointerEvents: "none" }}>
             <div style={{ fontSize: r.isMain ? 15 : 13.5, fontWeight: 600, lineHeight: 1.25, color: "#1d1d1f", textShadow: "0 1px 0 rgba(255,255,255,.9)" }}>{r.title}</div>
-            <div style={{ fontSize: 11.5, color: captured ? "#1b8a4b" : "#8e8e93", marginTop: 1 }}>
+            <div style={{ fontSize: 11.5, color: captured ? "#1b8a4b" : "#6e6e73", marginTop: 1 }}>
               {r.team ?? r.statusLabel}
               {r.people.length ? ` · ${r.people.length}` : ""}
             </div>
@@ -342,7 +342,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
         <div style={{ position: "absolute", left: dpt.x, top: dpt.y - dpt.ry + 26, transform: `translate(-50%,-50%) scale(${ss})`, display: "flex", alignItems: "center", gap: 6, height: 28, padding: "0 11px", borderRadius: 14, fontSize: 13, fontWeight: 600, color: dpt.color, background: "rgba(255,255,255,.75)", whiteSpace: "nowrap", pointerEvents: "none" }}>
           <span style={{ width: 7, height: 7, borderRadius: 4, background: dpt.color }} />
           {dpt.name}
-          <span style={{ color: "#8e8e93", fontWeight: 500 }}>{n} role{n === 1 ? "" : "s"}</span>
+          <span style={{ color: "#6e6e73", fontWeight: 500 }}>{n} role{n === 1 ? "" : "s"}</span>
         </div>
       </div>
     );
@@ -395,7 +395,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
           <SidebarToggle />
         </div>
         <div className="glass-nav" style={{ pointerEvents: "auto", display: "flex", flexDirection: "column", justifyContent: "center", height: 44, padding: "0 16px", borderRadius: 22, minWidth: 0, maxWidth: narrow ? "calc(100% - 54px)" : 340 }}>
-          <span style={{ fontSize: 11.5, color: "#8e8e93", lineHeight: 1.2 }}>Company map</span>
+          <span style={{ fontSize: 11.5, color: "#6e6e73", lineHeight: 1.2 }}>Company map</span>
           <span style={{ fontSize: 14.5, fontWeight: 600, lineHeight: 1.25, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{data.company.name}</span>
         </div>
         {data.roles.length ? (

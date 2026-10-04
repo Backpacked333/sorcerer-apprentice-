@@ -6,8 +6,11 @@ import { buildSlots, seenCases } from "./slots";
 
 const NARRATION_CUES = /\b(because|since|so|always|never|over|above|under|has to|must|only|every|whenever|unless|rule|double)\b/i;
 
+/** A claims-workbench event (vision-only): it names its claim in `subject` and never sets `invoice`. */
+const claimOf = (e: ScreenEvent): string | undefined => (!e.invoice && e.subject?.type === "claim" ? e.subject.id : undefined);
+
 export function stepRefOf(e: ScreenEvent): string {
-  return `${e.invoice ?? "?"}:${e.field ?? e.kind}`;
+  return `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
 }
 
 // ---------- Pass 1: deterministic ----------
@@ -42,6 +45,15 @@ export function compileDeterministic(log: SessionLog): WorkMap {
         addStep({ title: `Open invoice ${inv}`, invoice: inv, screenMoment: moment, action: { type: "open" }, decision: `Opened ${inv}${e.state?.supplier ? ` from ${e.state.supplier}` : ""}${e.state?.amount !== undefined ? `, €${e.state.amount.toLocaleString("en-IE")}` : ""}`, judgment: false }, `${inv}:open`);
         break;
       case "field_changed": {
+        const claim = claimOf(e);
+        if (claim) {
+          // a claim is never reported as an invoice: claim wording, no `invoice` on the step
+          const to = e.to ?? "";
+          const from = e.from ?? "";
+          const fl = labelField(e.field);
+          addStep({ title: `Set ${fl} on claim ${claim}`, screenMoment: moment, action: { field: e.field ?? "field", from, to }, decision: from && from !== to ? `Changed ${fl} from ${from} to ${to}` : `Set ${fl} to ${to}`, judgment: from !== to && to !== "" }, stepRefOf(e));
+          break;
+        }
         const from = e.from ?? "";
         const to = e.to ?? "";
         const fl = labelField(e.field);

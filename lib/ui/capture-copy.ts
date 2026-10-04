@@ -153,6 +153,8 @@ export interface HealthInput {
   degraded?: string | null;
   dropped: number;
   queued: number;
+  /** event source; "dom" means no frame goes to vision even while a screen is shared */
+  source?: "vision" | "dom" | "both";
 }
 
 export function healthItems(i: HealthInput): { label: string; tone: ChipTone }[] {
@@ -175,6 +177,8 @@ export function healthItems(i: HealthInput): { label: string; tone: ChipTone }[]
       ? { label: "Wrong surface — no frames sent", tone: "amber" as const }
       : i.visionError
         ? { label: "Vision degraded", tone: "amber" as const }
+        : i.sharing && i.source === "dom"
+          ? { label: "Screen shared · ERP telemetry only", tone: "neutral" as const }
         : i.sharing
           ? i.dropped > 0
             ? { label: `Seeing ${where} · ${i.dropped} skipped`, tone: "green" as const }

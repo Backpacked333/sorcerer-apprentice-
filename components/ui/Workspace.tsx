@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { OccluderProvider, useOccluder } from "@/components/glass/occluders";
 
 export interface WorkspaceFrame {
@@ -37,6 +37,70 @@ export interface WorkspaceProps {
 }
 
 const SLOT_GAP = 28;
+/** Widest floating card (ask / teach mode) + the slot gap + a 16 px breathing gap. Constant, so the ERP never reflows on a mood change. */
+const RESERVE_W = 404 + SLOT_GAP + 16;
+
+/**
+ * Keeps the embedded app's content clear of the floating card (same-origin iframe only):
+ * `--tacit-reserve-w` lets the lower blocks (queue table, line items, approval) end left of the card, and
+ * `--tacit-reserve-h` (card height + gaps) pads the page bottom and sets scroll-padding, so anything still
+ * under the card can be scrolled, or focused, clear of it. Growth applies at once; shrinking waits for the
+ * height spring to settle, so the page does not jump while the card animates.
+ */
+function useEmbeddedReserve(iframe: HTMLIFrameElement | null, slot: HTMLElement | null, active: boolean) {
+  useEffect(() => {
+    if (!iframe || !slot || !active) return;
+    let h = 0;
+    let shrinkTimer = 0;
+    // Injected as a <style> in the embedded <head> (never as attributes on its <html>, which React hydrates).
+    const apply = () => {
+      try {
+        const doc = iframe.contentDocument;
+        if (!doc?.head) return;
+        let el = doc.getElementById("tacit-reserve");
+        if (!el) {
+          el = doc.createElement("style");
+          el.id = "tacit-reserve";
+          doc.head.appendChild(el);
+        }
+        el.textContent = `:root{--tacit-reserve-w:${RESERVE_W}px;--tacit-reserve-h:${h}px;scroll-padding-bottom:${h}px;scrollbar-gutter:stable}`;
+      } catch {
+        /* not same-origin: nothing to reserve */
+      }
+    };
+    const measure = () => {
+      const next = Math.ceil(slot.getBoundingClientRect().height) + SLOT_GAP + 16;
+      if (next >= h) {
+        window.clearTimeout(shrinkTimer);
+        if (next !== h) {
+          h = next;
+          apply();
+        }
+      } else {
+        window.clearTimeout(shrinkTimer);
+        shrinkTimer = window.setTimeout(() => {
+          h = Math.ceil(slot.getBoundingClientRect().height) + SLOT_GAP + 16;
+          apply();
+        }, 750);
+      }
+    };
+    measure();
+    apply();
+    iframe.addEventListener("load", apply);
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(measure) : null;
+    ro?.observe(slot);
+    return () => {
+      window.clearTimeout(shrinkTimer);
+      iframe.removeEventListener("load", apply);
+      ro?.disconnect();
+      try {
+        iframe.contentDocument?.getElementById("tacit-reserve")?.remove();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, [iframe, slot, active]);
+}
 
 /**
  * Full-width ERP with Tacit floating over it.
@@ -66,6 +130,8 @@ export function Workspace({
   );
   const ctx = useMemo<WorkspaceFrame>(() => ({ iframe, frame }), [iframe, frame]);
   const legacy = companion == null && children != null;
+  const [slot, setSlot] = useState<HTMLDivElement | null>(null);
+  useEmbeddedReserve(iframe, slot, !legacy);
 
   return (
     <OccluderProvider onChange={onOccluders}>
@@ -132,7 +198,7 @@ export function Workspace({
             {overlay}
           </div>
 
-          <CompanionSlot legacy={legacy} presenter={!!presenter}>
+          <CompanionSlot legacy={legacy} presenter={!!presenter} onElement={setSlot}>
             {legacy ? children : companion}
           </CompanionSlot>
         </div>
@@ -141,10 +207,14 @@ export function Workspace({
   );
 }
 
-function CompanionSlot({ legacy, presenter, children }: { legacy: boolean; presenter: boolean; children: ReactNode }) {
+function CompanionSlot({ legacy, presenter, onElement, children }: { legacy: boolean; presenter: boolean; onElement?: (el: HTMLDivElement | null) => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   // The slot is a Tacit surface over the ERP: always painted out of captured frames.
   useOccluder(ref, "workspace-companion");
+  useEffect(() => {
+    onElement?.(ref.current);
+    return () => onElement?.(null);
+  }, [onElement]);
   const width = legacy ? (presenter ? 500 : 404) : undefined;
   return (
     <div

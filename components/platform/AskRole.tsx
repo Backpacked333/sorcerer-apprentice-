@@ -17,7 +17,7 @@ export function AskRole({ asks, empty, timeline, t, playing }: { asks: AskEntry[
       body = (
         <>
           <p style={{ margin: 0, fontSize: 15, lineHeight: 1.5, color: "#3a3a3c" }}>Not known as of {when(timeline, t)}.</p>
-          <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "#8e8e93" }}>No confirmed memory yet · learned {when(timeline, a.learnedAt, a.approx)}</p>
+          <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "#6e6e73" }}>No confirmed memory yet · learned {when(timeline, a.learnedAt, a.approx)}</p>
         </>
       );
     } else if (a.early && t < a.early.until) {

@@ -88,6 +88,14 @@ it("round-trips isolated ERP workspaces and never treats corrupt ERP as missing"
   }
 });
 
+it("preserves both ERP columns under concurrent single-field writes", async () => {
+  await Promise.all([store.saveErpInvoices(seedInvoices()), store.saveErpGuard({ teachSessionId: "t" })]);
+  expect(await store.getErpSnapshot()).toEqual({ invoices: seedInvoices(), guard: { teachSessionId: "t" } });
+  await store.saveErpGuard(null);
+  expect((await store.getErpSnapshot()).invoices).toHaveLength(seedInvoices().length);
+  expect((await store.getErpSnapshot()).guard).toBeNull();
+});
+
 it("serializes guard updates, expires/rearms per teach session and clears only the chosen workspace", async () => {
   const clock = vi.spyOn(Date, "now").mockReturnValue(1000);
   const arm = (teachSessionId: string, ttlMs?: number, ws?: string) => store.saveGuard({ mapSessionId: "map", teachSessionId, ttlMs }, ws);

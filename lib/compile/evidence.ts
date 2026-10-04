@@ -14,8 +14,11 @@ export function isQuotableTranscript(segment: TranscriptSegment, windows: Questi
   if (segment.speaker !== "expert" || segment.redacted || !segment.final || !segment.text.trim()) return false;
   const end = segment.tEnd ?? segment.t;
   return !windows.some((window) => {
-    if (window.askedAt === undefined) return false;
     const speechStarted = window.spokeAt ?? window.openedAt;
+    if (window.askedAt === undefined) {
+      const activeUntil = window.closedAt ?? Number.POSITIVE_INFINITY;
+      return segment.t <= activeUntil && end >= speechStarted;
+    }
     return end >= speechStarted && end < window.askedAt;
   });
 }

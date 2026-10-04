@@ -90,11 +90,11 @@ export function compileDeterministic(log: SessionLog): WorkMap {
     }
   }
 
-  // ---- narration: a reason the expert said out loud without being asked ----
-  for (const step of steps) {
-    if (step.reason || !step.judgment) continue;
+  // ---- narration: globally pair grounded evidence to the nearest compatible judgment ----
+  const narrationCandidates = steps.flatMap((step) => {
+    if (step.reason || !step.judgment) return [];
     const event = evidenceEventByStepId.get(step.id);
-    if (!event) continue;
+    if (!event) return [];
     const candidate: Candidate = {
       id: `compile:${step.id}`,
       kind: "why",
@@ -110,9 +110,24 @@ export function compileDeterministic(log: SessionLog): WorkMap {
       guardrail: false,
       aliases: [event.to, labelField(event.field)].filter((value): value is string => Boolean(value)),
     };
-    const near = log.transcript.filter((segment) => isQuotableTranscript(segment, log.windows));
-    const hit = near.find((segment) => narrationMatch(segment.text, candidate, segment.t).fills);
-    if (hit) step.reason = { text: hit.text, t: hit.t, source: "narration" };
+    return [{ step, candidate }];
+  });
+  const narrationPairs = log.transcript
+    .filter((segment) => isQuotableTranscript(segment, log.windows))
+    .flatMap((segment) => narrationCandidates.flatMap(({ step, candidate }) => {
+      const delta = segment.t - candidate.createdAt;
+      if (delta < -20 || delta > 25 || !narrationMatch(segment.text, candidate).fills) return [];
+      return [{ step, segment, distance: Math.abs(delta) }];
+    }))
+    .sort((left, right) => left.distance - right.distance || left.segment.t - right.segment.t || left.step.index - right.step.index);
+  const assignedSteps = new Set<string>();
+  const assignedSegments = new Set<string>();
+  for (const { step, segment } of narrationPairs) {
+    if (assignedSteps.has(step.id) || assignedSegments.has(segment.id)) continue;
+    step.reason = { text: segment.text, t: segment.t, source: "narration" };
+    step.confidence = "low";
+    assignedSteps.add(step.id);
+    assignedSegments.add(segment.id);
   }
 
   // ---- rules by heuristic ----

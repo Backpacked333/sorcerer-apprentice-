@@ -331,7 +331,7 @@ export class CandidateQueue {
 
 // ---------- Narration check ----------
 
-const REASON_CUES = /\b(because|since|so(?: that)?|due to|that's why|always|never|must|has to|have to|rule|policy)\b/i;
+const REASON_CUES = /\b(because|since|so that|so|due to|that's why|always|never|must|has to|have to|rule|policy)\b/i;
 const DEICTIC = /\b(this one|that one|this invoice|this supplier|here)\b/i;
 const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -350,7 +350,9 @@ export function narrationMatch(text: string, c: Candidate, at?: number): Narrati
   const alias = (c.aliases ?? []).find((value) => value !== field && new RegExp(`\\b${escapeRegExp(value)}\\b`, "i").test(t));
   const fieldTarget = Boolean(field && field !== "field" && new RegExp(`\\b${escapeRegExp(field)}\\b`, "i").test(t));
   const target = invoice ? "invoice" : alias ? "value" : fieldTarget ? "field" : DEICTIC.test(t) ? "deictic" : null;
-  const cue = t.match(REASON_CUES)?.[0];
+  const matchedCue = t.match(REASON_CUES)?.[0];
+  // A leading conversational "so" is sequencing, not evidence of a reason.
+  const cue = matchedCue?.toLowerCase() === "so" && /^\s*so\b/i.test(t) ? undefined : matchedCue;
   const timely = at === undefined || (at >= c.createdAt && at - c.createdAt <= 15);
   const ambiguousOffscreen = c.leftAt !== undefined && !invoice;
   const fills = c.kind === "why" && !conflictingInvoice && !ambiguousOffscreen && t.trim().split(/\s+/).length >= 6 && target !== null && Boolean(cue) && timely;

@@ -11,7 +11,11 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
   if (!gatewayConfigured()) return { map: draft, used: false, note: "AI Gateway is not configured; deterministic fallback map" };
   const quotableTranscript = log.transcript.filter((segment) => isQuotableTranscript(segment, log.windows));
   const quotableWindows = log.windows.filter(isQuotableWindow);
-  const transcript = quotableTranscript.map((s) => `[${s.t.toFixed(1)}s ${s.speaker}] ${s.text}`).join("\n");
+  const standaloneTranscript = quotableTranscript.filter((segment) => !quotableWindows.some((window) =>
+    window.answerText?.trim() === segment.text.trim()
+      && Math.abs((segment.tEnd ?? segment.t) - window.answeredAt!) < 0.01,
+  ));
+  const transcript = standaloneTranscript.map((s) => `[${s.t.toFixed(1)}s ${s.speaker}] ${s.text}`).join("\n");
   const answers = quotableWindows.map((w) => `[${w.answeredAt!.toFixed(1)}s] Q(${w.kind}, ${w.stepRef}): ${w.question}\nA: ${w.answerText}`).join("\n\n");
   const steps = draft.steps.map((s) => `${s.id} | invoice ${s.invoice} | ${s.title} | ${s.decision} | judgment=${s.judgment} | reason=${s.reason?.text ?? "none"}`).join("\n");
   try {
@@ -38,7 +42,7 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
       if (!text.trim()) return undefined;
       const w = quotableWindows.find((window) => window.answerText?.includes(text));
       if (w) return { text, t: w.answeredAt!, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" };
-      const s = quotableTranscript.find((segment) => segment.text.includes(text));
+      const s = standaloneTranscript.find((segment) => segment.text.includes(text));
       return s ? { text, t: s.t, source: "narration" } : undefined;
     };
     const map: WorkMap = { ...structuredClone(draft), rules: [], slots: [] };

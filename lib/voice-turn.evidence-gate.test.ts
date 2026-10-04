@@ -24,6 +24,7 @@ describe("authoritative answer evidence", () => {
         listen: true,
         timeoutSecs: 12,
         silenceCloseSecs: 2.5,
+        answerTool: "log_answer",
         recordClip: { sessionId: "s_reproduced" },
       },
     }).state;
@@ -40,12 +41,12 @@ describe("authoritative answer evidence", () => {
     const realAnswer = "The invoice required a consumable cost center, so I changed it to 4050.";
     state = reduce(state, { type: "HUMAN_PARTIAL", at: 51.434, text: "The invoice required" }).state;
     state = reduce(state, { type: "HUMAN_COMMIT", at: 61.201, text: realAnswer, source: "scribe" }).state;
-    state = reduce(state, { type: "TICK", at: 63.701 }).state;
-    const finished = reduce(state, { type: "TICK", at: 66.201 });
+    state = reduce(state, { type: "TOOL", at: 61.3, name: "log_answer", params: { reason: realAnswer, stepRef: "4473:costCenter" } }).state;
+    const finished = reduce(state, { type: "TICK", at: 63.8 });
     const result = resolvedResult(finished.effects);
 
     expect(result).toMatchObject({
-      via: "scribe",
+      via: "tool",
       heard: realAnswer,
       askedAt: 44.592,
       answeredAt: 61.201,

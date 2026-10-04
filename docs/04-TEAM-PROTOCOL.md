@@ -53,6 +53,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `app/api/compile/`, `app/api/teachback/`, `app/api/sessions/[id]/{map,slot,confirm}/` | **C** | |
 | `components/MapClient.tsx`, `components/TeachClient.tsx` (logic), `components/views/{map,teach}.vm.ts`, `app/map/`, `app/teach/` | **C** | after the seam split (§3) |
 | `lib/engines.test.ts` | **C** | frozen for others: new tests go in new files (§5.5) |
+| `lib/fixtures/compile-corpus{,.types}.ts`, `lib/compile.corpus.test.ts` | **C** | synthetic test-only oracle corpus; never runtime prompt material |
 | `app/globals.css`, `app/layout.tsx`, `app/page.tsx`, `app/icon.svg`, `public/` | **D** | design system |
 | `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX. `capture.vm.ts` is A's and `map.vm.ts` / `teach.vm.ts` are C's from the seam-split merge |
 | `components/erp/**`, `components/demo/**` | **D** | PII publisher, queue reset, presenter tabs, embed class, health strip, demo room |

@@ -17,11 +17,12 @@ function fixture() {
   return { log, draft, rule };
 }
 describe("Gateway rule boundary", () => {
-  it("retains question and audio provenance for grounded multi-span answers", async () => {
+  it.each([1.5, 3])("retains grounded multi-span provenance, including finalization after closedAt=%s", async (closedAt) => {
     const { log, draft, rule } = fixture();
     log.transcript.push({ id: "t2", t: 2, speaker: "expert", final: true, text: "Then I ask the buyer for the PO." });
     const answerText = log.transcript.map((s) => s.text).join(" ");
-    log.windows.push({ id: "w", candidateId: "c", kind: "counterfactual", question: "What if it had no PO?", openedAt: 0, askedAt: 0.5, closedAt: 3, answeredAt: 2, outcome: "answered", answerText, answerAudioId: "audio" });
+    log.windows.push({ id: "w", candidateId: "c", kind: "counterfactual", question: "What if it had no PO?", openedAt: 0, askedAt: 0.5, closedAt, answeredAt: 2, outcome: "answered", answerText, answerAudioId: "audio" });
+    log.transcript.push({ id: "later", t: 4, speaker: "expert", final: true, text: "Now I am opening the next case." });
     generate.mockResolvedValue({ output: { rules: [{ ...rule, quoteTexts: [answerText] }], stepReasons: [], guardrails: [], slots: [] } });
     const result = await refineWithLLM(log, draft);
     expect(generate.mock.calls[0][0].prompt).toContain("What if it had no PO?");
@@ -29,6 +30,10 @@ describe("Gateway rule boundary", () => {
     log.transcript[1].redacted = true;
     expect((await refineWithLLM(log, draft)).map.rules).toEqual([]);
     expect(generate.mock.calls[1][0].prompt).not.toContain("What if it had no PO?");
+    log.transcript[1].redacted = false;
+    log.offRecord = [{ from: 1.6, to: 1.9 }];
+    await refineWithLLM(log, draft);
+    expect(generate.mock.calls[2][0].prompt).not.toContain("What if it had no PO?");
   });
   it("uses a flat wire schema, validates JSON conditions locally, and preserves exact quotes", async () => {
     const { log, draft, rule } = fixture();

@@ -52,6 +52,22 @@ export interface TurnResult {
   abortReason?: "resumed" | "user" | "superseded" | "paused" | "disconnected" | "silent";
 }
 
+export function createTurnPromiseQueue() {
+  const resolvers: Array<(result: TurnResult) => void> = [];
+  return {
+    push() {
+      return new Promise<TurnResult>((resolve) => { resolvers.push(resolve); });
+    },
+    resolve(result: TurnResult) {
+      const resolve = resolvers.shift();
+      if (!resolve) return false;
+      resolve(result);
+      return true;
+    },
+    pending: () => resolvers.length,
+  };
+}
+
 export type TurnEvent =
   | { type: "SEND"; at: number; options: TurnOptions; agentConnected?: boolean; audioId?: string }
   | { type: "SPEAK_START"; at: number; source?: "agent" | "fallback" }

@@ -1,5 +1,16 @@
 # Lane D status
 
+## Responsive Capture / Teach browser regressions · N5 / M3
+
+- Done: preserve the desktop Liquid Glass companion/left-hand mechanism layout; at narrow widths, stack and scroll them vertically. A responsive Capture-only inset accommodates the sheet plus non-overlay scrollbar at 320px. The preview stays mounted and the floating/occluder registrations are unchanged.
+- Done: reserve horizontal space beside the embedded ERP only at 1024px and above. At smaller widths, keep the existing vertical clearance so invoice fields can scroll above the tutor rather than collapsing inside a 2px-wide card. Capture/Teach logic and business rules are unchanged.
+- Done: wrap narrow ERP headings without changing column widths. Keep the ended Teach mastery sheet and tutor in a scrollable single column below 901px, retaining their desktop positioning and occluder registrations.
+- Agent verification: recorded local/keyless testing reproduced the layout failures. Capture passes 320px/390px, 667px landscape, 780/781px breakpoint, desktop resize-back, separate companion layout and preview-node identity checks. Desktop sample → Work Map → before-save guidance → replay → corrected posting/mastery and platform/claims/demo checks passed. Final acceptance at 555fdad passed fresh mobile coached and independent saves, persisted distinct mastery outcomes plus endedAt, readable 320px/390px mastery and navigation, 900/901px mastery boundary and desktop resize-back, mobile Ontology, fresh 320px Capture entry, and full mechanism visibility with stable preview-node identity. 1024px ERP headings also passed. No browser errors, HTTP errors or provider attempts occurred in the final monitored window.
+- Automated verification: typecheck, 821 tests across 91 files, production build and whitespace checks pass. All four CI checks passed on 555fdad. The earlier unchanged IBM Plex Sans next/font compilation failure on 9b1c3ab did not recur in the fresh local build or CI; no font or build configuration was changed. No lint script is configured.
+- Verified live by a human: not yet. Provider voice, microphone quality, real screen sharing and deployed QA remain unverified; local synthetic evidence is not live-provider proof.
+- Next: review PR #65; separately verify real voice/screen sharing with a human before making live-provider claims. No manual deployment or submission performed.
+- Blocked on: no blocker for the tested local/keyless flows; human/provider/deployed verification remains outstanding.
+
 ## Liquid Glass compatibility safeguards
 
 - Direction: Roy clarified that Claude owns the design, UX, flows and added functionality. Preserve the Liquid Glass implementation rather than restoring the earlier knowledge-first layout or quiet dot; only functional safeguards and regression tests carry forward.

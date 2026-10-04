@@ -223,7 +223,6 @@ function CompanionSlot({ legacy, presenter, onElement, children }: { legacy: boo
       data-legacy={legacy ? "true" : undefined}
       style={{
         position: "fixed",
-        right: SLOT_GAP,
         bottom: SLOT_GAP,
         zIndex: 5,
         width: width ? `min(${width}px, calc(100vw - 32px))` : undefined,

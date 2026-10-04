@@ -164,14 +164,11 @@ function CompanionStack(p: {
   const { vm, card, layout, mech, cardRef, heard } = p;
   const floating = layout === "workspace";
   // DOM order: card first (its "Log" / "Scratch that" come before any transcript or event text), sheet after.
-  // Visually the sheet sits to the left of the card (row-reverse) when floating.
+  // Visually the floating sheet sits to the left on desktop and below the card on narrow screens.
   return (
     <div
-      style={
-        floating
-          ? { display: "flex", flexDirection: "row-reverse", alignItems: "flex-end", gap: 14, maxHeight: "calc(100dvh - 56px)" }
-          : { display: "flex", flexDirection: "column", gap: 14 }
-      }
+      className={floating ? "capture-floating-stack" : undefined}
+      style={floating ? undefined : { display: "flex", flexDirection: "column", gap: 14 }}
     >
       <div style={{ display: "flex", flexDirection: "column", alignItems: floating ? "flex-end" : "stretch", gap: 12, minHeight: 0 }}>
         <div ref={cardRef} style={{ width: floating ? undefined : "100%", minHeight: 0 }}>

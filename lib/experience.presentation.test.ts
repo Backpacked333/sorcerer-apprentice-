@@ -261,6 +261,42 @@ describe("Liquid Glass evidence frame geometry", () => {
 });
 
 describe("Liquid Glass observation presence", () => {
+  it("stacks the ended Teach mastery sheet and tutor on narrow screens while retaining desktop positioning", () => {
+    const view = readFileSync("components/views/TeachView.tsx", "utf8");
+    const css = readFileSync("app/globals.css", "utf8");
+    expect(view).toContain('className={vm.ended ? "teach-ended-stack" : undefined}');
+    expect(view).toContain('<MasterySheet vm={vm} learner={learner} expert={expert} floating />');
+    expect(view).toContain('<MasterySheet vm={vm} learner={learner} expert={expert} floating={false} />');
+    expect(css).toContain('.teach-ended-stack { display: contents; }');
+    const narrow = css.slice(css.indexOf('@media (max-width: 900px) {\n'));
+    expect(narrow).toContain('.workspace-companion:has(.teach-ended-stack) { right: 16px; }');
+    expect(narrow).toMatch(/\.teach-ended-stack \{[^}]*width: min\(560px, calc\(100vw - 32px\)\);[^}]*max-height: calc\(100dvh - 56px\); overflow-y: auto;/);
+    expect(narrow).toContain('.teach-ended-stack > * { flex-shrink: 0; }');
+    expect(narrow).toContain('.teach-ended-stack > .glass-inspector { position: relative !important; inset: auto !important; width: 100% !important; max-height: none !important; }');
+  });
+
+  it("reserves horizontal ERP space only on wide screens but keeps vertical clearance everywhere", () => {
+    const css = readFileSync("app/erp/erp.css", "utf8");
+    expect(css).toContain("html.erp-embedded .erp-main { padding-bottom: calc(var(--tacit-reserve-h, 0px) + 28px); }");
+    expect(css).toMatch(/@media \(min-width: 1024px\)\s*\{\s*html\.erp-embedded \.erp-main \.erp-card-flush,\s*html\.erp-embedded \.erp-main \.erp-approval-card \{ margin-right: max\(0px, calc\(var\(--tacit-reserve-w, 0px\) - 28px\)\); \}\s*\}/);
+    expect(css.match(/margin-right: max\(0px, calc\(var\(--tacit-reserve-w/g)).toHaveLength(1);
+    expect(css).toContain(".erp-lines-head > * { min-width: 0; white-space: normal; overflow-wrap: anywhere; }");
+  });
+
+  it("stacks and scrolls the Capture mechanism on narrow screens without remounting the preview", () => {
+    const view = readFileSync("components/views/CaptureView.tsx", "utf8");
+    const workspace = readFileSync("components/ui/Workspace.tsx", "utf8");
+    const css = readFileSync("app/globals.css", "utf8");
+    expect(view).toContain('className={floating ? "capture-floating-stack" : undefined}');
+    expect(view).toContain('<MechanismSheet vm={vm} open={mech && vm.started} floating={floating} />');
+    expect(css).toMatch(/\.capture-floating-stack\s*\{[^}]*flex-direction: row-reverse;[^}]*max-height: calc\(100dvh - 56px\)/);
+    const narrow = css.slice(css.indexOf("@media (max-width: 780px)"));
+    expect(narrow).toContain(".workspace-companion:has(.capture-floating-stack) { right: clamp(0px, calc((100vw - 320px) / 2), 16px); }");
+    expect(narrow).toContain("flex-direction: column; overflow-y: auto; overscroll-behavior: contain;");
+    expect(narrow).toContain(".capture-floating-stack > * { flex-shrink: 0; }");
+    expect(workspace).not.toContain("right: SLOT_GAP");
+  });
+
   it.each([
     [{ holding: true, sharing: true, queued: 0 }, "off", "Paused", "Nothing is being sent"],
     [{ holding: false, sharing: true, queued: 0, struckAgoMs: 1 }, "off", "Paused", "Struck from the record"],

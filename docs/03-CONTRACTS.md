@@ -21,7 +21,8 @@ type InvoiceState = {                // what vision / ERP telemetry report about
 };
 
 type Quote = { text: string; t: number; audioId?: string;          // VERBATIM expert words; t = seconds since session start
-               source: "live" | "narration" | "debrief" | "counterfactual"; translation?: string };
+               source: "live" | "narration" | "debrief" | "counterfactual"; translation?: string;
+               evidence?: "demonstrated" | "described" };
 
 type Cond = { all: Cond[] } | { any: Cond[] } | { not: Cond }
           | { field: string; op: ">"|">="|"<"|"<="|"=="|"!="|"in"|"matches"|"exists";
@@ -37,7 +38,7 @@ type Step = { id: string; index: number; title: string; invoice?: string;
   confidence: "high"|"medium"|"low" };
 
 type Rule = { id: string; stepId?: string; title: string; when: Cond; then: Act; unless?: Cond;
-  stopAndAsk?: { who: string; when: Cond }; quotes: Quote[];
+  stopAndAsk?: { who?: string; when: Cond; quote?: Quote }; quotes: Quote[];
   confidence: "high"|"medium"|"low"; confirmedBy: ("live"|"counterfactual"|"debrief"|"teachback")[] };
 
 type Slot = { id: string; kind: "reason"|"limit"|"exception"|"escalation"|"counterfactual"|"novel";
@@ -46,6 +47,7 @@ type Slot = { id: string; kind: "reason"|"limit"|"exception"|"escalation"|"count
 type WorkMap = { sessionId: string; task: string; expert: { name: string; language: string };
   onet?: { code: string; occupation: string; task: string };
   steps: Step[]; rules: Rule[]; slots: Slot[];
+  seen?: { categories: string[]; entities: string[]; suppliers: string[] };
   privacy: { framesSeen: number; framesKept: number; entitiesRedacted: number; offRecord: { from: number; to: number }[] };
   notes: { topic: string; question: string; quote: Quote }[];   // debrief answers about cases not seen today
   revision: number;                                             // bumped by saveMap() on every save
@@ -54,6 +56,8 @@ type WorkMap = { sessionId: string; task: string; expert: { name: string; langua
 ```
 
 Exported helpers (stable signatures): `evalCond(cond, state): boolean` · `describeCond(cond): string` · `describeAct(act): string` · `actionMatchesRule(rule, state): boolean | undefined` (`undefined` = nothing decided yet) · `openSlots(map): Slot[]` · `understanding(map): number` (0..1) · `isComplete(map): boolean` · `emptyMap(sessionId, task, expertName)` · `uid(prefix)`.
+
+P-6/P-16/P-17 compatibility: legacy maps and quotes still parse without new fields. Absence of `evidence` does not mean demonstrated; absence of `seen` means unrecorded, not an empty observed universe. `stopAndAsk.quote` is the stop-specific evidence, distinct from the main rule's quotes. An absent `who` remains unknown, never a default person or role. Producers and consumers adopt these fields in follow-up work; this schema change alone does not establish provenance or novelty behavior.
 
 **Invariants every lane relies on**
 
@@ -267,7 +271,7 @@ All routes are Next.js route handlers; `params` is a Promise in Next 16 (`const 
 | `GET /api/export?sessionId=&format=policy\|prompt\|sop` | B | → file download | stretch X1 |
 | `POST /api/autopilot` | B | `{ sessionId, apply? }` → `{ steps, remaining }` | runs the policy over the `autopilot` queue, halts where she would |
 
-`SaveVerdict` (`lib/matcher.ts`): `{ blocked: boolean; ruleId?; title?; quote?; who?; reason? }`. The guard enforces **only a confirmed map** and only learned rules.
+`SaveVerdict` (`lib/matcher.ts`): `{ blocked: boolean; ruleId?; title?; quote?; who?; reason?; missing?: string }`. `missing` is an optional human-readable failed condition (P-16). The guard enforces **only a confirmed map** and only learned rules.
 
 ---
 

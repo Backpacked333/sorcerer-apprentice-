@@ -238,7 +238,7 @@ function resultFrom(state: TurnState, close: TurnClose, closedAt: number): TurnR
     ...(state.spokeAt !== undefined ? { spokeAt: state.spokeAt } : {}),
     closedAt,
     ...(state.spokenBy ? { spokenBy: state.spokenBy } : {}),
-    ...(state.spokeAt !== undefined ? { spokenText: spokenText(state) } : {}),
+    ...(state.spokeAt !== undefined && state.askedAt !== undefined ? { spokenText: spokenText(state) } : {}),
     ...(close.heardSource ? { heardSource: close.heardSource } : {}),
     ...(close.command ? { command: close.command } : {}),
     ...(close.abortReason ? { abortReason: close.abortReason } : {}),

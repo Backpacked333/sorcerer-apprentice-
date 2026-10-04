@@ -32,7 +32,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | Path | Owner | Notes |
 |---|---|---|
 | `lib/memory.ts`, `lib/memory.test.ts` | **C** | bounded application-owned memory, evidence validation and cancellable reasoning handoffs; Roy authorized this cross-lane integration |
-| `components/voice.tsx`, `lib/voice-turn.tool-evidence.test.ts`, `lib/voice-turn.tool-lifecycle.test.ts` | **A** | `VoiceApi` is a contract: additive only; client-tool evidence acknowledgment and lifecycle regressions |
+| `components/voice.tsx`, `lib/voice-turn.tool-evidence.test.ts`, `lib/voice-turn.tool-lifecycle.test.ts`, `lib/voice-turn.partial-speech.test.ts`, `lib/voice-retry-output.test.ts` | **A** | `VoiceApi` is a contract: additive only; client-tool evidence acknowledgment, lifecycle and retry playback regressions |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |
 | `lib/governor.ts`, `lib/curiosity.ts`, `lib/capture-loop.ts`, `lib/capture-config.ts`, `lib/capture-config.test.ts`, `lib/scribe-token.test.ts`, `lib/voice-turn.ts`, `lib/voice-turn*.test.ts` (including off-record precedence), `lib/voice-turn-adapter.ts`, `lib/voice-connect.test.ts`, `lib/voice-reconnect.test.ts`, `lib/voice-output-gate.test.ts`, `lib/voice-hub.ts`, `lib/voice-hub.test.ts`, `lib/voice-protocol.ts`, `lib/voice-protocol*.test.ts` | **A** | voice timing and configuration, capture-loop decisions, token fallback, turn state machine and adapter, shared transcription/output-gate lifecycle, curiosity and protocol regression tests |

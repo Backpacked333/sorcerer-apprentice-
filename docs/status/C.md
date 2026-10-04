@@ -33,6 +33,9 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 - Added bounded session projections, exact evidence checks, proposed role relationships
   and cancellable single-flight handoffs; no provider/model-owned memory or new storage.
+- Current foundation validation: 826 tests and typecheck pass after incorporating main's
+  voice retry/partial-speech fixes; ownership entries preserve both additions. No live
+  provider or human voice acceptance, merge, production promotion or remote-agent changes.
 - Focused memory tests and typecheck pass. Human/live-provider acceptance: not performed.
 - Next: wire background reasoning to Capture and profile compilation to Map without
   bypassing the governor or turning proposed relationships into executable rules.

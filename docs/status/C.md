@@ -29,6 +29,15 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Next 3 things
 
+### Memory integration foundation (Roy-authorized cross-lane scope; C1/M2)
+
+- Added bounded session projections, exact evidence checks, proposed role relationships
+  and cancellable single-flight handoffs; no provider/model-owned memory or new storage.
+- Focused memory tests and typecheck pass. Human/live-provider acceptance: not performed.
+- Next: wire background reasoning to Capture and profile compilation to Map without
+  bypassing the governor or turning proposed relationships into executable rules.
+- Live Gateway validation awaits credentials; no merge, deployment or remote agent changes.
+
 1. WC-1: flat model-facing schema, injected model call, eligible expert quotes, demonstrated replay and deterministic merge, preserving keyless fallback.
 2. WC-5 truthfulness fixes and slots/readiness; distinguish transport failure, semantic rejection and valid-empty output.
 3. Debrief/correction/confirmation and Teach integration in dependency order; use D's landed view-model seams, not JSX views.

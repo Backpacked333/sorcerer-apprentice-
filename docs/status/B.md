@@ -8,6 +8,8 @@ In progress on `B/durable-vercel-product` (not merged): Supabase + Vercel deploy
 
 ## Live deployment
 
+V4 release preparation: the focused hotfix is based on the live `c51b9f3` durable-storage revision, not plain main. The voice/Gateway credential blocker remains; presence-only health is not proof that a particular remote model ran. No new provider deployment is claimed until credentials, remote agent checks, and live requests pass.
+
 Production: [https://tacit-ai-apprentice.vercel.app](https://tacit-ai-apprentice.vercel.app), currently deployed from `ddc1cf1`. HTTP-only smoke checks verified public root/health access, reachable Supabase storage, cookie-workspace isolation, PNG/WebM uploads and private reads, and rejection of draft export/Teach creation. The health response reports voice and gateway integrations degraded/not configured.
 
 The production smoke exposed stale Storage CDN bytes after evidence withdrawal. The lead's direct HTTP diagnostics isolated the response to CDN caching; this branch adds a per-download `cacheNonce` with `no-store` and zero upload cache lifetime. The cache fix is **awaiting redeploy and live retest**; do not claim evidence-withdrawal cache behavior is resolved on the deployed build.

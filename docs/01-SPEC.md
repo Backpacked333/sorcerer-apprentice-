@@ -126,7 +126,7 @@ Interface principle: the work application stays dominant; the apprentice is a qu
 
 | ID | Requirement | Acceptance | Lanes |
 |---|---|---|---|
-| **S1** | ElevenAgents as interviewer **and** tutor, Expressive Mode, Scribe v2 Realtime | Both agents exist in the event account; TTS is Eleven v3 Conversational; Scribe engine badge reads "Scribe v2"; verified live | A |
+| **S1** | ElevenAgents as interviewer **and** tutor, Expressive Mode, Scribe v2 Realtime | Both agents exist in the event account; saved TTS model is `eleven_v4_turbo` for both (Roy's Oct 4 release requirement); Scribe engine badge reads "Scribe v2"; verified live | A |
 | **P1** | One moonshot slide and the path to it | The closing frame of the Demo and Tech videos (and slide 7 of the finalist deck); export + autopilot demoed as evidence | D, B |
 
 ### Non-functional (ours — they are what make the above true with a stranger driving)
@@ -172,7 +172,7 @@ flowchart TB
   end
   subgraph Ext["External"]
     GW["Vercel AI Gateway<br/>vision model · compile model"]
-    EA["ElevenAgents (WebRTC)<br/>Interviewer · Tutor<br/>Eleven v3 Conversational"]
+    EA["ElevenAgents (WebRTC)<br/>Interviewer · Tutor<br/>Eleven v4 Turbo"]
     SCR["Scribe v2 Realtime (WebSocket)"]
     KB["ElevenLabs knowledge base<br/>(confirmed Work Map as SOP)"]
   end
@@ -337,7 +337,7 @@ Consent screen before capture · designated **masks** painted on the canvas befo
 | Layer | Decision | Why |
 |---|---|---|
 | App | **Next.js 16** App Router, React 19, TypeScript, Tailwind 4, Zod 4 — one app, three pages + the sandbox ERP | It exists and works; the earlier "React + Vite + Node" suggestion is superseded (the V3 contract itself says keep a working stack) |
-| Voice | `@elevenlabs/react` — two ElevenAgents agents (Interviewer, Tutor), WebRTC, Eleven v3 Conversational (Expressive Mode) | Sponsor stack, required |
+| Voice | `@elevenlabs/react` — two ElevenAgents agents (Interviewer, Tutor), WebRTC, Eleven v4 Turbo | Sponsor stack, required; retain Expressive Mode configuration and verify provider behavior live |
 | STT / pauses | **Separate** Scribe v2 Realtime stream via `useScribe` + single-use token | The agent's mic is closed while she works, so the agent cannot provide the silence clock or the verbatim transcript — this is the "demonstrated need" for a second stream |
 | Agent LLM | A low-latency model (Flash/Haiku class) | The agent only phrases and listens; latency beats IQ |
 | Vision + compile | AI SDK 7 through the **Vercel AI Gateway** — one key, model = a slug in env | Swap models without code; fast multimodal for vision, strongest available for compile |

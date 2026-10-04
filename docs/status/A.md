@@ -1,3 +1,9 @@
+## Oct 4 · Off-record tool precedence [N2, C3]
+
+- Review found that answer-tool matching ignored `mark_off_record` while listening or closing. The privacy tool now takes precedence, yielding an empty aborted/off-record result, discarding the clip and preventing late transcript/answer events from restoring it.
+- Four new reducer-to-Capture outcome regressions failed before the fix and passed afterward: listening, closing a confirmed answer, closing typed input, and closing a timeout. No provider settings, V4 model, or storage code changed. Human/privacy UI acceptance is still outstanding.
+- The merged base now brings CaptureLoop, explicit human/agent transcript callbacks, and consent-safe recording into this branch. Local merge checks passed 532 tests, typecheck, build and diff validation. These real Capture changes are not yet deployed; the last checked production runtime remains `4d76c20`.
+
 ## Oct 4 · Active-exchange presence [C1-C3, M1-M3]
 
 - Both live agents now distinguish connection/repeat/time requests from unrelated background speech while a tagged question is pending. Warm, brief acknowledgments are allowed; `log_answer` speaks before saving (`pre_tool_speech=force`, `execution_mode=post_tool_speech`) and still awaits the result. No acknowledgment may claim the answer is correct or already saved. Idle/background silence and V4 Turbo remain unchanged.

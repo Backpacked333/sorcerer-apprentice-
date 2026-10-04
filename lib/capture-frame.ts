@@ -98,11 +98,12 @@ export interface SelfCaptureInput {
   trackHandle: string | null | undefined;
 }
 
-/** Is the capture this very tab? With the Capture Handle API, only our own handle proves it (a missing or foreign
- * handle is another surface, e.g. a same-window sibling /erp tab with the same aspect). Without it, the aspect
- * heuristic is trusted only for a workspace (preferCurrentTab) share; a plain tab-mode share is never self. */
+/** Is the capture this very tab? A handle on the captured surface is decisive: ours means self, any other
+ * (e.g. the standalone sandbox tabs set "sandbox:…") means another surface. With no handle (API missing, or the
+ * browser reports none for a self-capture) the aspect heuristic is trusted only for a workspace (preferCurrentTab)
+ * share; a plain tab-mode share is never self. */
 export function decideSelfCapture(i: SelfCaptureInput): boolean {
-  if (i.ownHandle && i.trackHandleApi) return i.surface === "browser" && i.trackHandle === i.ownHandle;
+  if (i.trackHandleApi && i.trackHandle) return i.surface === "browser" && !!i.ownHandle && i.trackHandle === i.ownHandle;
   return i.mode === "workspace" && isSelfCapture(i.surface, i.videoW, i.videoH, i.viewport);
 }
 

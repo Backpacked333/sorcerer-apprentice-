@@ -416,3 +416,13 @@ a.erp-nav-item.is-active:hover { background: rgba(255, 255, 255, .17); }
 html.erp-embedded .erp-main { padding-bottom: calc(var(--tacit-reserve-h, 0px) + 28px); }
 html.erp-embedded .erp-main .erp-card-flush,
 html.erp-embedded .erp-main .erp-approval-card { margin-right: max(0px, calc(var(--tacit-reserve-w, 0px) - 28px)); }
+html.erp-embedded .erp-main .erp-card-flush { container-type: inline-size; }
+@media (min-width: 681px) {
+  html.erp-embedded .erp-main .erp-approval-card { grid-template-columns: minmax(150px, 1fr) minmax(132px, auto) minmax(0, 1.6fr); }
+  /* The narrowed line-items card (≈570–720px): give the cost center and asset number their full width. */
+  @container (max-width: 760px) {
+    .erp-lines-head, .erp-line-row { grid-template-columns: 20px minmax(0, 2fr) minmax(0, 1fr) 128px 96px; gap: 10px; padding-left: 16px; padding-right: 16px; }
+    .erp-lines-head > * { white-space: nowrap; }
+    .erp-line-error { padding-left: 46px; }
+  }
+}

@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { getVercelOidcTokenSync } from "@vercel/oidc";
 import type { Act, Cond, InvoiceState } from "./workmap";
 
 export const RuleFieldSchema = z.enum(["amount", "category", "supplier", "entity", "invoiceMonth", "costCenter", "hasAssetNumber", "knownSupplier", "hasPO", "route", "status"]);
@@ -66,5 +67,10 @@ export function visibleState(state: z.infer<typeof VisionSchema>["state"]): Invo
 }
 
 export function gatewayConfigured(): boolean {
-  return !!(process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN);
+  if (process.env.AI_GATEWAY_API_KEY) return true;
+  try {
+    return Boolean(getVercelOidcTokenSync());
+  } catch {
+    return false;
+  }
 }

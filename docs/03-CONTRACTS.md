@@ -279,6 +279,7 @@ The default local backend stores JSON/media under `.data/<workspace>/`; producti
 | `ELEVENLABS_API_KEY` | server (A) | Scribe tokens, agent creation, KB sync. Server-side only. |
 | `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | client (A) | empty → browser-speech fallback |
 | `ELEVENLABS_VOICE_ID`, `AGENT_LLM` | `create-agents.ts` (A) | voice and agent LLM |
+| `ELEVENLABS_TTS_MODEL` | `create-agents.ts` (A) | optional assertion; only `eleven_v4_turbo` is accepted. Provisioning always sends V4 Turbo and verifies the saved model. |
 | `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile |
 | `VISION_MODEL`, `COMPILE_MODEL` | server (B, C) | gateway model slugs |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |

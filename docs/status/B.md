@@ -1,3 +1,13 @@
+## Oct 4 · V4 release deployment [S1]
+
+Deployed the focused V4/OIDC revision `ff1a7de` from live durable-storage base `c51b9f3` as `dpl_6wSbRyuyfSCV6Rb5HoZ4pzVxFaf1`, without introducing the newer integration branch's UI/voice changes. Production health reports voice and Gateway configured and Supabase reachable; Scribe token minting succeeds. The readiness fix uses `getVercelOidcTokenSync()` because Vercel supplies OIDC through request context, retains API-key/local-token support, and fails closed without credentials.
+
+Live HTTP checks used synthetic input, not customer data: vision returned 502; compile returned `llm: false` with the explicit provider error "Free tier users do not have access to this model. Upgrade to paid credits". Paid AI Gateway credits are required; configuration presence is not successful model execution. No human audio/UI acceptance is claimed.
+
+PR #44 was updated from `B/durable-vercel-product`; the sole conflict was Lane A status documentation, resolved by retaining the newer checkpoint plus the V4 verification addendum. The integrated branch passed `npm ci`, typecheck, 289 tests across 36 files, and a production build. Production remains pinned to the focused hotfix above, not this broader merge integration.
+
+The checkpoint below records earlier deployment evidence, not the current live provider status.
+
 # Lane B status
 
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._

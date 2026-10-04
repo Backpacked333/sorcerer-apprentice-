@@ -37,6 +37,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/governor.ts`, `lib/curiosity.ts`, `lib/capture-loop.ts`, `lib/capture-config.ts`, `lib/capture-config.test.ts`, `lib/scribe-token.test.ts`, `lib/voice-turn.ts`, `lib/voice-turn*.test.ts`, `lib/voice-turn-adapter.ts`, `lib/voice-connect.test.ts`, `lib/voice-output-gate.test.ts`, `lib/voice-hub.ts`, `lib/voice-hub.test.ts`, `lib/voice-protocol.ts`, `lib/voice-protocol*.test.ts` | **A** | voice timing and configuration, capture-loop decisions, token fallback, turn state machine and adapter, shared transcription/output-gate lifecycle, curiosity and protocol regression tests |
 | `lib/governor.demo.test.ts`, `lib/curiosity.classify.test.ts`, `lib/curiosity.queue.test.ts`, `lib/curiosity.narration.test.ts`, `lib/capture-loop.replay.test.ts` | **A** | WA-5 cadence, attribution, queue and replay regressions |
 | `lib/elevenlabs-sync.ts`, `lib/elevenlabs-sync.test.ts` | **A** | tutor knowledge-base sync and keyless regression tests |
+| `lib/agent-model.ts`, `lib/agent-model.test.ts` | **A** | V4 Turbo provisioning compatibility and remote model release gate |
 | `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
@@ -44,6 +45,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/store.ts`, `lib/request.ts`, `lib/store.durable.test.ts`, `lib/session-route.test.ts`, `lib/uploads.test.ts`, `lib/session-sync.test.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
 | `supabase/migrations/**`, `proxy.ts`, `lib/storage*.ts`, `lib/workspace*.ts`, `lib/session-sync*.ts`, `lib/media*.ts`, `lib/recording-consent*.ts`, `lib/health.test.ts` | **B** | durable workspace storage and transport |
 | `lib/model-contracts.ts`, `lib/confirmation.ts`, `lib/product.test.ts` | **C** | finite provider schemas and confirmed-map safety gates |
+| `lib/model-contracts.auth.test.ts` | **B** | Vercel runtime OIDC readiness regression |
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |

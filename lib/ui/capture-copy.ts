@@ -157,6 +157,17 @@ export interface HealthInput {
   source?: "vision" | "dom" | "both";
 }
 
+function eyeChip(i: HealthInput): { label: string; tone: ChipTone } {
+  if (i.degraded === "wrong_surface") return { label: "Wrong surface — no frames sent", tone: "amber" };
+  if (i.visionError) return { label: "Vision degraded", tone: "amber" };
+  if (i.sharing && i.source === "dom") return { label: "Screen shared · ERP telemetry only", tone: "neutral" };
+  const where = i.app.id === "claims" ? "the claims app" : "the ERP";
+  if (i.sharing && i.dropped > 0) return { label: `Seeing ${where} · ${i.dropped} skipped`, tone: "green" };
+  if (i.sharing) return { label: `Seeing ${where}`, tone: "green" };
+  if (i.app.telemetry) return { label: "ERP telemetry only", tone: "neutral" };
+  return { label: "No screen", tone: "neutral" };
+}
+
 export function healthItems(i: HealthInput): { label: string; tone: ChipTone }[] {
   if (!i.started) return [];
   const voice =
@@ -171,22 +182,7 @@ export function healthItems(i: HealthInput): { label: string; tone: ChipTone }[]
       : i.sttEngine === "webspeech"
         ? { label: "Browser STT (fallback)", tone: "amber" as const }
         : { label: "No transcript", tone: "neutral" as const };
-  const where = i.app.id === "claims" ? "the claims app" : "the ERP";
-  const eye =
-    i.degraded === "wrong_surface"
-      ? { label: "Wrong surface — no frames sent", tone: "amber" as const }
-      : i.visionError
-        ? { label: "Vision degraded", tone: "amber" as const }
-        : i.sharing && i.source === "dom"
-          ? { label: "Screen shared · ERP telemetry only", tone: "neutral" as const }
-        : i.sharing
-          ? i.dropped > 0
-            ? { label: `Seeing ${where} · ${i.dropped} skipped`, tone: "green" as const }
-            : { label: `Seeing ${where}`, tone: "green" as const }
-          : i.app.telemetry
-            ? { label: "ERP telemetry only", tone: "neutral" as const }
-            : { label: "No screen", tone: "neutral" as const };
-  const out = [voice, ear, eye];
+  const out = [voice, ear, eyeChip(i)];
   if (i.queued > 0) out.push({ label: `${i.queued} waiting`, tone: "amber" });
   return out;
 }
@@ -247,7 +243,7 @@ export function cardState(i: CardInput): CardState {
     queued: i.queued,
   });
   const linger = !i.window && !i.holding && !struck && within(understoodAgo, UNDERSTOOD_MS);
-  const mode: CardMode = i.window && !i.holding ? "ask" : linger ? "ask" : "capsule";
+  const mode: CardMode = (i.window && !i.holding) || linger ? "ask" : "capsule";
   const base = { mode, mood, understoodLinger: linger, struck };
   if (i.ending) return { ...base, mode: "capsule", title: "Saving the session…", sub: "The debrief starts with what's still unclear" };
   if (i.holding) return { ...base, title: "Paused", sub: "Press P or Resume to continue" };

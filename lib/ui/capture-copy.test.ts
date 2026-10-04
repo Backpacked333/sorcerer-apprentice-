@@ -99,6 +99,14 @@ describe("health chips", () => {
   it("is empty before start", () => {
     expect(healthItems({ ...h, started: false })).toEqual([]);
   });
+  it("eye chip keeps its precedence", () => {
+    const eye = (o: Partial<Parameters<typeof healthItems>[0]>) => healthItems({ ...h, ...o })[2];
+    expect(eye({ sharing: true, source: "dom", visionError: "x", degraded: "wrong_surface" })).toEqual({ label: "Wrong surface — no frames sent", tone: "amber" });
+    expect(eye({ sharing: true, source: "dom", visionError: "x" })).toEqual({ label: "Vision degraded", tone: "amber" });
+    expect(eye({ sharing: true, source: "dom", dropped: 3 })).toEqual({ label: "Screen shared · ERP telemetry only", tone: "neutral" });
+    expect(eye({ sharing: true, dropped: 3, app: captureApp("claims") })).toEqual({ label: "Seeing the claims app · 3 skipped", tone: "green" });
+    expect(eye({ sharing: true })).toEqual({ label: "Seeing the ERP", tone: "green" });
+  });
 });
 
 describe("cardState: moods only from real state", () => {

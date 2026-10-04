@@ -31,7 +31,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
   const [vw, setVw] = useState(1200);
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "");
 
-  const cam = useCamera({ viewRef, worldRef, onBgClick: () => (narrow ? setSel(null) : undefined) });
+  const cam = useCamera({ viewRef, worldRef, minK: 0.15, onBgClick: () => (narrow ? setSel(null) : undefined) });
   const ss = cam.ss;
 
   const roles = useMemo(() => data.roles.map((r) => (pos[r.id] ? { ...r, ...pos[r.id] } : r)), [data.roles, pos]);
@@ -43,11 +43,13 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
 
   const viewBox = useCallback((): Box => {
     const v = cam.view();
-    const right = inspDocked && data.roles.length ? inspW + 32 : 0;
-    const top = narrow ? 120 : 76;
+    // called from effects/handlers only; the shell's `narrow` lags one layout pass on first mount
+    const n = narrow || window.innerWidth < 900;
+    const right = !n && data.roles.length ? inspW + 32 : 0;
+    const top = n ? 190 : 76;
     const bottom = 126;
     // leave room for the open "Tacit suggests" card on wide canvases
-    const left = !narrow && data.suggestions.length && v.w - right > 900 ? 330 : 0;
+    const left = !n && data.suggestions.length && v.w - right > 900 ? 330 : 0;
     return { x: left, y: top, w: Math.max(200, v.w - right - left), h: Math.max(200, v.h - top - bottom) };
   }, [cam, inspDocked, inspW, narrow, data.roles.length, data.suggestions.length]);
 
@@ -67,7 +69,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
     const box = worldBox;
     const c = { x: box.x + box.w / 2, y: box.y + box.h / 2 };
     const b = box.w < 600 || box.h < 400 ? { x: c.x - 300, y: c.y - 200, w: 600, h: 400 } : box;
-    cam.fly(fitBox(b, viewBox(), 10, 1, 0.3), ms);
+    cam.fly(fitBox(b, viewBox(), 10, 1, 0.18), ms);
   }, [cam, viewBox, worldBox]);
 
   // Initial layout after mount (server renders the world hidden): measure, select, fit.
@@ -414,7 +416,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
       </div>
 
       {data.orgNote || data.unreadable ? (
-        <div style={{ position: "absolute", top: narrow ? 122 : 72, left: 16, maxWidth: 380, display: "flex", flexDirection: "column", gap: 6, pointerEvents: "none" }}>
+        <div style={{ position: "absolute", top: narrow ? 170 : 72, left: 16, maxWidth: "min(380px, calc(100% - 32px))", display: "flex", flexDirection: "column", gap: 6, pointerEvents: "none" }}>
           {data.orgNote ? <Note text={data.orgNote} /> : null}
           {data.unreadable ? <Note text={`${data.unreadable} session file${data.unreadable === 1 ? "" : "s"} could not be read and ${data.unreadable === 1 ? "is" : "are"} left out.`} /> : null}
         </div>

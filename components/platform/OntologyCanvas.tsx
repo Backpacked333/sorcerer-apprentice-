@@ -75,13 +75,15 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
     setRule(null);
     if (narrow) setSheet(false);
   }, [narrow]);
-  const cam = useCamera({ viewRef, worldRef, minK: 0.2, ssBase: 0, ssMax: 1, labelK: 0.42, onBgClick: clearAll });
+  const cam = useCamera({ viewRef, worldRef, minK: 0.15, ssBase: 0, ssMax: 1, labelK: 0.42, onBgClick: clearAll });
 
   const viewBox = useCallback((): Box => {
     const v = cam.view();
-    const right = narrow ? 0 : inspW + 32;
-    const left = narrow || v.w - right < 900 ? 0 : 300;
-    const top = narrow ? 124 : 76;
+    // called from effects/handlers only; the shell's `narrow` lags one layout pass on first mount
+    const n = narrow || window.innerWidth < 900;
+    const right = n ? 0 : inspW + 32;
+    const left = n || v.w - right < 900 ? 0 : 300;
+    const top = n ? 170 : 76;
     return { x: left, y: top, w: Math.max(200, v.w - right - left), h: Math.max(200, v.h - top - 126) };
   }, [cam, narrow, inspW]);
 
@@ -119,7 +121,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
       box = { x: x0 - 20, y: y0 - 20, w: x1 - x0 + 40, h: y1 - y0 + 40 };
     }
     const v = viewBox();
-    cam.fly(fitBox(box, v, 10, 1.1, v.w >= 700 ? 0.55 : 0.2), ms);
+    cam.fly(fitBox(box, v, 10, 1.1, v.w >= 700 ? 0.55 : 0.32), ms);
   }, [cam, nodes, mode, viewBox]);
 
   const traceTo = useCallback((id: string | null, fly = true) => {
@@ -446,7 +448,7 @@ export function OntologyCanvas({ ont, initialRule }: { ont: Ontology; initialRul
 
       {/* decision paths */}
       {ready && (ont.rules.length || nodes.length) ? (
-        <div style={{ position: "absolute", left: 16, top: narrow ? 72 : 76, bottom: 126, display: "flex", alignItems: "flex-start", maxWidth: "calc(100% - 32px)", pointerEvents: "none" }}>
+        <div style={{ position: "absolute", left: 16, top: narrow ? 122 : 76, bottom: 126, display: "flex", alignItems: "flex-start", maxWidth: "calc(100% - 32px)", pointerEvents: "none" }}>
           <div style={{ pointerEvents: "auto", maxHeight: "100%", display: "flex" }}>
             <DecisionPaths key={narrow ? "n" : "w"} ont={ont} t={ph.t} active={rule} onTrace={(id) => traceTo(id)} defaultOpen={!narrow && vw - inspW - 32 >= 900} />
           </div>

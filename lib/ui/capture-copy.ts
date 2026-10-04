@@ -256,7 +256,7 @@ export function cardState(i: CardInput): CardState {
   if (mood === "typing") return { ...base, title: "Quiet — you're typing", sub: "I won't interrupt while you type" };
   if (mood === "reading") return { ...base, title: "Quiet — you're reading", sub: "Reading isn't a pause · I'll wait" };
   if (mood === "pausing") return { ...base, title: "You paused…", sub: i.decision?.reasons?.[0] ? `Waiting — ${i.decision.reasons[0]}` : "Waiting to be sure" };
-  if (!i.watching) return { ...base, title: "Not watching", sub: "No screen shared and no ERP telemetry" };
+  if (!i.watching) return { ...base, title: "Not watching", sub: "No screen is shared" };
   if (i.queued > 0) return { ...base, title: "Quiet while you work", sub: `${i.queued} question${i.queued > 1 ? "s" : ""} waiting for a pause` };
   return { ...base, title: "Quiet while you work", sub: "Watching, saying nothing" };
 }

@@ -27,7 +27,8 @@ export function createSessionSync(sessionId: string, request: typeof fetch = fet
   const persist = async (snapshot: SessionLog): Promise<void> => {
     const payload = cloneLog(snapshot);
     for (const frame of payload.frames) {
-      if (!frame.dataUrl.startsWith("data:")) continue;
+      if (!frame.dataUrl) frame.dataUrl = frame.url;
+      if (!frame.dataUrl?.startsWith("data:")) continue;
       const existing = cached.get(frame.id);
       if (existing?.dataUrl === frame.dataUrl) {
         frame.dataUrl = existing.url;
@@ -47,7 +48,7 @@ export function createSessionSync(sessionId: string, request: typeof fetch = fet
       cached.set(frame.id, { dataUrl: snapshot.frames.find((candidate) => candidate.id === frame.id)?.dataUrl ?? "", url });
       frame.dataUrl = url;
     }
-    if (payload.frames.some((frame) => frame.dataUrl.startsWith("data:"))) throw new Error("frame data was not uploaded");
+    if (payload.frames.some((frame) => frame.dataUrl?.startsWith("data:"))) throw new Error("frame data was not uploaded");
     const response = await request(`/api/sessions/${encodeURIComponent(sessionId)}`, {
       method: "PUT",
       headers: { "content-type": "application/json" },

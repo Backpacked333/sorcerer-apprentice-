@@ -252,7 +252,79 @@ export function nextVoiceHubConnectionAction({ demanded, status }: { demanded: b
   return status === "disconnected" ? "none" : "disconnect";
 }
 
+export function routeWebSpeechResult(
+  hub: Pick<VoiceHubRouter, "partial" | "commit">,
+  result: { text: string; isFinal: true; atMs: number },
+): { kind: "commit"; routed: ReturnType<VoiceHubRouter["commit"]> };
+export function routeWebSpeechResult(
+  hub: Pick<VoiceHubRouter, "partial" | "commit">,
+  result: { text: string; isFinal: false; atMs: number },
+): { kind: "partial"; routed: ReturnType<VoiceHubRouter["partial"]> };
+export function routeWebSpeechResult(
+  hub: Pick<VoiceHubRouter, "partial" | "commit">,
+  result: { text: string; isFinal: boolean; atMs: number },
+) {
+  return result.isFinal
+    ? { kind: "commit" as const, routed: hub.commit(result.text, result.atMs) }
+    : { kind: "partial" as const, routed: hub.partial(result.text, result.atMs) };
+}
+
 const wordCount = (text: string) => text.match(/[\p{L}\p{N}]+(?:['’][\p{L}\p{N}]+)*/gu)?.length ?? 0;
+
+export function routeAgentAsrMessage({
+  text,
+  atMs,
+  timeline,
+  sessionStartMs,
+}: {
+  text: string;
+  atMs: number;
+  timeline: AgentSpeechTimeline;
+  sessionStartMs?: number;
+}): { human: boolean; text: string; at: number } {
+  const clean = text.trim();
+  const classified = classifySegment({ text: clean, tStart: atMs / 1_000, tEnd: atMs / 1_000 }, timeline);
+  const human = classified.kind === "human" || (classified.kind === "mixed" && wordCount(classified.text) >= 2);
+  return {
+    human,
+    text: human ? classified.text : "",
+    at: sessionStartMs === undefined ? atMs / 1_000 : Math.max(0, (atMs - sessionStartMs) / 1_000),
+  };
+}
+
+export function createTurnHubSubscriber({
+  sessionActive,
+  turnActive,
+  now,
+  dispatch,
+  noteHumanSpeech,
+}: {
+  sessionActive: boolean;
+  turnActive: boolean;
+  now: () => number;
+  dispatch: (event:
+    | { type: "HUMAN_PARTIAL"; at: number; text: string }
+    | { type: "HUMAN_COMMIT"; at: number; text: string; source: "scribe" }
+    | { type: "COMMAND"; at: number; command: "off_record" | "not_now" }) => void;
+  noteHumanSpeech: (at: number) => void;
+}): VoiceHubSubscriber {
+  return {
+    enabled: sessionActive || turnActive,
+    onPartial: (text) => {
+      const at = now();
+      noteHumanSpeech(at);
+      if (turnActive) dispatch({ type: "HUMAN_PARTIAL", at, text });
+    },
+    onCommitted: (text, _startSecs, endSecs) => {
+      const at = endSecs ?? now();
+      noteHumanSpeech(at);
+      if (turnActive) dispatch({ type: "HUMAN_COMMIT", at, text, source: "scribe" });
+    },
+    onCommand: (command) => {
+      if (turnActive && (command === "off_record" || command === "not_now")) dispatch({ type: "COMMAND", at: now(), command });
+    },
+  };
+}
 
 export class VoiceHubRouter {
   private readonly subscribers = new Map<string, () => VoiceHubSubscriber>();

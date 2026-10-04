@@ -7,8 +7,8 @@ import type { SessionLog } from "./events";
 import { getWorkspaceId } from "./workspace";
 import { WorkMapSchema, type WorkMap } from "./workmap";
 
-const DATA_DIR = path.join(process.cwd(), ".data");
-const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+export function dataDir(): string { return process.env.DATA_DIR ?? path.join(process.cwd(), ".data"); }
+const SAFE_ID = /^[\w-]{1,64}$/;
 const SUPABASE_BUCKET = process.env.SUPABASE_STORAGE_BUCKET || "tacit-media";
 
 export class StorageConfigError extends Error {
@@ -60,7 +60,7 @@ function db(): Supabase {
 }
 
 function assertId(value: string): void {
-  if (!SAFE_ID.test(value)) throw new InvalidIdError();
+  if (typeof value !== "string" || !SAFE_ID.test(value)) throw new InvalidIdError();
 }
 
 async function owner(): Promise<string> {
@@ -69,17 +69,32 @@ async function owner(): Promise<string> {
   return value;
 }
 
+async function resolveWorkspace(ws?: string): Promise<string> {
+  const current = await owner();
+  if (ws === undefined) return current;
+  assertId(ws);
+  if (ws !== current && (backend() !== "local" || !process.env.STORE_OWNER_ID)) throw new StorageConfigError();
+  return ws;
+}
+
+function validateSession(session: SessionLog | undefined, id: string): SessionLog | undefined {
+  if (session !== undefined && (!session || session.id !== id || !["capture", "teach"].includes(session.mode)
+    || !Number.isFinite(session.startedAt) || typeof session.task !== "string" || typeof session.expertName !== "string"
+    || (["events", "transcript", "windows", "frames", "offRecord"] as const).some((key) => !Array.isArray(session[key])))) throw new StorageDataError();
+  return session;
+}
+
 function localPath(workspace: string, ...parts: string[]): string {
   assertId(workspace);
   parts.forEach(assertId);
-  return path.join(DATA_DIR, workspace, ...parts);
+  return path.join(dataDir(), workspace, ...parts);
 }
 
 function localMediaPath(workspace: string, sessionId: string, kind: "frames" | "clips", id: string, extension: "jpg" | "png" | "webm"): string {
   assertId(workspace);
   assertId(sessionId);
   assertId(id);
-  return path.join(DATA_DIR, workspace, sessionId, kind, `${id}.${extension}`);
+  return path.join(dataDir(), workspace, sessionId, kind, `${id}.${extension}`);
 }
 
 async function readJson<T>(file: string): Promise<T | undefined> {
@@ -91,22 +106,42 @@ async function readJson<T>(file: string): Promise<T | undefined> {
   }
 }
 
-const locks = new Map<string, Promise<void>>();
-async function writeJson(file: string, data: unknown): Promise<void> {
-  const previous = locks.get(file) ?? Promise.resolve();
-  const next = previous.catch(() => {}).then(async () => {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    const temporary = `${file}.${process.pid}.${Math.random().toString(36).slice(2, 8)}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify(data));
-    await fs.rename(temporary, file);
-  });
+async function orMissing<T>(action: () => Promise<T>): Promise<T | undefined> {
+  try {
+    return await action();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    return undefined;
+  }
+}
+
+const locks = new Map<string, Promise<unknown>>();
+
+/** Atomic and serialized per file: a unique temp name, then rename, one writer at a time. */
+async function serialized<T>(file: string, action: () => Promise<T>): Promise<T> {
+  const prev = locks.get(file) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(action);
   locks.set(file, next);
   try {
-    await next;
+    return await next;
   } finally {
     if (locks.get(file) === next) locks.delete(file);
   }
 }
+
+async function atomicWrite(file: string, data: string | Uint8Array): Promise<void> {
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.${crypto.randomUUID()}.tmp`;
+  try {
+    await fs.writeFile(tmp, data);
+    await fs.rename(tmp, file);
+  } finally {
+    await orMissing(() => fs.unlink(tmp));
+  }
+}
+
+const writeJson = (file: string, data: unknown) => serialized(file, () => atomicWrite(file, JSON.stringify(data)));
+
 
 function mediaRefs(log: SessionLog): { frames: Set<string>; clips: Set<string> } {
   return {
@@ -166,9 +201,9 @@ export async function getSession(id: string): Promise<SessionLog | undefined> {
   if (backend() === "supabase") {
     const { data, error } = await db().from("sessions").select("data").eq("owner_id", workspace).eq("id", id).maybeSingle();
     if (error) throw error;
-    return (data?.data as SessionLog | undefined) ?? undefined;
+    return validateSession(data ? data.data as SessionLog : undefined, id);
   }
-  return readJson<SessionLog>(localPath(workspace, "sessions", id));
+  return validateSession(await readJson<SessionLog>(localPath(workspace, "sessions", id)), id);
 }
 
 export async function saveSession(session: SessionLog): Promise<void> {
@@ -201,7 +236,7 @@ export async function listSessions(): Promise<Pick<SessionLog, "id" | "mode" | "
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   }
-  const sessions = await Promise.all(files.filter((file) => SAFE_ID.test(file)).map((file) => readJson<SessionLog>(localPath(workspace, "sessions", file))));
+  const sessions = await Promise.all(files.filter((file) => SAFE_ID.test(file)).map(getSession));
   return sessions.filter((session): session is SessionLog => !!session)
     .map(({ id, mode, task, expertName, startedAt, endedAt }) => ({ id, mode, task, expertName, startedAt, endedAt }))
     .sort((a, b) => b.startedAt - a.startedAt);
@@ -253,8 +288,7 @@ async function saveObject(kind: "frames" | "clips", sessionId: string, id: strin
   } else {
     const extension = kind === "frames" ? "jpg" : "webm";
     const file = localMediaPath(workspace, sessionId, kind, id, extension);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, bytes);
+    await serialized(file, () => atomicWrite(file, bytes));
   }
   return key;
 }
@@ -286,15 +320,15 @@ export async function saveClip(sessionId: string, audioId: string, bytes: Uint8A
 export async function readClip(sessionId: string, audioId: string): Promise<Uint8Array | undefined> {
   return readObject("clips", sessionId, audioId);
 }
-export async function deleteClip(sessionId: string, audioId: string): Promise<void> {
+export async function deleteClip(sessionId: string, audioId: string): Promise<boolean> {
   const workspace = await owner();
   const key = objectPath(workspace, sessionId, "clips", audioId);
   if (backend() === "supabase") {
-    const { error } = await db().storage.from(SUPABASE_BUCKET).remove([key]);
+    const { data, error } = await db().storage.from(SUPABASE_BUCKET).remove([key]);
     if (error) throw error;
-    return;
+    return !!data?.length;
   }
-  await fs.rm(localMediaPath(workspace, sessionId, "clips", audioId, "webm"), { force: true });
+  return removeFile(localMediaPath(workspace, sessionId, "clips", audioId, "webm"));
 }
 export async function saveFrame(sessionId: string, frameId: string, bytes: Uint8Array, contentType: "image/jpeg" | "image/png" = "image/jpeg"): Promise<string> {
   const workspace = await owner();
@@ -305,8 +339,7 @@ export async function saveFrame(sessionId: string, frameId: string, bytes: Uint8
     if (error) throw error;
   } else {
     const file = localMediaPath(workspace, sessionId, "frames", frameId, extension);
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, bytes);
+    await serialized(file, () => atomicWrite(file, bytes));
   }
   return key;
 }
@@ -330,8 +363,8 @@ export async function allowRateLimit(bucket: string, limit: number, seconds: num
   return value.count <= limit;
 }
 
-export async function getErpState(): Promise<{ invoices: Invoice[]; guard: unknown | null }> {
-  const workspace = await owner();
+export async function getErpSnapshot(ws?: string): Promise<{ invoices: Invoice[]; guard: unknown | null }> {
+  const workspace = await resolveWorkspace(ws);
   if (backend() === "supabase") {
     const { data, error } = await db().from("erp_state").select("invoices,guard").eq("owner_id", workspace).maybeSingle();
     if (error) throw error;
@@ -340,8 +373,8 @@ export async function getErpState(): Promise<{ invoices: Invoice[]; guard: unkno
   return (await readJson<{ invoices: Invoice[]; guard: unknown | null }>(localPath(workspace, "erp"))) ?? { invoices: [], guard: null };
 }
 
-export async function saveErpState(state: { invoices: Invoice[]; guard: unknown | null }): Promise<void> {
-  const workspace = await owner();
+export async function saveErpSnapshot(state: { invoices: Invoice[]; guard: unknown | null }, ws?: string): Promise<void> {
+  const workspace = await resolveWorkspace(ws);
   if (backend() === "supabase") {
     const { error } = await db().from("erp_state").upsert({ owner_id: workspace, invoices: state.invoices, guard: state.guard }, { onConflict: "owner_id" });
     if (error) throw error;
@@ -365,8 +398,8 @@ export async function saveErpInvoices(invoices: Invoice[]): Promise<void> {
     }
     return;
   }
-  const state = await getErpState();
-  await saveErpState({ ...state, invoices });
+  const state = await getErpSnapshot();
+  await saveErpSnapshot({ ...state, invoices });
 }
 
 export async function saveErpGuard(guard: unknown | null): Promise<void> {
@@ -384,8 +417,8 @@ export async function saveErpGuard(guard: unknown | null): Promise<void> {
     }
     return;
   }
-  const state = await getErpState();
-  await saveErpState({ ...state, guard });
+  const state = await getErpSnapshot();
+  await saveErpSnapshot({ ...state, guard });
 }
 
 export async function patchErpInvoice(id: string, patch: Partial<Invoice>): Promise<Invoice | undefined> {
@@ -396,14 +429,156 @@ export async function patchErpInvoice(id: string, patch: Partial<Invoice>): Prom
     if (error) throw error;
     return (data as Invoice | null) ?? undefined;
   }
-  const state = await getErpState();
+  const state = await getErpSnapshot();
   const invoice = state.invoices.find((item) => item.id === id);
   if (!invoice) return undefined;
   Object.assign(invoice, patch);
-  await saveErpState(state);
+  await saveErpSnapshot(state);
   return invoice;
 }
 
 export function storageBackend(): Backend {
   return backend();
+}
+
+const removeFile = (file: string) => serialized(file, async () => (await orMissing(async () => { await fs.unlink(file); return true; })) ?? false);
+
+export async function deleteFrame(sessionId: string, frameId: string): Promise<boolean> {
+  const workspace = await owner();
+  const keys = ["jpg", "png"].map((ext) => objectPath(workspace, sessionId, "frames", frameId, ext));
+  if (backend() === "supabase") {
+    const { data, error } = await db().storage.from(SUPABASE_BUCKET).remove(keys);
+    if (error) throw error;
+    return !!data?.length;
+  }
+  const removed = await Promise.all((["jpg", "png"] as const).map((ext) => removeFile(localMediaPath(workspace, sessionId, "frames", frameId, ext))));
+  return removed.some(Boolean);
+}
+
+export async function deleteFrames(sessionId: string, ids: string[]): Promise<void> {
+  assertId(sessionId); ids.forEach(assertId);
+  await Promise.all(ids.map((id) => deleteFrame(sessionId, id)));
+}
+
+export async function deleteClips(sessionId: string, ids: string[]): Promise<void> {
+  assertId(sessionId); ids.forEach(assertId);
+  await Promise.all(ids.map((id) => deleteClip(sessionId, id)));
+}
+
+export async function listFrameIds(sessionId: string): Promise<string[]> {
+  assertId(sessionId);
+  const workspace = await owner();
+  let names: string[];
+  if (backend() === "supabase") {
+    names = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await db().storage.from(SUPABASE_BUCKET).list(`${workspace}/${sessionId}/frames`, { limit: 1000, offset });
+      if (error) throw error;
+      names.push(...data.map((item) => item.name));
+      if (data.length < 1000) break;
+    }
+  } else names = await orMissing(() => fs.readdir(path.join(dataDir(), workspace, sessionId, "frames"))) ?? [];
+  return [...new Set(names.filter((name) => /^[\w-]{1,64}\.(jpg|png)$/.test(name)).map((name) => name.slice(0, -4)))].sort();
+}
+
+export async function getErpState(ws?: string): Promise<Invoice[] | undefined> {
+  const workspace = await resolveWorkspace(ws);
+  let value: unknown;
+  if (backend() === "supabase") {
+    const { data, error } = await db().from("erp_state").select("invoices").eq("owner_id", workspace).maybeSingle();
+    if (error) throw error;
+    value = data?.invoices;
+  } else {
+    const state = await readJson<ErpState>(localPath(workspace, "erp"));
+    if (state !== undefined && (!state || !Array.isArray(state.invoices))) throw new StorageDataError();
+    value = state?.invoices;
+  }
+  if (value !== undefined && (!Array.isArray(value) || value.some((invoice) => !invoice || typeof invoice !== "object" || Array.isArray(invoice)))) throw new StorageDataError();
+  return value as Invoice[] | undefined;
+}
+
+export async function saveErpState(invoices: Invoice[], ws?: string): Promise<void> {
+  const workspace = await resolveWorkspace(ws);
+  if (backend() === "supabase") {
+    const { error } = await db().rpc("tacit_set_invoices", { p_owner: workspace, p_invoices: invoices });
+    if (error) throw error;
+  } else {
+    const file = localPath(workspace, "erp");
+    await serialized(file, async () => {
+      const state = await readJson<ErpState>(file);
+      await atomicWrite(file, JSON.stringify({ invoices, guard: state?.guard ?? null }));
+    });
+  }
+}
+
+export interface GuardRecord { mapSessionId: string; teachSessionId: string; armedAt: number; expiresAt: number }
+type Guards = Record<string, GuardRecord & { sequence?: number }>;
+
+function validateGuards(value: unknown): Guards {
+  if (value === undefined) return {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new StorageDataError();
+  for (const [id, g] of Object.entries(value as Guards)) {
+    if (!g || g.teachSessionId !== id || !Number.isFinite(g.armedAt) || !Number.isFinite(g.expiresAt) || g.expiresAt < g.armedAt) throw new StorageDataError();
+    if (g.sequence !== undefined && (!Number.isSafeInteger(g.sequence) || g.sequence < 1)) throw new StorageDataError();
+    assertId(id); assertId(g.mapSessionId);
+  }
+  return value as Guards;
+}
+
+async function readGuards(workspace: string): Promise<Guards> {
+  if (backend() === "supabase") {
+    const { data, error } = await db().from("teach_guards").select("data,sequence").eq("owner_id", workspace);
+    if (error) throw error;
+    return validateGuards(Object.fromEntries((data ?? []).map((row) => [row.data.teachSessionId, { ...row.data, sequence: row.sequence }])));
+  }
+  return validateGuards(await readJson(localPath(workspace, "guards")));
+}
+
+export async function getGuard(teachSessionId?: string, ws?: string): Promise<GuardRecord | undefined> {
+  if (teachSessionId !== undefined) assertId(teachSessionId);
+  const guards = await readGuards(await resolveWorkspace(ws));
+  const guard = Object.values(guards).filter((g) => g.expiresAt > Date.now() && (teachSessionId === undefined || g.teachSessionId === teachSessionId))
+    .sort((a, b) => b.armedAt - a.armedAt || (b.sequence ?? 0) - (a.sequence ?? 0))[0];
+  return guard && { mapSessionId: guard.mapSessionId, teachSessionId: guard.teachSessionId, armedAt: guard.armedAt, expiresAt: guard.expiresAt };
+}
+
+export async function saveGuard(g: { mapSessionId: string; teachSessionId: string; ttlMs?: number }, ws?: string): Promise<GuardRecord> {
+  const { mapSessionId, teachSessionId } = g;
+  assertId(mapSessionId); assertId(teachSessionId);
+  const ttl = g.ttlMs ?? 30 * 60 * 1000;
+  if (!Number.isFinite(ttl) || ttl < 0) throw new StorageDataError();
+  const workspace = await resolveWorkspace(ws);
+  const file = localPath(workspace, "guards");
+  return serialized(file, async () => {
+    const armedAt = Date.now();
+    const record = { mapSessionId, teachSessionId, armedAt, expiresAt: armedAt + ttl };
+    if (backend() === "supabase") {
+      const { error } = await db().rpc("tacit_save_guard", { p_owner: workspace, p_data: record });
+      if (error) throw error;
+    } else {
+      const guards = await readGuards(workspace);
+      const sequence = Object.values(guards).reduce((max, guard) => Math.max(max, guard.sequence ?? 0), 0) + 1;
+      if (!Number.isSafeInteger(sequence)) throw new StorageDataError();
+      await atomicWrite(file, JSON.stringify({ ...guards, [teachSessionId]: { ...record, sequence } }));
+    }
+    return record;
+  });
+}
+
+export async function clearGuard(teachSessionId?: string, ws?: string): Promise<void> {
+  if (teachSessionId !== undefined) assertId(teachSessionId);
+  const workspace = await resolveWorkspace(ws);
+  const file = localPath(workspace, "guards");
+  await serialized(file, async () => {
+    if (backend() === "supabase") {
+      let query = db().from("teach_guards").delete().eq("owner_id", workspace);
+      if (teachSessionId !== undefined) query = query.eq("teach_session_id", teachSessionId);
+      const { error } = await query;
+      if (error) throw error;
+    } else {
+      const guards = await readGuards(workspace);
+      if (teachSessionId !== undefined) delete guards[teachSessionId];
+      await atomicWrite(file, JSON.stringify(teachSessionId === undefined ? {} : guards));
+    }
+  });
 }

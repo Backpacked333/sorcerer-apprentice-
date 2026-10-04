@@ -37,3 +37,12 @@ Real-provider configuration and a human wearing headphones for the competition a
 ## Risks I see for the demo
 
 Real-provider connectivity, voice timing, and the rendered UI have not been manually verified. Vercel log-drain configuration has not been checked.
+
+## Latest main integration (Oct 4)
+
+- User approved retaining Supabase + Vercel while integrating the newer main branch.
+- Preserved voice turn adapter, bounded/grounded vision, PII masks, compiler module split, seed boot safety and smoke gate.
+- Adapted the upstream store contracts to private durable workspaces, including atomic local media and per-teach-session guard records. Added a follow-up Supabase migration.
+- Health reports storage reachability independently from provider configuration; private samples are created per visitor, not shared globally.
+- Current integration: 472 tests passed before final health/smoke adjustments. Final build, smoke and production redeployment pending.
+- Real provider/human timing acceptance remains unverified. No competition-readiness claim.

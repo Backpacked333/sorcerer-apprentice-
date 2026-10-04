@@ -3,7 +3,7 @@
  * never share invoices or teach guards.
  */
 import { seedInvoices, toInvoiceState, type Invoice, type Queue } from "./erp-model";
-import { getMap, getSession, getErpState, patchErpInvoice, saveErpGuard, saveErpInvoices, saveErpState } from "./store";
+import { getMap, getSession, getErpSnapshot, patchErpInvoice, saveErpGuard, saveErpInvoices, saveErpSnapshot } from "./store";
 import { saveVerdict, type SaveVerdict } from "./matcher";
 
 export * from "./erp-model";
@@ -21,12 +21,12 @@ export async function armTeachGuard(guard: Omit<TeachGuard, "armedAt">): Promise
 }
 
 export async function disarmTeachGuard(): Promise<void> {
-  const state = await getErpState();
+  const state = await getErpSnapshot();
   if (state.guard !== null) await saveErpGuard(null);
 }
 
 export async function getTeachGuard(): Promise<TeachGuard | null> {
-  const state = await getErpState();
+  const state = await getErpSnapshot();
   return state.guard && typeof state.guard === "object" ? state.guard as TeachGuard : null;
 }
 
@@ -45,7 +45,7 @@ export async function checkSave(inv: Invoice, patch: InvoicePatch): Promise<Save
 }
 
 async function load(): Promise<Invoice[]> {
-  const state = await getErpState();
+  const state = await getErpSnapshot();
   if (state.invoices.length) return state.invoices;
   const invoices = seedInvoices();
   await saveErpInvoices(invoices);
@@ -69,7 +69,7 @@ export async function patchInvoice(id: string, patch: InvoicePatch): Promise<Inv
 }
 
 export async function resetErp(queue?: Queue): Promise<Invoice[]> {
-  const state = await getErpState();
+  const state = await getErpSnapshot();
   const fresh = seedInvoices();
   const invoices = queue
     ? (state.invoices.length ? state.invoices : fresh).map((invoice) => invoice.queue === queue ? fresh.find((next) => next.id === invoice.id) ?? invoice : invoice)

@@ -4,8 +4,16 @@ export interface VoiceTurnAdapterPorts {
   now: () => number;
   agentConnected: () => boolean;
   applyEffect: (effect: TurnEffect, generation: number) => void | Promise<void>;
+  onState?: (state: TurnState) => void;
   onPhase?: (phase: TurnState["phase"], at: number) => void;
   onError?: (error: unknown) => void;
+}
+
+export function stopAndClearMediaStream(ref: { current: { getTracks(): ArrayLike<{ stop(): void }> } | null }): void {
+  const stream = ref.current;
+  ref.current = null;
+  if (!stream) return;
+  for (const track of Array.from(stream.getTracks())) track.stop();
 }
 
 export class VoiceTurnAdapter {
@@ -19,6 +27,7 @@ export class VoiceTurnAdapter {
   snapshot() { return this.state; }
   currentGeneration() { return this.generation; }
   isSquelched() { return this.squelched; }
+  authorizeLegacy() { this.squelched = false; }
 
   turn(options: TurnOptions): Promise<TurnResult> {
     const generation = ++this.generation;
@@ -42,9 +51,10 @@ export class VoiceTurnAdapter {
     const previous = this.state;
     const transition = reduceTurn(previous, event);
     this.state = transition.state;
+    try { this.ports.onState?.(this.state); } catch (error) { this.ports.onError?.(error); }
     if (previous.phase !== this.state.phase) {
-      this.ports.onPhase?.(this.state.phase, event.at);
-      (this.state.options ?? previous.options)?.onPhase?.(this.state.phase, event.at);
+      try { this.ports.onPhase?.(this.state.phase, event.at); } catch (error) { this.ports.onError?.(error); }
+      try { (this.state.options ?? previous.options)?.onPhase?.(this.state.phase, event.at); } catch (error) { this.ports.onError?.(error); }
     }
     for (const effect of transition.effects) {
       if (effect.type === "SQUELCH") this.squelched = true;

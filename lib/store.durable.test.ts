@@ -148,7 +148,7 @@ describe("workspace durable store", () => {
     await store.saveSession(session);
     const map = emptyMap("s_1", "task", "expert");
     await store.saveMap(map);
-    await store.saveErpState({ invoices: [], guard: { teachSessionId: "t_1" } });
+    await store.saveErpSnapshot({ invoices: [], guard: { teachSessionId: "t_1" } });
     await store.saveErpInvoices([seedInvoices()[0]]);
     await store.saveErpGuard({ teachSessionId: "t_2" });
     const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);
@@ -162,15 +162,15 @@ describe("workspace durable store", () => {
     expect(await store.getSession("s_1")).toBeUndefined();
     expect(await store.getMap("s_1")).toBeUndefined();
     expect(await store.readFrame("s_1", "f_1")).toBeUndefined();
-    expect(await store.getErpState()).toEqual({ invoices: [], guard: null });
+    expect(await store.getErpSnapshot()).toEqual({ invoices: [], guard: null });
 
     cookie.value = ownerA;
     expect((await store.getSession("s_1"))?.frames).toHaveLength(1);
     expect((await store.getMap("s_1"))?.revision).toBe(1);
     expect(await store.readFrame("s_1", "f_1")).toEqual(bytes);
     expect(await store.readClip("s_1", "a_1")).toEqual(clip);
-    expect((await store.getErpState()).guard).toEqual({ teachSessionId: "t_2" });
-    expect((await store.getErpState()).invoices).toHaveLength(1);
+    expect((await store.getErpSnapshot()).guard).toEqual({ teachSessionId: "t_2" });
+    expect((await store.getErpSnapshot()).invoices).toHaveLength(1);
 
     const otherWorkspaceClip = new Uint8Array([0x1a, 0x45, 0xdf, 0xa4]);
     cookie.value = ownerB;

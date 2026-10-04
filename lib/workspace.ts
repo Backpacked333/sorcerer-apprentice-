@@ -39,3 +39,5 @@ export async function getWorkspaceId(): Promise<string> {
 export function isWorkspaceId(value: string): boolean {
   return WORKSPACE_PATTERN.test(value);
 }
+
+export const currentWorkspace = getWorkspaceId;

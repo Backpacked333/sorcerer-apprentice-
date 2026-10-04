@@ -33,6 +33,7 @@ export const QuoteSchema = z.object({
   audioId: z.string().optional(),
   source: z.enum(["live", "narration", "debrief", "counterfactual"]),
   translation: z.string().optional(),
+  evidence: z.enum(["demonstrated", "described"]).optional(),
 });
 export type Quote = z.infer<typeof QuoteSchema>;
 
@@ -98,7 +99,7 @@ export const RuleSchema = z.object({
   when: CondSchema,
   then: ActSchema,
   unless: CondSchema.optional(),
-  stopAndAsk: z.object({ who: z.string(), when: CondSchema }).optional(),
+  stopAndAsk: z.object({ who: z.string().optional(), when: CondSchema, quote: QuoteSchema.optional() }).optional(),
   quotes: z.array(QuoteSchema).default([]),
   confidence: z.enum(["high", "medium", "low"]).default("medium"),
   confirmedBy: z.array(z.enum(["live", "counterfactual", "debrief", "teachback"])).default([]),
@@ -124,6 +125,7 @@ export const WorkMapSchema = z.object({
   steps: z.array(StepSchema),
   rules: z.array(RuleSchema),
   slots: z.array(SlotSchema),
+  seen: z.object({ categories: z.array(z.string()), entities: z.array(z.string()), suppliers: z.array(z.string()) }).optional(),
   privacy: z.object({
     framesSeen: z.number().default(0),
     framesKept: z.number().default(0),

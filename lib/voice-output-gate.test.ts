@@ -3,12 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import {
   applyConversationGate,
   createSpeechAuthorizationLatch,
+  startTaggedTurn,
   installElevenLabsPlaybackGate,
   isElevenLabsRemoteStreamAudio,
   type RemoteStreamAudio,
 } from "@/components/voice";
 import { evaluateSilenceSoak } from "@/app/voice-check/VoiceCheck";
-import { gateState } from "@/lib/voice-turn";
+import { composedVoiceGateState, gateState } from "@/lib/voice-turn";
+import { VoiceTurnAdapter } from "@/lib/voice-turn-adapter";
 
 function remoteAudio(volume = 1): RemoteStreamAudio {
   return {
@@ -86,6 +88,33 @@ describe("ElevenLabs playback gate", () => {
 });
 
 describe("speech authorization latch", () => {
+  it("clears a stale legacy timeout only when an explicit tagged turn starts", async () => {
+    vi.useFakeTimers();
+    const latch = createSpeechAuthorizationLatch();
+    latch.authorize();
+    vi.advanceTimersByTime(8_000);
+    latch.onMode("speaking");
+    expect(latch.snapshot().timeoutSquelched).toBe(true);
+
+    let now = 10;
+    const adapter = new VoiceTurnAdapter({ now: () => now, agentConnected: () => true, applyEffect: () => {} });
+    const result = startTaggedTurn(latch, adapter, { tag: "ASK", text: "What changed?", listen: true });
+    expect(latch.snapshot().timeoutSquelched).toBe(false);
+    expect(composedVoiceGateState({
+      turnPhase: adapter.snapshot().phase,
+      legacyAuthorized: latch.snapshot().authorized,
+      now: Date.now(),
+      gateHoldUntil: 0,
+      micMuted: true,
+      squelch: adapter.isSquelched() || latch.snapshot().timeoutSquelched,
+    })).toBe(true);
+
+    now = 11;
+    adapter.cancel("user");
+    await expect(result).resolves.toMatchObject({ abortReason: "user" });
+    vi.useRealTimers();
+  });
+
   it("times out pending authorization after eight seconds and resumes heartbeat", () => {
     vi.useFakeTimers();
     const timedOut = vi.fn();

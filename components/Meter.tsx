@@ -1,7 +1,7 @@
 "use client";
 
 import type { Decision } from "@/lib/governor";
-import { Presence } from "./ui/Presence";
+import { PresenceDot } from "./ui/Presence";
 
 export function Meter({ decision, questions, budget }: { decision?: Decision; questions: number; budget: number }) {
   const l = decision?.lights;
@@ -10,7 +10,7 @@ export function Meter({ decision, questions, budget }: { decision?: Decision; qu
   return (
     <div className="panel p-4">
       <div className="flex items-center gap-3" role="status" aria-live="polite" aria-atomic="true">
-        <Presence state={state} />
+        <PresenceDot state={state} />
         <div><p className="text-sm font-medium">{label}</p><p className="mt-0.5 text-sm text-muted">{state === "answering" ? "An answer window is open." : "A little space to think."}</p></div>
       </div>
       <details className="mt-4 border-t border-line pt-3 text-sm text-muted">

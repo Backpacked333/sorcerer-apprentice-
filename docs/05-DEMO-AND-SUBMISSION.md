@@ -18,7 +18,7 @@ Our demo is that paragraph, beat for beat, plus the five Apprentice Test answers
 | 4 | Done → debrief asks ≥ 3 things not answered live ("Is that for every supplier, and who decides when to release it?") | Map: debrief closes gaps | M1 A3 | C (slots), A (voice) |
 | 5 | Teach-back < 60 s → judge corrects one detail → changed sentence re-read → "yes" → bar locks | Map: teach-back the expert confirms | M2 A3 | C (patch), A (voice) |
 | 6 | Click through the Work Map: steps, judgment calls, guardrails, each with frame + verbatim quote | Map: every step and guardrail links to a screen moment and her words | M3 | C (data), D (view), B (frames) |
-| 7 | New hire opens 4490 (€7,200), leaves opex, reaches for Save → "Sabine would stop here. Why do you think?" → replay of her still + her voice → they fix it | Teach: unseen case, caught before save, expert's reasoning | T1 T2 | C (matcher/guard), A (voice), B (events) |
+| 7 | New hire opens 4490 (€7,200), picks the opex code, and goes for Post → "Sabine would stop here. Why do you think?" → replay of the still and the voice → they fix it | Teach: unseen case, caught before save, expert's reasoning | T1 T2 | C (matcher/guard), A (voice), B (events) |
 | 8 | 4491 passes untouched (tutor quiet: the hold is Bäcker-only) → independent case 4493 → outcome card | Teach: learned the boundary; can handle a new case alone | T3 A4 | C |
 | + | One click: `policy.json` → agent runs the routine queue and halts on the unknown supplier | Stretch: agent-ready guardrails → the moonshot | X1 P1 | B |
 
@@ -55,9 +55,11 @@ Then open `/api/erp/reset?queue=expert` and `/api/erp/reset?queue=newhire`, hard
 
 | Invoice | What you do on screen | Why (say it in your own words, differently each run) | Guardrails you reveal *when asked* |
 |---|---|---|---|
+| **4470** Schmidt, €640 cleaning | Nothing to change — post it | A routine invoice. Say you are posting it as coded. | — |
 | **4471** Müller, €7,850 CNC spindle | Change cost center **4711 → 0400** | Equipment over €5,000 is always capex | No asset number, no capex booking. Unknown supplier: stop and ask the controller. |
 | **4472** Novak s.r.o. (Czech subsidiary), €2,300 freight | Set approval route to **second approval** | Anything from a subsidiary needs a second signature | Intercompany invoices are never approved alone; the group controller signs. |
 | **4473** Bäcker, €1,180, dated Dec 2 | Put it **on hold** | This supplier double-bills every December | Held until matched against November; only Sabine or the AP lead releases it. **Only Bäcker — not every supplier.** |
+| **4474** Hartmann, €1,460 bench vise | Nothing to change — post it | A routine invoice. Say you are posting it as coded. | — |
 
 Debrief answers to have ready (answer naturally, never recite):
 
@@ -72,8 +74,8 @@ Debrief answers to have ready (answer naturally, never recite):
 
 ### Lena — new hire, started Monday
 
-- **4490** (€7,200 hydraulic press controller): leave the cost center on 4711 and go for **Save**. When the tutor asks why Sabine would stop, guess out loud (*"because it's expensive?"*). Watch the replay. Fix it to 0400. If asked about the asset number, say you would ask.
-- **4491** (Schmidt cleaning, Dec 4): just approve it. The tutor should stay quiet (or briefly confirm): the December hold is Bäcker-only.
+- **4490** (€7,200 hydraulic press controller): pick 4711, the opex code, and go for **Post**. When the tutor asks why Sabine would stop, guess out loud (*"because it's expensive?"*). Watch the replay. Fix it to 0400. If asked about the asset number, say you would ask.
+- **4491** (Schmidt cleaning, Dec 4): pick 4300 and post. The tutor should stay quiet (or briefly confirm): the December hold is Bäcker-only.
 - **4492** (credit note): open it. The tutor either quotes what Sabine said in the debrief, or says nobody taught it and flags it — it never guesses.
 - **4493 / 4494** (independent): do them alone. The tutor is silent; the guard is the only backstop. Try to get them right.
 - End the session → read the outcome card aloud.
@@ -84,7 +86,7 @@ Debrief answers to have ready (answer naturally, never recite):
 
 | Time | What happens | What we say (one line, max) | On screen proof |
 |---|---|---|---|
-| 0:00 | Capture page. Consent tick, Start, share the ERP tab. | "It stays quiet until she pauses." | Governor lights: red while she types/talks |
+| 0:00 | Capture page. Consent tick, Start. Open 4470. Nothing to change — post it. The apprentice stays quiet. | "The routine one teaches the hands, not a rule." | Presence stays quiet |
 | 0:30 | Sabine opens 4471, changes 4711 → 0400, stops. Lights go green. Voice: *"You moved 4471 from 4711 to 0400. What made you do that?"* She answers. | — (let the voice land) | Event badge `seen`; quote card pinned to the frame |
 | 1:30 | 4472 → second approval. At the pause: *"Is there a kind of invoice you would never approve alone?"* | "That one was a guardrail question — it asks for the limit, not the click." | Candidate queue: `limit` picked |
 | 2:30 | 4473 → hold. Mid-explanation: "…scratch that." | "Off the record is a mechanism, not a promise." | Red struck band; ledger "seconds struck" ticks |

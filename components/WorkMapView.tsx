@@ -3,37 +3,36 @@
 import { useMemo, useState } from "react";
 import type { Frame } from "@/lib/events";
 import { describeAct, describeCond, type Rule, type Step, type WorkMap } from "@/lib/workmap";
+import { dedupeConfirmedBy, frameSrc } from "@/lib/ui/mapview";
+import { FrameThumb } from "@/components/ui/FrameThumb";
 
 /**
  * The clickable timeline: every step shows the screen moment, the decision, the reason in the expert's words
  * and the guardrails around it. The expert can delete anything before confirming.
  */
-export function WorkMapView({ map, frames, sessionId, onChange, editable }: { map: WorkMap; frames: Frame[]; sessionId: string; onChange: (m: WorkMap) => void; editable: boolean }) {
+export function WorkMapView({ map, frames, sessionId, onChange, editable, matrix }: { map: WorkMap; frames: Frame[]; sessionId: string; onChange: (m: WorkMap) => void; editable: boolean; matrix?: { stepId: string; cells: { key: string; word: string }[] }[] | null }) {
   const steps = useMemo(() => [...map.steps].sort((a, b) => a.index - b.index), [map.steps]);
   const [selectedId, setSelectedId] = useState<string | null>(steps.find((s) => s.judgment)?.id ?? steps[0]?.id ?? null);
   const selected = steps.find((s) => s.id === selectedId) ?? steps[0];
   const frameOf = (s?: Step) => (s?.screenMoment.frameId ? frames.find((f) => f.id === s.screenMoment.frameId) : undefined);
   const ruleOf = (s?: Step): Rule | undefined => (s ? map.rules.find((r) => r.stepId === s.id) : undefined);
 
-  const save = async (next: WorkMap) => {
-    onChange(next);
-    await fetch(`/api/sessions/${sessionId}/map`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(next) });
-  };
   const deleteStep = (id: string) => {
     const next = { ...map, steps: map.steps.filter((s) => s.id !== id).map((s, i) => ({ ...s, index: i })), rules: map.rules.filter((r) => r.stepId !== id), slots: map.slots.filter((s) => s.stepId !== id) };
-    void save(next);
+    onChange(next);
     setSelectedId(null);
   };
   const deleteQuote = (stepId: string) => {
     const next = { ...map, steps: map.steps.map((s) => (s.id === stepId ? { ...s, reason: undefined } : s)) };
-    void save(next);
+    onChange(next);
   };
   const deleteGuardrail = (stepId: string, grId: string) => {
     const next = { ...map, steps: map.steps.map((s) => (s.id === stepId ? { ...s, guardrails: s.guardrails.filter((g) => g.id !== grId) } : s)) };
-    void save(next);
+    onChange(next);
   };
 
   const frame = frameOf(selected);
+  const src = frameSrc(frame);
   const rule = ruleOf(selected);
   const explanations = steps.filter((s) => s.reason?.text).length;
   const guardrails = steps.reduce((n, s) => n + s.guardrails.length, 0);
@@ -76,7 +75,7 @@ export function WorkMapView({ map, frames, sessionId, onChange, editable }: { ma
       </nav>
 
       {selected ? (
-        <div className="min-w-0 space-y-5 break-words">
+        <div className="min-w-0 space-y-5 break-words" id={`step-${selected.id}`}>
           <div className="grid gap-5 min-[1600px]:grid-cols-2">
             <div className="panel min-w-0 p-6">
               <p className="panel-title">Decision</p>
@@ -86,6 +85,7 @@ export function WorkMapView({ map, frames, sessionId, onChange, editable }: { ma
               {selected.reason ? (
                 <blockquote className="mt-3 border-l-2 border-amber pl-4 text-base leading-relaxed">
                   “{selected.reason.text}”
+                  {selected.reason.translation && <p className="mt-2 text-sm text-muted">{selected.reason.translation}</p>}
                   <span className="mt-3 block text-sm text-muted">
                     {selected.reason.source} · {selected.reason.t.toFixed(0)}s
                     {selected.reason.audioId && <audio className="mt-1 block h-8 w-full" controls src={`/api/sessions/${sessionId}/clips?audioId=${selected.reason.audioId}`} />}
@@ -132,10 +132,10 @@ export function WorkMapView({ map, frames, sessionId, onChange, editable }: { ma
                     when {describeCond(rule.when)}
                     {rule.unless ? `, unless ${describeCond(rule.unless)}` : ""} → {describeAct(rule.then)}
                   </p>
-                  {rule.stopAndAsk && <p className="mt-1 text-red">stop and ask {rule.stopAndAsk.who} when {describeCond(rule.stopAndAsk.when)}</p>}
+                  {rule.stopAndAsk && <p className="mt-1 text-red">stop and ask {rule.stopAndAsk.who || "— who to ask is still open"} when {describeCond(rule.stopAndAsk.when)}</p>}
                   <p className="mt-2 flex flex-wrap gap-1">
                     <span className="tag">{rule.quotes.length} supporting quote{rule.quotes.length === 1 ? "" : "s"}</span>
-                    {rule.confirmedBy.map((c) => (
+                    {dedupeConfirmedBy(rule.confirmedBy).map((c) => (
                       <span key={c} className="tag">confirmed by {c}</span>
                     ))}
                   </p>
@@ -145,20 +145,45 @@ export function WorkMapView({ map, frames, sessionId, onChange, editable }: { ma
           </div>
           <div className="panel overflow-hidden">
             <div className="border-b border-line px-6 py-4"><p className="panel-title">The screen moment</p><p className="mt-1 text-sm text-muted">Evidence attached to this decision, not a live screen.</p></div>
-            {frame?.dataUrl ? (
-              <img src={frame.dataUrl} alt={`screen moment at ${selected.screenMoment.t.toFixed(1)}s`} className="max-h-[420px] w-full bg-bg object-contain" />
+            {src ? (
+              <FrameThumb src={src} t={selected.screenMoment.t} blurred={frame?.piiRegionsBlurred} region={selected.screenMoment.region} size="lg" />
             ) : (
               <div className="flex min-h-32 items-center justify-center p-6 text-sm text-muted">No screen evidence attached to this step.</div>
             )}
             <div className="flex flex-wrap items-center gap-3 border-t border-line px-6 py-4 text-sm text-muted">
               <span>Recorded moment: <span className="mono text-ink">{selected.screenMoment.t.toFixed(1)}s</span> (sampled frame, not video)</span>
-              {frame?.dataUrl && <span>{frame.piiRegionsBlurred} region{frame.piiRegionsBlurred === 1 ? "" : "s"} blurred</span>}
+              {src && frame && <span>{frame.piiRegionsBlurred} region{frame.piiRegionsBlurred === 1 ? "" : "s"} blurred</span>}
               {editable && <button className="btn btn-danger ml-auto" onClick={() => deleteStep(selected.id)}>delete step</button>}
             </div>
           </div>
         </div>
       ) : (
         <div className="panel flex items-center justify-center p-10 text-muted">No steps compiled yet.</div>
+      )}
+      {matrix && matrix.length > 0 && (
+        <div className="panel overflow-x-auto xl:col-span-2">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="panel-title text-left">
+                {["Reason", "Trigger rule", "Replay-verified", "Limit", "Who", "Confirmed"].map((h) => <th key={h} scope="col" className="px-3 py-2">{h}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {matrix.map((row) => (
+                <tr key={row.stepId}>
+                  {row.cells.map((cell) => (
+                    <td key={cell.key} className="px-3 py-2">
+                      <button type="button" className="underline" onClick={() => {
+                        setSelectedId(row.stepId);
+                        requestAnimationFrame(() => document.getElementById(`step-${row.stepId}`)?.scrollIntoView({ block: "nearest" }));
+                      }}>{cell.word}</button>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
       {map.notes.length > 0 && (
         <div className="panel p-4 xl:col-span-2">

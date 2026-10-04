@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { getMap, listSessions } from "@/lib/store";
 import { pickSample } from "@/lib/ui/landing";
+import { BrowserCheck } from "@/components/ui/BrowserCheck";
+import { HealthStrip } from "@/components/demo/HealthStrip";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,7 @@ export default async function Home() {
         </div>
       </header>
       <div className="mx-auto max-w-6xl px-6 py-12 md:py-20">
+        <BrowserCheck />
         <div className="grid items-start gap-12 lg:grid-cols-[1.1fr_1fr] lg:gap-20">
           <section aria-labelledby="welcome-title">
             <p className="panel-title">Experience, made shareable</p>
@@ -47,6 +50,7 @@ export default async function Home() {
               <Link href="/capture" className="btn px-5 py-3">Share your know-how</Link>
             </div>
             <p className="mt-4 text-sm text-muted">{sampleId ? "Explore a confirmed sample, or capture something new." : "No confirmed sample is available. You can still capture something new."}</p>
+            <p className="mt-2 text-sm text-muted">To capture: microphone and desktop Chrome or Edge. Headphones recommended.</p>
           </section>
           <section aria-labelledby="knowledge-title" className="panel p-6 md:p-8">
             <p className="panel-title">Inside a Work Map</p>
@@ -71,7 +75,9 @@ export default async function Home() {
         </section>
         <footer className="mt-12 flex flex-wrap items-center justify-between gap-4 border-t border-line pt-6 text-sm text-muted">
           <p>Keyless mode uses ERP telemetry and browser speech—not live vision or ElevenLabs.</p>
+          <HealthStrip />
           <Link href="/erp" className="underline underline-offset-4 hover:text-ink">Open the ERP sandbox</Link>
+          <a href="https://github.com/Backpacked333/sorcerer-apprentice-" className="underline underline-offset-4 hover:text-ink">Repository</a>
         </footer>
       </div>
     </main>

@@ -1,54 +1,50 @@
-# Lane A status
+## Checkpoint M1 — 8:02 PM ET
 
-_Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
+### Done and merged (WP ids)
 
-## Done and merged (WP ids)
+- WA-1: generic prompts/tools, idempotent provisioning/check script, awaited connection/fallback contract, debug tap, and keyed/keyless `/voice-check` diagnostics (PRs #2, #3, #7).
+- WA-2: client-side ElevenLabs output gate, idle heartbeat, persistent late-speech squelch, and soak counters (PR #22).
+- WA-3 foundations: pure turn reducer, protocol/echo helpers, one shared Scribe/WebSpeech hub, app-clock transcript timing, bounded fatal fallback, config reconnect, and teardown safety (PRs #9, #12, #35). The documented `VoiceApi.turn()` React adapter is not implemented yet.
+- WA-5 foundations: deterministic governor/curiosity/Capture-loop engines plus safe environment/URL tuning parsing (PRs #17, #20). Capture controller adoption remains blocked on the D seam.
+- WA-11: safe tutor knowledge-base sync with verbatim debrief notes and rollback verification (PRs #13, #15); no shared-agent mutation was run.
+- Scribe token route: provider failures are contained as truthful, non-cacheable fallback responses instead of HTTP 500 (PR #31).
+- Fresh merged-main gate: `npm install`, `npm run typecheck`, and 215/215 tests passed. Keyless seed/smoke completed with `question window opened: true`, `intervened: true`, `guard held the independent miss: true`, and `independent success recorded: true`.
 
-- WA-1/WA-9 prompt v2 and prompt/tool protocol regression tests merged in PR #2.
-- WA-1 provisioning script is idempotent, read-only-checkable, Expressive Mode explicit, and preserves an existing knowledge base; merged in PR #3.
-- WA-1 awaited connection contract, generation-safe failure fallback, SDK/Scribe debug tap, and keyed/keyless `/voice-check` diagnostics merged in PR #7.
-- WA-2/WA-3 pure output-gate and turn lifecycle reducer merged in PR #9 with full state/effect regression coverage.
-- WA-3 pure voice protocol is implemented with echo attribution, bounded commands, confirmation, safe tag builders, capture summaries, chunking and keyterms; merged in PR #12.
-- WA-11 knowledge sync now uploads SOP + debrief notes + tutor prompt, patches only the knowledge-base leaf, verifies agent configuration, rolls back on drift, removes only the superseded same-session document, and times out safely; live confirm remains pending.
-- WA-5 pure cadence engines merged in PR #17: `DEMO_GOVERNOR`, fail-closed transcriber health, cooldown-safe guardrail chaining, hardened candidate classification/queueing, targeted narration attribution with evidence timestamps, deterministic deferred ordering, WA-4 outcome mapping, and the pure Capture loop.
-- WA-2 real-client structural gate now guards only ElevenLabs remote-stream audio before LiveKit `play()`, reasserts on SDK lifecycle events, persistently squelches late speech after the 8 s authorization watchdog, uses a flicker-safe speech authorization latch, sends idle heartbeats, and exposes snapshot-based soak diagnostics; merge pending.
+### Verified live by a human (who, when, what they did)
 
-## Done in the current PR (pending merge)
+- Lane A human, 2026-10-03: quick post-WA-2 gate check heard no unsolicited audio. This was a partial check only, not the required three-minute HT-2 soak. During the same check Scribe displayed browser fallback; Scribe health is recorded separately and was not counted as a silence failure.
 
-- WA-5 Capture configuration parsing/page routing now resolves `DEMO_GOVERNOR ← environment ← URL` (`?tune=1` only), rejects empty/non-finite numeric overrides, and carries all cadence, grace and chaining knobs through the existing config prop. Pure parser coverage is complete; human tuning remains pending. `graceSecs` and `maxChained` are currently runtime no-ops because frozen `CaptureClient` still constructs `new CandidateQueue(90)` and does not adopt `CaptureLoop`; the mechanism drawer also does not display effective values.
-- Automated replay covers brisk red/green timing, an off-screen retro question, ≥3 grounded windows with a guardrail, talkative narration, repeated one-word noise through 64 s, and the legacy-default cadence defect. After the final rebase, `npm run typecheck` passed and `npm test` passed 190 tests across 15 files; audible behavior remains human-only below.
+### Not verified yet (and the script to verify)
 
-## Verified live by a human (who, when, what they did)
+- HT-1 real round trip — 2 minutes: open `http://localhost:3000/voice-check?role=interviewer`; confirm agent id and Scribe token rows are green; allow the mic; click **Connect** and require connected/id/no sound; click **Send [ASK] sample** and require one sentence with 9001, 1000, 2000; click **Open mic**, say “Because that item belongs to the other department, testing one two three,” then require live partials, one exact Scribe commit, `tool log_answer stepRef=9001:code`, and a four-word-or-shorter acknowledgement. Report the first missing line.
+- HT-2 structural silence — the checkpoint explicitly requires 3 minutes, so no honest 2-minute script can verify it: on `/voice-check?role=interviewer`, connect with gate **CLOSED**, click **Silence soak**; spend 60 seconds silent, 60 seconds typing elsewhere, and 60 seconds reading aloud; require no audible agent speech, automated PASS, `audible unsolicited: 0`, no disconnect, and heartbeat delta at least 15. Record gated utterances separately.
+- HT-3/HT-4 turn exits and speaker echo — blocked until the React `VoiceApi.turn()` adapter lands. Then, in 2 minutes on `/voice-check`: run one tool-backed turn, one no-tool answer, one silent timeout, one immediate abort-on-speech, and one typed answer; require one matching resolve for each. Unplug headphones, send `[ASK]`, stay silent and require every returned segment to be `agent echo` with empty `heard`; repeat saying “my own words only” and require exactly that text. Repeat on `?keyless=1`.
+- HT-5 M1 real-eyes path — 2 minutes after B/C/D dependencies land: open the deployed `/capture` and `/erp` side by side; allow mic/screen; start Capture; change one visible ERP field; require a `seen`/vision event; pause until the real interviewer asks about that exact change; answer “I changed it for this live checkpoint”; require that exact Scribe text with app-clock `t`, an answered window with `closedBy`, then end Capture and require an LLM-produced map for the same session.
+- Three mic consumers on both demo laptops — 2 minutes per laptop: open keyed `/voice-check`, connect, run one Scribe utterance, one interviewer question/answer, and one clip recording; require exactly one live mic indicator at a time, automatic re-mute, and no echo/feedback. Repeat on the second laptop.
+- Real Scribe token health — open `/voice-check?keyless=1`, allow mic, confirm the token row is green and the badge says Scribe rather than browser transcription; say “Scribe live check, testing one two three”; require partials plus one exact commit. The running process currently does not contain `ELEVENLABS_API_KEY`, so this cannot pass until the key is loaded into the correct checkout/process.
 
-- None yet.
+### Blocked on (lane, handshake id, what exactly)
 
-## Not verified yet (and the script to verify)
+- Human-only: `ELEVENLABS_API_KEY` is loaded and can mint Scribe tokens, but it lacks ElevenLabs `convai_write`; interviewer/tutor agent ids remain absent. A human must grant that key Conversational AI write access without posting it, then Lane A can provision agents, restart the correct checkout, and run the mic/audio checks.
+- Lane A, H3 / P-12, issue #40: `VoiceApi.turn()` / `cancelTurn()` / `submitTyped()` and live phase, partial, STT, session-clock, tool, clip and transcript wiring are implemented on `a/wa3-turn-adapter`; automated adapter/reducer coverage and `/voice-check` controls are green. Keyed HT-1–HT-5 still require provisioned agent ids and human audio verification.
+- WA-1 live bring-up attempted Oct 3 at 8:04 PM ET: ElevenLabs accepted Scribe token minting (`/api/scribe-token` returned a real single-use token) but rejected agent provisioning because the configured key lacks `convai_write`. No agent ids were written to `.env.local`; unblock by granting that key Conversational AI write access, then rerun `npm run agents:create` and rebuild/restart.
+- Lane D, H8, issue #4 / PR #18: the Capture controller/view seam is not on main, blocking WA-4/WA-5 controller integration and the mechanism drawer.
+- Lane B, P-4/P-22, issue #14 / PR #29: `QuestionWindow.spokeAt` and `closedBy` are not on main.
+- Lane B, H10, issue #38: no deployed/current real-vision event has been handed to Lane A for HT-5.
+- Lane B, environment contract, issue #19 / PR #26: the complete governor defaults are not yet in `.env.example`/deploy configuration.
+- Lane C, M1, issue #39: no real-key LLM compile evidence from a live session is available.
+- Lane B → A → C, H6 / P-15: `SessionLog.deferred` is not on main, so deferred Capture candidates cannot be persisted/consumed.
 
-- Prompt tone, phrasing and structural silence: run HT-1 then revised HT-2 from `docs/lanes/A-voice-and-timing.md` with headphones; record both the automated soak result and the human audible result, followed by the speaker echo check in HT-4.
-- Live provisioning: after explicit approval and a key, run `npm run agents:create` twice and confirm identical IDs, then `npm run agents:create -- --check` and confirm prompt hashes/tool counts/settings.
-- Awaited connect and `/voice-check`: run HT-1 with a real agent key and microphone; verify connect id, event order, exact Scribe commit, and audible response timing. Headless checks cannot verify audio or permissions.
-- Turn lifecycle audio behavior: after `voice.tsx` integration, run HT-2, HT-3 and HT-4; the pure reducer cannot verify interruption feel, echo on speakers, or actual mic closure.
-- WA-3 real audio attribution remains unverified: HT-4 must cover speakers, headphones, barge-in, late echo and clip playback; deterministic protocol tests cannot judge microphone echo or interruption feel.
-- WA-11 live tutor attachment remains unverified: after a key and explicit shared-agent approval, confirm one map and verify the document appears within 10 seconds without changing the prompt hash, LLM, or tool ids.
-- WA-5 audible cadence remains unverified: run HT-6 variants A (brisk), B (talkative) and C (noisy) with a human listener; deterministic replay cannot judge interruption, echo, phrasing or feel.
+### Next 3 things
 
-## Blocked on (lane, handshake id, what exactly)
+1. Land issue #40 and announce `CONTRACT: P-12`; then provision both agents once `convai_write` is enabled and run HT-1–HT-5 with a human listener.
+2. After PRs #18 and #29 land, integrate WA-4/WA-5 into the Capture controller and run HT-5 with B’s real vision event and C’s live compile.
+3. With the valid key and existing agent ids loaded—or explicit approval for first creation/update—run HT-1, the full three-minute HT-2, HT-3, HT-4, and the two-laptop mic check.
 
-- Human/key: `ELEVENLABS_API_KEY` is absent locally, so the shared agents cannot be updated and the keyed prompt behavior cannot be heard yet.
-- Human/audio: a person must grant microphone permission and listen/speak through HT-4 before WA-3 can be marked live-verified.
-- Human/key: WA-11's live confirm mutates the shared tutor agent and cannot be run without the missing ElevenLabs key and explicit first-mutation approval.
-- Lane D / [issue #4](https://github.com/Backpacked333/sorcerer-apprentice-/issues/4): the Capture seam split is still open, so A cannot integrate the configured grace/chaining values or expose them through the view model without editing D-owned presentation JSX.
-- Lane B / [issue #19](https://github.com/Backpacked333/sorcerer-apprentice-/issues/19): `.env.example` must add the seven new public tuning names and change its shipped cooldown from `60` to `20`.
+### Risks I see for the demo
 
-## Next 3 things
-
-1. After D lands issue #4, integrate `CandidateQueue(90, graceSecs)` + `CaptureLoop`/`maxChained` and expose the effective timing values through the Capture view model for the mechanism drawer.
-2. Have a human run the keyed three-minute HT-2 soak and record automated counters plus the audible pass/fail.
-3. With explicit approval and a key, update both shared agents, run `npm run agents:create -- --check`, then run HT-1 through HT-6.
-
-## Risks I see for the demo
-
-- Prompt text is automated-test verified but not yet deployed or judged by a human listener.
-- Keyless fallback remains the only executable path in this environment until the ElevenLabs key is supplied.
-- A keyed connection, first-message speaking edge, microphone gate, and Scribe event order remain human-unverified.
-- The page parses grace/chaining overrides, but they cannot affect runtime cadence until the post-seam Capture integration above lands; the drawer likewise cannot show effective values yet.
+- M1 is missed: real ElevenAgents + real Scribe + real vision + real compile have not completed one end-to-end session.
+- `docs/03-CONTRACTS.md` documents the additive P-12 `VoiceApi.turn()` surface before the React adapter exists; consumers must not treat it as available yet.
+- The quick human silence result is encouraging but does not replace the required three-minute audible soak.
+- Keyless smoke completed its functional beats but logged a transient Capture hydration warning and the expected guarded-save 409; neither predicate failed, but both should be watched after the D/B merges.
+- WA-4/WA-5 integration, off-record media purge, paid-route limits, and live provisioning remain P0 work; do not spend time on stretch goals.

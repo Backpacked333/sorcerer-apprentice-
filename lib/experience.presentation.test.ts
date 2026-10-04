@@ -2,9 +2,12 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
+import DemoPage from "@/app/demo/page";
 import { Meter } from "@/components/Meter";
 import { WorkMapView } from "@/components/WorkMapView";
+import { Presence } from "@/components/ui/Presence";
 import type { Decision } from "./governor";
+import { presenceOf, type PresenceInput } from "./ui/presence";
 import { WorkMapSchema } from "./workmap";
 import { getMap, listSessions } from "./store";
 
@@ -37,6 +40,7 @@ describe("knowledge-first presentation", () => {
     expect(html).toContain("No confirmed sample is available.");
     expect(html).not.toContain("/teach?from=");
     expect(html).toContain("Keyless mode uses ERP telemetry and browser speech");
+    expect((await DemoPage()).props.sampleMap).toBeUndefined();
   });
 
   it("links directly to the newest confirmed sample and its tutor, not a draft or real capture", async () => {
@@ -55,6 +59,7 @@ describe("knowledge-first presentation", () => {
     expect(html).toContain("Open a finished Work Map");
     expect(html).toContain("Explore a confirmed sample");
     expect(html).not.toContain('href="/map/demo_draft"');
+    expect((await DemoPage()).props.sampleMap).toBe("demo_latest");
     expect(getMap).not.toHaveBeenCalledWith("real_capture");
     expect(getMap).not.toHaveBeenCalledWith("demo_teach");
   });
@@ -66,6 +71,7 @@ describe("knowledge-first presentation", () => {
     expect(html).toContain("No confirmed sample is available.");
     expect(html).not.toContain('href="/map/demo_pending"');
     expect(html).not.toContain("/teach?from=");
+    expect((await DemoPage()).props.sampleMap).toBeUndefined();
   });
 
   it("puts the decision and literal evidence before the screen moment", () => {
@@ -97,9 +103,56 @@ describe("knowledge-first presentation", () => {
     expect(html).toContain("No expert quote attached.");
     expect(renderMap({ ...map, steps: [] })).toContain("No steps compiled yet.");
   });
+
+  it.each([undefined, "/api/sessions/sample/frames/frame-1"])("retains recorded frame URLs, regions and translations after the seam integration: %s", (url) => {
+    const translated = { ...map, steps: [{ ...map.steps[0],
+      screenMoment: { t: 12, frameId: "frame-1", region: { x: 0.1, y: 0.2, w: 0.3, h: 0.4 } },
+      reason: { ...map.steps[0].reason!, translation: "Translated explanation" },
+    }] };
+    const frames = [{ id: "frame-1", t: 12, dataUrl: "data:image/png;base64,AAAA", url, width: 100, height: 100, piiRegionsBlurred: 1 }];
+    const html = renderToStaticMarkup(createElement(WorkMapView, {
+      map: translated, sessionId: map.sessionId, onChange: () => {}, editable: false, frames,
+    }));
+    expect(html).toContain(`src="${url ?? "data:image/png;base64,AAAA"}"`);
+    expect(html).toContain('class="frame-region"');
+    expect(html).toContain("left:10%;top:20%;width:30%;height:40%");
+    expect(html).toContain("Translated explanation");
+    expect(html).toContain("not a live screen");
+    expect(html.indexOf(map.steps[0].decision)).toBeLessThan(html.indexOf("<img"));
+  });
+
+  it("retains the optional evidence matrix provided by the map controller", () => {
+    const html = renderToStaticMarkup(createElement(WorkMapView, {
+      map, frames: [], sessionId: map.sessionId, onChange: () => {}, editable: false,
+      matrix: [{ stepId: "inspect", cells: [{ key: "reason", word: "Reason captured" }] }],
+    }));
+    expect(html).toContain('id="step-inspect"');
+    expect(html).toContain("Replay-verified");
+    expect(html).toContain("Reason captured");
+    expect(renderMap()).not.toContain("<table");
+  });
 });
 
 describe("quiet observation presence", () => {
+  it.each([
+    [{ holding: true, sharing: true, queued: 0 }, "off-record", "Paused", "Nothing is being sent"],
+    [{ holding: false, sharing: true, queued: 0, struckAgoMs: 1 }, "off-record", "Paused", "Struck from the record"],
+    [{ holding: false, sharing: true, queued: 0, phase: "asking" }, "asking", "Asking", ""],
+    [{ holding: false, sharing: true, queued: 0, phase: "answering" }, "answering", "Listening to your answer", ""],
+    [{ holding: false, sharing: false, queued: 0 }, "quiet", "Quiet while you work", "Not watching — no screen shared"],
+    [{ holding: false, sharing: true, queued: 1, waitingReason: "typing" }, "quiet", "Quiet while you work", "Waiting — typing"],
+  ] satisfies [PresenceInput, string, string, string][])("preserves the capture companion state and privacy copy: %j", (input, state, label, sub) => {
+    const html = renderToStaticMarkup(createElement(Presence, presenceOf(input)));
+    expect(html).toContain('data-testid="capture-presence"');
+    expect(html).toContain(`data-state="${state}"`);
+    expect(html).toContain('class="presence-dot"');
+    expect(html).toContain('aria-live="polite"');
+    expect(html).toContain(label);
+    if (sub) expect(html).toContain(sub);
+    expect(html).not.toContain("pulse");
+    expect(html).not.toContain("presence-mark");
+  });
+
   it("does not invent a listening state before receiving a decision", () => {
     const html = renderToStaticMarkup(createElement(Meter, { questions: 0, budget: 3 }));
     expect(html).toContain('data-state="unavailable"');

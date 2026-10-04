@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import type { ElevenLabs } from "@elevenlabs/elevenlabs-js";
-import { assertV4Agent, REQUIRED_VOICE_MODEL, v4AgentOptions } from "../lib/agent-model";
+import { answerAcknowledgmentOptions, assertAnswerAcknowledgment, assertVoiceFlowAgent, REQUIRED_VOICE_MODEL, SKIP_TURN_DESCRIPTION, voiceFlowAgentOptions } from "../lib/agent-model";
 
 for (const file of [".env.local", ".env"]) {
   try {
@@ -49,8 +49,7 @@ if (!apiKey) {
 const client = new ElevenLabsClient({ apiKey });
 const root = path.join(process.cwd(), "agents");
 const tools = JSON.parse(readFileSync(path.join(root, "tools.json"), "utf8")) as Record<Role, ToolDef[]>;
-const LLM = (process.env.AGENT_LLM ?? "gemini-3.7-flash") as ElevenLabs.Llm;
-if (process.env.ELEVENLABS_TTS_MODEL && process.env.ELEVENLABS_TTS_MODEL !== REQUIRED_VOICE_MODEL) throw new Error("Tacit requires eleven_v4_turbo; refusing a voice substitution");
+const LLM = (process.env.AGENT_LLM ?? "gemini-2.5-flash") as ElevenLabs.Llm;
 const VOICE = process.env.ELEVENLABS_VOICE_ID;
 const PLACEHOLDERS = {
   expert_name: "the expert",
@@ -80,7 +79,7 @@ function toolConfig(tool: ToolDef): ElevenLabs.ClientToolConfigInput & { type: "
     description: tool.description,
     expectsResponse: tool.expectsResponse,
     responseTimeoutSecs: 20,
-    preToolSpeech: "off",
+    ...answerAcknowledgmentOptions(tool.name),
     ...(hasParameters
       ? {
           parameters: {
@@ -161,7 +160,7 @@ function buildBody(role: Role, toolIds: string[], knowledgeBase?: ElevenLabs.Kno
             skipTurn: {
               type: "system" as const,
               name: "skip_turn",
-              description: "Stay silent when no tagged message was received, or the user needs a moment.",
+              description: SKIP_TURN_DESCRIPTION,
               params: { systemToolType: "skip_turn" as const },
             },
           },
@@ -170,11 +169,11 @@ function buildBody(role: Role, toolIds: string[], knowledgeBase?: ElevenLabs.Kno
       tts: {
         expressiveMode: true,
         suggestedAudioTags: (role === "interviewer"
-          ? [{ tag: "curious" }, { tag: "thoughtful" }, { tag: "warm" }]
+          ? [{ tag: "curious" }, { tag: "warm" }]
           : [{ tag: "calm" }, { tag: "warm" }, { tag: "encouraging" }]),
         ...(VOICE ? { voiceId: VOICE } : {}),
       },
-      turn: { turnTimeout: 30, silenceEndCallTimeout: -1, turnEagerness: "patient" as const },
+      turn: { turnTimeout: 30, silenceEndCallTimeout: -1 },
       conversation: {
         maxDurationSeconds: 3600,
         clientEvents: [
@@ -217,14 +216,14 @@ async function writeAgent(
   privacy: "recordVoice=false, retentionDays=7" | "recordVoice=false" | "not applied";
 }> {
   const write = async (request: AgentBody) => {
-    const options = v4AgentOptions(request.conversationConfig);
+    const options = voiceFlowAgentOptions(request.conversationConfig);
     if (id) {
       const response = await client.conversationalAi.agents.update(id, request, options);
-      assertV4Agent(response);
+      assertVoiceFlowAgent(response);
       return response.agentId;
     }
     const response = await client.conversationalAi.agents.create(request, options);
-    assertV4Agent(await client.conversationalAi.agents.get(response.agentId));
+    assertVoiceFlowAgent(await client.conversationalAi.agents.get(response.agentId));
     return response.agentId;
   };
 
@@ -306,25 +305,36 @@ async function check() {
     const agent = await resolveAgent(role);
     const prompt = agent.conversationConfig.agent?.prompt;
     const tts = agent.conversationConfig.tts;
-    assertV4Agent(agent);
     const localPrompt = readFileSync(path.join(root, ROLES[role].promptFile), "utf8");
     const remotePrompt = prompt?.prompt ?? "";
     const names = (prompt?.toolIds ?? []).map((id) => toolNameById.get(id) ?? `unknown:${id}`);
+    const answerTool = allTools.find((tool) => prompt?.toolIds?.includes(tool.id) && tool.toolConfig.type === "client" && tool.toolConfig.name === "log_answer")?.toolConfig;
     console.log(JSON.stringify({
       name: agent.name,
       id: agent.agentId,
       llm: prompt?.llm ?? null,
+      thinkingBudget: prompt?.thinkingBudget ?? null,
+      turnEagerness: agent.conversationConfig.turn?.turnEagerness ?? null,
+      vad: agent.conversationConfig.vad ?? null,
       ttsModel: tts?.modelId ?? null,
       expressiveMode: tts?.expressiveMode ?? false,
       voiceId: tts?.voiceId ?? null,
       tools: names,
+      answerAcknowledgment: answerTool?.type === "client" ? { preToolSpeech: answerTool.preToolSpeech, executionMode: answerTool.executionMode, expectsResponse: answerTool.expectsResponse } : null,
       privacy: agent.platformSettings?.privacy ?? null,
       promptSha1: { remote: sha1(remotePrompt), local: sha1(localPrompt), equal: remotePrompt === localPrompt },
     }, null, 2));
+    assertVoiceFlowAgent(agent);
+    if (remotePrompt !== localPrompt) throw new Error(`${agent.name}: remote prompt differs from the local prompt.`);
+    if (prompt?.builtInTools?.skipTurn?.description !== SKIP_TURN_DESCRIPTION) throw new Error(`${agent.name}: skip_turn must allow conversational repair during active exchanges.`);
+    if (role === "interviewer") assertAnswerAcknowledgment(answerTool?.type === "client" ? answerTool : undefined);
   }
 }
 
 async function main() {
+  if (process.env.ELEVENLABS_TTS_MODEL && process.env.ELEVENLABS_TTS_MODEL !== REQUIRED_VOICE_MODEL) {
+    throw new Error(`ELEVENLABS_TTS_MODEL must be ${REQUIRED_VOICE_MODEL}; other voice models do not satisfy this release.`);
+  }
   if (CHECK) {
     await check();
     return;
@@ -354,7 +364,7 @@ async function main() {
     const result = await writeAgent(existingId, buildBody(role, toolIds[role], knowledgeBase));
     ids[role] = result.id;
     privacy[role] = result.privacy;
-    console.log(`${config.name}: ${existingId ? "updated" : "created"}; privacy ${result.privacy}.`);
+    console.log(`${config.name}: ${existingId ? "updated" : "created"}; verified ${REQUIRED_VOICE_MODEL}; privacy ${result.privacy}.`);
   }
 
   console.log(`NEXT_PUBLIC_INTERVIEWER_AGENT_ID=${ids.interviewer}`);

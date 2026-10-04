@@ -1,6 +1,7 @@
-import { CandidateQueue, type Candidate } from "./curiosity";
+import { CandidateQueue, extractThresholds, newContext, observe, type Candidate, type CuriosityContext } from "./curiosity";
 import { Governor, type OpenWindow, type Signals } from "./governor";
 import { redactText } from "./redact";
+import type { QuestionWindow, SessionLog } from "./events";
 import type { TurnResult } from "./voice-turn";
 
 export interface LoopSignals extends Signals {
@@ -27,6 +28,12 @@ export interface MappedWindowOutcome {
   strike?: boolean;
 }
 
+/** During a question, a commit is answer evidence only after the listening gate opened. */
+export function turnCommitEvidenceEligible(window: QuestionWindow | undefined, committedAt: number): boolean {
+  if (!window) return true;
+  return window.askedAt !== undefined && committedAt >= window.askedAt;
+}
+
 const loggedFields = (result: TurnResult): MappedWindowOutcome["logged"] => {
   if (result.tool?.name !== "log_answer") return undefined;
   const stringParam = (name: string) => (typeof result.tool?.params[name] === "string" ? (result.tool.params[name] as string) : undefined);
@@ -37,7 +44,8 @@ const loggedFields = (result: TurnResult): MappedWindowOutcome["logged"] => {
 /** Pure WA-4 lifecycle mapping. Callers apply the returned window, candidate and governor effects. */
 export function windowOutcome(result: TurnResult): MappedWindowOutcome {
   const retryAfter = result.closedAt + 6;
-  if (result.via === "tool" && result.heard.trim()) {
+  const answerClockIsValid = result.answeredAt !== undefined && result.answeredAt >= result.askedAt;
+  if (result.via === "tool" && result.heard.trim() && answerClockIsValid) {
     return {
       outcome: "answered",
       closedBy: "tool",
@@ -49,7 +57,7 @@ export function windowOutcome(result: TurnResult): MappedWindowOutcome {
       governor: "close",
     };
   }
-  if ((result.via === "scribe" || result.via === "typed") && result.heard.trim()) {
+  if ((result.via === "scribe" || result.via === "typed") && result.heard.trim() && answerClockIsValid) {
     return {
       outcome: "answered",
       closedBy: result.via === "scribe" ? "scribe_fallback" : "user",
@@ -88,6 +96,63 @@ export function windowOutcome(result: TurnResult): MappedWindowOutcome {
   return { outcome: "aborted", candidateStatus: "debrief", governor: "short_close" };
 }
 
+/** Find the closed window a late log_answer may safely enrich without touching the active replacement. */
+export function findLateAnswerWindow(windows: QuestionWindow[], stepRef: string, now: number, maxAgeSecs = 15): QuestionWindow | undefined {
+  return windows
+    .filter(
+      (window) =>
+        window.stepRef === stepRef &&
+        window.closedAt !== undefined &&
+        now - window.closedAt >= 0 &&
+        now - window.closedAt <= maxAgeSecs &&
+        window.outcome !== "aborted" &&
+        window.outcome !== "off_record",
+    )
+    .sort((left, right) => (right.closedAt ?? Number.NEGATIVE_INFINITY) - (left.closedAt ?? Number.NEGATIVE_INFINITY))[0];
+}
+
+const TOOL_WINDOW_SEPARATOR = "::window:";
+
+/** Correlate an agent tool call to one exact Capture turn while preserving the canonical stepRef separately. */
+export function captureToolStepRef(stepRef: string, windowId: string): string {
+  return `${stepRef}${TOOL_WINDOW_SEPARATOR}${windowId}`;
+}
+
+export function captureAnswerToolRejection(active: QuestionWindow | undefined, stepRef: unknown): { dispatch: false; message: string } | undefined {
+  if (!active || active.outcome || active.closedAt !== undefined) {
+    return { dispatch: false, message: "not_logged: no active question. Do not retry or claim the answer was saved." };
+  }
+  const currentRef = captureToolStepRef(active.stepRef ?? "", active.id);
+  if (stepRef === currentRef) return;
+  return {
+    dispatch: false,
+    message: `not_logged: stale or missing question reference. The current question is ${JSON.stringify(active.question)}; stepRef=${currentRef}. Retry only if the expert's latest answer belongs to this current question. Never move an older answer to it. Do not claim it was saved.`,
+  };
+}
+
+export function parseCaptureToolStepRef(value: string): { stepRef: string; windowId?: string } {
+  const separatorAt = value.lastIndexOf(TOOL_WINDOW_SEPARATOR);
+  if (separatorAt < 0) return { stepRef: value };
+  const stepRef = value.slice(0, separatorAt);
+  const windowId = value.slice(separatorAt + TOOL_WINDOW_SEPARATOR.length);
+  return stepRef && windowId ? { stepRef, windowId } : { stepRef: value };
+}
+
+/** Keep voice.tsx's eventual TOOL event away from a different turn generation. */
+export async function awaitReplacementBeforeToolDispatch(
+  activeWindowId: string | undefined,
+  toolWindowId: string | undefined,
+  replacement: Promise<unknown> | null,
+): Promise<void> {
+  if (!activeWindowId || activeWindowId === toolWindowId || !replacement) return;
+  await replacement.catch(() => undefined);
+}
+
+/** A struck turn was already redacted before its async result arrived. */
+export function shouldPersistAgentSpokenText(mapped: MappedWindowOutcome): boolean {
+  return mapped.outcome !== "off_record" && !mapped.strike;
+}
+
 const LIMIT_ANSWER = /\b(only|every|always|never|unless|except|over|above|under|below|more than|less than|at least|up to)\b/i;
 const WHO_ANSWER = /\b(ask|check with|sign|approv\w*|releas\w*|decid\w*)\b/i;
 const STOP_ANSWER = /\b(stop|wait|hold off|check with|ask)\b/i;
@@ -110,7 +175,7 @@ export class CaptureLoop {
     this.maxChained = config.maxChained ?? governor.config.maxChained ?? 2;
   }
 
-  next(signals: LoopSignals): LoopAction {
+  next(signals: LoopSignals, preferredId?: string): LoopAction {
     this.queue.expire(signals.now, signals.currentInvoice);
     if (signals.paused) return { type: "wait", reasons: ["paused"] };
     if (!signals.sttHealthy || signals.transcriberHealthy === false) return { type: "wait", reasons: ["transcriber unavailable"] };
@@ -121,16 +186,12 @@ export class CaptureLoop {
       if (withinGrace && allowedByCount && this.governor.canChain(signals)) {
         const sibling = this.bestSibling(this.pendingWhy.id, signals.now);
         if (sibling) {
-          this.chained += 1;
-          this.chainedParents.add(this.pendingWhy.id);
-          this.pendingWhy = undefined;
-          this.pendingSince = Number.NEGATIVE_INFINITY;
           return {
             type: "open",
             candidate: sibling,
             retro: sibling.invoice !== undefined && sibling.invoice !== signals.currentInvoice,
             followup: true,
-            forced: this.mustChain.delete(sibling.parentId ?? ""),
+            forced: this.mustChain.has(sibling.parentId ?? ""),
           };
         }
       }
@@ -142,7 +203,8 @@ export class CaptureLoop {
     }
 
     const forced = this.queue.windowsAsked >= 2 && !this.queue.guardrailAsked;
-    const candidate = this.queue.pick(forced, signals.now);
+    const candidate = this.queue.pick(forced, signals.now, 3, preferredId, (candidate) =>
+      this.governor.canOpen(signals, candidate.value - (candidate.leftAt === undefined ? 0 : 0.1)));
     if (!candidate) return { type: "wait", reasons: ["no ready question"] };
     const value = candidate.value - (candidate.leftAt === undefined ? 0 : 0.1);
     if (!this.governor.canOpen(signals, value)) return { type: "wait", reasons: this.governor.evaluate(signals).reasons };
@@ -156,7 +218,26 @@ export class CaptureLoop {
     };
   }
 
+  /** Revalidate the selected action against the newest activity snapshot immediately before opening it. */
+  isFresh(action: Extract<LoopAction, { type: "open" }>, signals: LoopSignals): boolean {
+    this.queue.expire(signals.now, signals.currentInvoice);
+    const candidate = action.candidate;
+    if (signals.paused || !signals.sttHealthy || signals.transcriberHealthy === false) return false;
+    if (candidate.status !== "queued" || (candidate.retryAfter !== undefined && candidate.retryAfter > signals.now)) return false;
+    if (!this.isCurrentOrGrace(candidate, signals)) return false;
+    if (action.followup) return this.governor.canChain(signals);
+    const value = candidate.value - (candidate.leftAt === undefined ? 0 : 0.1);
+    return this.governor.canOpen(signals, value);
+  }
+
   opened(candidate: Candidate, now: number): OpenWindow {
+    if (candidate.parentId && this.pendingWhy?.id === candidate.parentId) {
+      this.chained += 1;
+      this.chainedParents.add(candidate.parentId);
+      this.mustChain.delete(candidate.parentId);
+      this.pendingWhy = undefined;
+      this.pendingSince = Number.NEGATIVE_INFINITY;
+    }
     this.queue.markAsked(candidate.id);
     return this.governor.open(candidate.id, now);
   }
@@ -176,7 +257,7 @@ export class CaptureLoop {
     }
 
     if (outcome === "answered" && heard.trim()) {
-      this.queue.markFilled(candidate.id, "window", heard);
+      this.queue.markFilled(candidate.id, "window", heard, now);
       this.governor.markAnswered(now);
       this.governor.close(now);
       if (candidate.kind === "why" && !this.chainedParents.has(candidate.id)) {
@@ -196,6 +277,29 @@ export class CaptureLoop {
     }
     candidate.status = "debrief";
     if (outcome === "deferred") candidate.userDeferred = true;
+    this.governor.close(now);
+  }
+
+  /** Apply the exact candidate and governor effects produced by windowOutcome. */
+  applyOutcome(candidate: Candidate, mapped: MappedWindowOutcome, now: number): void {
+    if (mapped.candidateStatus === "filled" && mapped.answerText?.trim()) {
+      this.closed({ candidate, outcome: "answered", heard: mapped.answerText, now });
+      return;
+    }
+
+    candidate.status = mapped.candidateStatus;
+    candidate.filledBy = mapped.filledBy;
+    candidate.userDeferred = mapped.userDeferred;
+    candidate.retryAfter = mapped.retryAfter;
+
+    if (mapped.governor === "abort") {
+      this.governor.abort();
+      return;
+    }
+    if (mapped.governor === "short_close") {
+      this.governor.closeWith(now, { cooldownSecs: this.governor.config.abortCooldownSecs ?? 8, refund: true });
+      return;
+    }
     this.governor.close(now);
   }
 
@@ -222,8 +326,32 @@ export class CaptureLoop {
 
   get reasonHeard(): { stepRef: string; quote: string; t: number }[] {
     return this.queue.items
-      .filter((candidate) => candidate.filledBy === "narration" && candidate.heardQuote && candidate.heardAt !== undefined)
+      .filter((candidate) => candidate.status === "filled" && candidate.filledBy === "narration" && candidate.heardQuote && candidate.heardAt !== undefined)
       .map((candidate) => ({ stepRef: candidate.stepRef, quote: candidate.heardQuote!, t: candidate.heardAt! }));
+  }
+
+  withdrawEvidence(from: number, to: number, candidateIds: string[]): void {
+    const affected = new Set(candidateIds);
+    for (const candidate of this.queue.items) {
+      if ((candidate.createdAt >= from && candidate.createdAt <= to) ||
+          (candidate.heardAt !== undefined && candidate.heardAt >= from && candidate.heardAt <= to)) affected.add(candidate.id);
+    }
+    for (const candidate of this.queue.items) {
+      const dependsOnAnswer = candidate.parentId && affected.has(candidate.parentId) && candidate.filledBy !== "window" && candidate.filledBy !== "narration";
+      if (!affected.has(candidate.id) && !dependsOnAnswer) continue;
+      candidate.status = "expired";
+      candidate.filledBy = undefined;
+      candidate.heardQuote = undefined;
+      candidate.heardAt = undefined;
+      candidate.userDeferred = undefined;
+      candidate.retryAfter = undefined;
+      this.mustChain.delete(candidate.id);
+      this.chainedParents.delete(candidate.id);
+    }
+    if (this.pendingWhy && affected.has(this.pendingWhy.id)) {
+      this.pendingWhy = undefined;
+      this.pendingSince = Number.NEGATIVE_INFINITY;
+    }
   }
 
   get chainedCount(): number {
@@ -255,4 +383,36 @@ export class CaptureLoop {
     if (!candidate.invoice || candidate.invoice === signals.currentInvoice) return true;
     return candidate.leftAt !== undefined && signals.now - candidate.leftAt <= this.graceSecs;
   }
+}
+
+export function captureEvidenceIsOffRecord(ranges: SessionLog["offRecord"], start: number, end = start): boolean {
+  return ranges.some(({ from, to }) => start <= to && end >= from);
+}
+
+export function redactCaptureRange(session: SessionLog, loop: CaptureLoop, context: CuriosityContext, from: number, to: number): void {
+  const range = [{ from, to }];
+  for (const segment of session.transcript) {
+    if (captureEvidenceIsOffRecord(range, segment.t, segment.tEnd)) Object.assign(segment, { text: "", redacted: true });
+  }
+  for (const event of session.events) {
+    if (captureEvidenceIsOffRecord(range, event.t)) Object.assign(event, { redacted: true, from: undefined, to: undefined, state: undefined });
+  }
+  session.frames = session.frames.filter((frame) => !captureEvidenceIsOffRecord(range, frame.t));
+  for (const window of session.windows) {
+    if (captureEvidenceIsOffRecord(range, window.openedAt, window.closedAt ?? to)) {
+      Object.assign(window, { answerText: "", outcome: "off_record", logged: undefined, answerAudioId: undefined });
+    }
+  }
+  loop.withdrawEvidence(from, to, session.windows.filter((window) => window.outcome === "off_record").map((window) => window.candidateId));
+  session.deferred = loop.deferred();
+  const labels = context.valueLabels;
+  Object.assign(context, newContext(), { valueLabels: labels });
+  for (const event of session.events) if (!event.redacted) observe(event, context);
+  for (const segment of session.transcript) {
+    if (segment.redacted || segment.speaker !== "expert") continue;
+    for (const threshold of extractThresholds(segment.text)) if (!context.knownThresholds.includes(threshold)) context.knownThresholds.push(threshold);
+  }
+  const previous = session.offRecord.at(-1);
+  if (previous && Math.abs(previous.from - from) < 0.01 && from <= previous.to + 2) previous.to = Math.max(previous.to, to);
+  else session.offRecord.push({ from, to });
 }

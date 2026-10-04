@@ -2,6 +2,7 @@
   "name": "tacit",
   "version": "0.1.0",
   "private": true,
+  "license": "MIT",
   "description": "Tacit: the AI Apprentice. Captures what an expert knows while they work, maps it, teaches it.",
   "engines": {
     "node": ">=22"
@@ -22,6 +23,7 @@
     "@ai-sdk/gateway": "^4.0.103",
     "@elevenlabs/elevenlabs-js": "^2.70.0",
     "@elevenlabs/react": "^1.16.0",
+    "@supabase/supabase-js": "^2.117.2",
     "@vercel/oidc": "3.2.0",
     "ai": "^7.0.127",
     "next": "^16.3.8",

@@ -1,12 +1,12 @@
-export interface SampleCandidate {
-  id: string;
-  startedAt: number;
-  confirmedAt?: number | null;
-}
+import type { SessionLog } from "../events";
+import type { WorkMap } from "../workmap";
 
-/** Newest confirmed session whose id starts with demo_. */
-export function pickSample(sessions: SampleCandidate[]): string | undefined {
-  const hits = sessions.filter((s) => s.id.startsWith("demo_") && !!s.confirmedAt);
-  hits.sort((a, b) => b.startedAt - a.startedAt);
-  return hits[0]?.id;
+type SampleCandidate = Pick<SessionLog, "id" | "mode" | "startedAt"> & {
+  map?: Pick<WorkMap, "confirmedAt" | "steps">;
+};
+
+export function pickSample<T extends SampleCandidate>(candidates: readonly T[]) {
+  return candidates
+    .filter((s) => s.mode === "capture" && s.id.startsWith("demo_") && s.map?.confirmedAt && s.map.steps.length > 0)
+    .sort((a, b) => b.startedAt - a.startedAt)[0];
 }

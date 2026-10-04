@@ -1,5 +1,24 @@
 # Lane C status
 
+## PR #47 expanded integration repair (C1/C2/C3/M2/N2)
+- Roy authorized porting background reasoning/typed provenance onto the current CaptureLoop,
+  voice-turn and durable-storage lifecycle, plus migration code; no merge/deploy/remote migration.
+- Preserved current dependency/lock files, platform finite model schemas and V4 provisioning.
+  Prepared questions remain expiring, exact-memory-keyed and governor-gated. Done awaits the
+  accepted turn; typed results retain question identity, redaction and no audio upload.
+- Supabase compile publication compares the source under a session-row lock in one RPC.
+  An evidence-withdrawal trigger invalidates derived maps under that lock. Local publication
+  retains serialized session writes. Missing RPCs fail closed, never fall back to saveMap.
+- Typecheck, 888 tests and production build pass. Disposable PostgreSQL 17 tests exercised
+  both concurrent orderings, conflict preservation, workspace isolation, evidence withdrawal
+  and service-role permissions. Keyless smoke and final review are recorded in the PR.
+- Before any later Supabase deployment, B must apply the new migration after the two existing
+  storage migrations. It was not applied remotely. No human microphone/timing/privacy or
+  live-provider acceptance was performed for this repair. Admission/spend and held-out
+  model-quality gates remain separate; shadow mode alone does not prevent provider charges.
+
+### Historical validation below (pre-platform port)
+
 ## Post-integration review fixes (C2/M2/N2)
 - Capture typed submissions now become explicit finalized expert evidence before clip upload,
   with question identity, PII redaction and off-record checks. Typed/mixed answers keep their

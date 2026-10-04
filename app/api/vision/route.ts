@@ -1,14 +1,19 @@
 import { NextResponse } from "next/server";
 import { generateText, Output } from "ai";
-import { gatewayConfigured } from "@/lib/gateway-auth";
 import { z } from "zod";
-import { fromWire, VisionWire, VISION_PROMPT } from "@/lib/vision-schema";
+import { CLAIMS_VISION_PROMPT, ClaimsVisionWire, fromClaimsWire, fromWire, VisionWire, VISION_PROMPT } from "@/lib/vision-schema";
+import { gatewayConfigured } from "@/lib/model-contracts";
 
 export const maxDuration = 30;
-const RequestBody = z.object({ seq: z.number().int().nonnegative(), image: z.string().max(4 * 1024 * 1024) });
+const RequestBody = z.object({
+  seq: z.number().int().nonnegative(),
+  image: z.string().max(4 * 1024 * 1024),
+  /** which sandbox the frame shows; absent or unknown means the invoice ERP (unchanged behaviour) */
+  app: z.enum(["erp", "claims"]).optional().catch(undefined),
+});
 
 export async function POST(req: Request) {
-  if (!gatewayConfigured()) return NextResponse.json({ error: "AI Gateway authentication not set; use NEXT_PUBLIC_EVENT_SOURCE=dom", mock: true }, { status: 503 });
+  if (!gatewayConfigured()) return NextResponse.json({ error: "AI Gateway is not configured; vision is unavailable", mock: true, degraded: true }, { status: 503 });
   const parsed = RequestBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid vision request" }, { status: 400 });
   const body = parsed.data;
@@ -19,6 +24,28 @@ export async function POST(req: Request) {
   const model = process.env.VISION_MODEL ?? "google/gemini-3.8-flash";
   const isGeminiFlash = model === "google/gemini-3.8-flash";
   try {
+    const messages = [
+      {
+        role: "user" as const,
+        content: [
+          { type: "text" as const, text: "Report the current state of this frame." },
+          { type: "file" as const, data: image, mediaType: "image/jpeg" },
+        ],
+      },
+    ];
+    if (body.app === "claims") {
+      const { output } = await generateText({
+        model,
+        reasoning: isGeminiFlash ? "low" : "provider-default",
+        instructions: CLAIMS_VISION_PROMPT,
+        output: Output.object({ schema: ClaimsVisionWire }),
+        timeout: { totalMs: 8000 },
+        maxRetries: 0,
+        maxOutputTokens: isGeminiFlash ? 2048 : 500,
+        messages,
+      });
+      return NextResponse.json({ seq: body.seq, ...fromClaimsWire(output), model, latencyMs: Date.now() - started });
+    }
     const { output } = await generateText({
       model,
       reasoning: isGeminiFlash ? "low" : "provider-default",

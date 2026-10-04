@@ -128,7 +128,7 @@ function VoiceCheckInner({ role, agentId, events, log, clearEvents }: { role: st
   const liveSoakResult = soak ? evaluateSilenceSoak({ events, startedAt: soak.startedAt, connected: voice.connected, gateOpen: voice.gateOpen }) : soakResult;
 
   return (
-    <main className="mx-auto max-w-6xl space-y-6 p-6 text-slate-100">
+    <main className="min-h-screen space-y-6 bg-[#0b1220] py-6 px-[max(1.5rem,calc((100vw-72rem)/2))] text-slate-100">
       <div><h1 className="text-3xl font-semibold">Voice check · {role}</h1><p className="text-sm text-slate-400">M0 connection and event diagnostics. Keyed audio still requires a human mic/listening test.</p></div>
       <section className="grid gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-4 md:grid-cols-2">
         <Row label="Agent ID" value={agentId ? "present" : "keyless fallback"} />

@@ -1,14 +1,17 @@
 import type { QuestionWindow, ScreenEvent, SessionLog } from "../events";
 import { labelField } from "../events";
+import { narrationMatch, type Candidate } from "../curiosity";
 import { emptyMap, type Quote, type Step, type WorkMap, uid } from "../workmap";
+import { compileEvidence, isQuotableWindow } from "./evidence";
+import { visibleAt } from "../memory";
 import { COST_CENTER_LABEL, deriveRules } from "./rules-regex";
 import { buildSlots, seenCases } from "./slots";
-import { compileEvidence } from "./evidence";
 
-const NARRATION_CUES = /\b(because|since|so|always|never|over|above|under|has to|must|only|every|whenever|unless|rule|double)\b/i;
+/** A claims-workbench event (vision-only): it names its claim in `subject` and never sets `invoice`. */
+const claimOf = (e: ScreenEvent): string | undefined => (!e.invoice && e.subject?.type === "claim" ? e.subject.id : undefined);
 
 export function stepRefOf(e: ScreenEvent): string {
-  return `${e.invoice ?? "?"}:${e.field ?? e.kind}`;
+  return `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
 }
 
 // ---------- Pass 1: deterministic ----------
@@ -17,6 +20,7 @@ export function compileDeterministic(log: SessionLog): WorkMap {
   const map = emptyMap(log.id, log.task, log.expertName);
   const steps: Step[] = [];
   const byRef = new Map<string, Step>();
+  const evidenceEventByStepId = new Map<string, ScreenEvent>();
   let index = 0;
 
   const addStep = (s: Omit<Step, "id" | "index" | "guardrails" | "confidence">, ref: string) => {
@@ -43,20 +47,34 @@ export function compileDeterministic(log: SessionLog): WorkMap {
         addStep({ title: `Open invoice ${inv}`, invoice: inv, screenMoment: moment, action: { type: "open" }, decision: `Opened ${inv}${e.state?.supplier ? ` from ${e.state.supplier}` : ""}${e.state?.amount !== undefined ? `, €${e.state.amount.toLocaleString("en-IE")}` : ""}`, judgment: false }, `${inv}:open`);
         break;
       case "field_changed": {
+        const claim = claimOf(e);
+        if (claim) {
+          // a claim is never reported as an invoice: claim wording, no `invoice` on the step
+          const to = e.to ?? "";
+          const from = e.from ?? "";
+          const fl = labelField(e.field);
+          addStep({ title: `Set ${fl} on claim ${claim}`, screenMoment: moment, action: { field: e.field ?? "field", from, to }, decision: from && from !== to ? `Changed ${fl} from ${from} to ${to}` : `Set ${fl} to ${to}`, judgment: from !== to && to !== "" }, stepRefOf(e));
+          break;
+        }
         const from = e.from ?? "";
         const to = e.to ?? "";
         const fl = labelField(e.field);
         const fromL = COST_CENTER_LABEL[from] ? `${COST_CENTER_LABEL[from]} (${from})` : from || "empty";
         const toL = COST_CENTER_LABEL[to] ? `${COST_CENTER_LABEL[to]} (${to})` : to;
-        addStep({ title: e.field === "costCenter" ? `Code invoice ${inv} to a cost center` : `Set ${fl} on invoice ${inv}`, invoice: inv, screenMoment: moment, action: { field: e.field ?? "field", from, to }, decision: from && from !== to ? `Re-coded from ${fromL} to ${toL}` : `Set ${fl} to ${toL}`, judgment: from !== to && (from !== "" || e.field === "costCenter") }, stepRefOf(e));
+        const step = addStep({ title: e.field === "costCenter" ? `Code invoice ${inv} to a cost center` : `Set ${fl} on invoice ${inv}`, invoice: inv, screenMoment: moment, action: { field: e.field ?? "field", from, to }, decision: from && from !== to ? `Re-coded from ${fromL} to ${toL}` : `Set ${fl} to ${toL}`, judgment: from !== to && (from !== "" || e.field === "costCenter") }, stepRefOf(e));
+        evidenceEventByStepId.set(step.id, e);
         break;
       }
-      case "route_changed":
-        addStep({ title: `Set the approval route for invoice ${inv}`, invoice: inv, screenMoment: moment, action: { type: "route" }, decision: `Routed to ${String(e.to).replace(/_/g, " ")}`, judgment: e.to === "second_approval" }, `${inv}:route`);
+      case "route_changed": {
+        const step = addStep({ title: `Set the approval route for invoice ${inv}`, invoice: inv, screenMoment: moment, action: { type: "route" }, decision: `Routed to ${String(e.to).replace(/_/g, " ")}`, judgment: e.to === "second_approval" }, `${inv}:route`);
+        evidenceEventByStepId.set(step.id, e);
         break;
-      case "status_changed":
-        addStep({ title: e.to === "hold" ? `Hold invoice ${inv}` : `Set status of invoice ${inv}`, invoice: inv, screenMoment: moment, action: { type: e.to === "hold" ? "hold" : "approve" }, decision: `Status ${e.from ?? "open"} to ${e.to}`, judgment: e.to === "hold" || e.to === "rejected" }, `${inv}:status`);
+      }
+      case "status_changed": {
+        const step = addStep({ title: e.to === "hold" ? `Hold invoice ${inv}` : `Set status of invoice ${inv}`, invoice: inv, screenMoment: moment, action: { type: e.to === "hold" ? "hold" : "approve" }, decision: `Status ${e.from ?? "open"} to ${e.to}`, judgment: e.to === "hold" || e.to === "rejected" }, `${inv}:status`);
+        evidenceEventByStepId.set(step.id, e);
         break;
+      }
       case "save_clicked":
         addStep({ title: `Save invoice ${inv}`, invoice: inv, screenMoment: moment, action: { type: "save" }, decision: "Saved", judgment: false }, `${inv}:save`);
         break;
@@ -67,11 +85,12 @@ export function compileDeterministic(log: SessionLog): WorkMap {
 
   // ---- attach verbatim quotes from question windows ----
   const quoteOf = (w: QuestionWindow): Quote | undefined =>
-    w.answerText && w.outcome === "answered" ? { text: w.answerText, t: w.answeredAt ?? w.openedAt, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" } : undefined;
+    isQuotableWindow(w) ? { text: w.answerText!, t: w.answeredAt!, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" } : undefined;
 
-  const typedWindows = new Set(log.transcript.filter((s) => s.typedFor).map((s) => s.typedFor));
   const evidence = compileEvidence(log);
-  const answered = log.windows.filter((w) => w.outcome === "answered" && w.answerText
+  const typedWindows = new Set(log.transcript.map((s) => s.typedFor).filter(Boolean));
+  const answered = log.windows.filter((w) => isQuotableWindow(w)
+    && visibleAt(log, w.openedAt, w.closedAt ?? w.answeredAt)
     && (!typedWindows.has(w.id) || evidence.windows.includes(w)));
   for (const w of answered) {
     const step = w.stepRef ? byRef.get(w.stepRef) : undefined;
@@ -88,12 +107,56 @@ export function compileDeterministic(log: SessionLog): WorkMap {
     }
   }
 
-  // ---- narration: a reason the expert said out loud without being asked ----
-  for (const step of steps) {
-    if (step.reason || !step.judgment) continue;
-    const near = evidence.transcript.filter((s) => !s.typedFor && s.t >= step.screenMoment.t - 20 && s.t <= step.screenMoment.t + 25);
-    const hit = near.find((s) => NARRATION_CUES.test(s.text) && s.text.split(/\s+/).length >= 6);
-    if (hit) step.reason = { text: hit.text, t: hit.t, source: "narration" };
+  // ---- narration: globally pair grounded evidence to the nearest compatible judgment ----
+  const narrationCandidates = steps.flatMap((step) => {
+    if (step.reason || !step.judgment) return [];
+    const event = evidenceEventByStepId.get(step.id);
+    if (!event) return [];
+    const candidate: Candidate = {
+      id: `compile:${step.id}`,
+      kind: "why",
+      value: 0,
+      question: "",
+      questionRetro: "",
+      invoice: event.invoice,
+      field: event.field,
+      stepRef: stepRefOf(event),
+      eventId: event.id,
+      createdAt: event.t,
+      status: "queued",
+      guardrail: false,
+      aliases: [event.to, labelField(event.field)].filter((value): value is string => Boolean(value)),
+    };
+    return [{ step, candidate }];
+  });
+  const narrationPairs = evidence.transcript
+    .filter((segment) => !segment.typedFor)
+    .flatMap((segment) => {
+      const explicitlyNamedInvoices = new Set(narrationCandidates.flatMap(({ candidate }) => {
+        if (!candidate.invoice) return [];
+        const token = candidate.invoice.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        return new RegExp(`(?:^|[^\\p{L}\\p{N}])${token}(?:$|[^\\p{L}\\p{N}])`, "iu").test(segment.text)
+          ? [candidate.invoice]
+          : [];
+      }));
+      return narrationCandidates.flatMap(({ step, candidate }) => {
+        const delta = segment.t - candidate.createdAt;
+        if (explicitlyNamedInvoices.size && (!candidate.invoice || !explicitlyNamedInvoices.has(candidate.invoice))) return [];
+        const match = narrationMatch(segment.text, candidate);
+        if (delta < -20 || delta > 25 || !match.fills) return [];
+        const specificity = match.target === "invoice" ? 0 : match.target === "value" ? 1 : match.target === "field" ? 2 : 3;
+        return [{ step, segment, distance: Math.abs(delta), specificity }];
+      });
+    })
+    .sort((left, right) => left.specificity - right.specificity || left.distance - right.distance || left.segment.t - right.segment.t || left.step.index - right.step.index);
+  const assignedSteps = new Set<string>();
+  const assignedSegments = new Set<string>();
+  for (const { step, segment } of narrationPairs) {
+    if (assignedSteps.has(step.id) || assignedSegments.has(segment.id)) continue;
+    step.reason = { text: segment.text, t: segment.t, source: "narration" };
+    step.confidence = "low";
+    assignedSteps.add(step.id);
+    assignedSegments.add(segment.id);
   }
 
   // ---- rules by heuristic ----

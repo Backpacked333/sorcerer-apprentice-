@@ -2,7 +2,7 @@ import type { SessionLog } from "./events";
 import { visibleAt } from "./memory";
 import { redactText } from "./redact";
 
-/** Called only by the expert's typed-answer control, before asynchronous window closing. */
+/** Persist an accepted typed turn before applying its closed-window outcome. */
 export function recordTypedAnswer(log: SessionLog, windowId: string | undefined, text: string, t: number): number | undefined {
   const w = log.windows.find((w) => w.id === windowId);
   if (log.mode !== "capture" || !w || w.outcome || !text.trim() || !Number.isFinite(t)

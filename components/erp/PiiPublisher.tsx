@@ -1,33 +1,49 @@
 "use client";
 
 import { useEffect } from "react";
-import type { PiiRegion } from "@/lib/redact";
+import { piiSourceId, publishPiiRects } from "@/lib/pii-masks";
 
-const CHANNEL = "tacit-erp-pii";
+/** The queue this sandbox page shows: `?queue=`, else the header's queue link, else "expert". */
+function currentQueue(app: string): string {
+  const q = new URLSearchParams(window.location.search).get("queue");
+  if (q) return q;
+  const link = document.querySelector<HTMLAnchorElement>('a[href*="/erp?queue="]');
+  const fromLink = link ? new URL(link.href, window.location.href).searchParams.get("queue") : null;
+  return fromLink ?? (app === "erp" ? "expert" : "default");
+}
 
-/** Normalized rects of [data-pii] nodes, in the ERP page's own viewport. */
+/**
+ * Publishes normalized rects of recognized [data-pii] nodes (name/email/iban/phone, clipped by overflow) in this
+ * page's own viewport, paired by `piiSourceId({ origin, app, queue })` (P-24, two-window mode). A capture in the
+ * same tab (workspace iframe) reads the iframe DOM directly and does not need this channel.
+ * Publishes on layout, scroll, resize and DOM changes, plus a 1 s heartbeat so a subscriber can judge freshness.
+ */
 export function PiiPublisher() {
   useEffect(() => {
+    let raf = 0;
     const post = () => {
-      const w = window.innerWidth || 1;
-      const h = window.innerHeight || 1;
-      const rects: PiiRegion[] = [...document.querySelectorAll<HTMLElement>("[data-pii]")].map((el) => {
-        const r = el.getBoundingClientRect();
-        return { kind: el.dataset.pii ?? "pii", x: r.left / w, y: r.top / h, w: r.width / w, h: r.height / h };
-      });
-      const ch = new BroadcastChannel(CHANNEL);
-      ch.postMessage({ at: Date.now(), rects });
-      ch.close();
+      raf = 0;
+      try {
+        const app = window.location.pathname.startsWith("/claims") ? "claims" : "erp";
+        publishPiiRects(piiSourceId({ origin: window.location.origin, app, queue: currentQueue(app) }));
+      } catch { /* no geometry yet */ }
     };
+    const schedule = () => { if (!raf) raf = window.requestAnimationFrame(post); };
     post();
-    const ro = new ResizeObserver(post);
+    const ro = new ResizeObserver(schedule);
     ro.observe(document.documentElement);
-    window.addEventListener("resize", post);
-    window.addEventListener("scroll", post, true);
+    const mo = new MutationObserver(schedule);
+    mo.observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["data-pii", "class", "style", "hidden"] });
+    const beat = window.setInterval(post, 1000);
+    window.addEventListener("resize", schedule);
+    window.addEventListener("scroll", schedule, true);
     return () => {
       ro.disconnect();
-      window.removeEventListener("resize", post);
-      window.removeEventListener("scroll", post, true);
+      mo.disconnect();
+      window.clearInterval(beat);
+      if (raf) window.cancelAnimationFrame(raf);
+      window.removeEventListener("resize", schedule);
+      window.removeEventListener("scroll", schedule, true);
     };
   }, []);
   return null;

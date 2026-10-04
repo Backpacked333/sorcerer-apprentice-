@@ -17,8 +17,8 @@ function fixture(kind: QuestionWindow["kind"] = "limit") {
   log.windows.push(window);
   log.events.push({ id: "e", source: "dom", kind: "route_changed", invoice: "item", t: 1, to: "second_approval" });
   const answer = "Above 7200 I need a second approval.";
-  const output = { rules: [{ stepId: "s", title: "Second approval", when: '{"field":"amount","op":">","value":7200}',
-    then: '{"route":"second_approval"}', unless: null, stopAndAsk: null, quoteTexts: [answer], confidence: "medium" }],
+  const output = { rules: [{ stepId: "s", title: "Second approval", when: { anyOf: [{ allOf: [{ field: "amount", op: ">", value: 7200 }] }] },
+    then: { kind: "route", field: null, value: "second_approval" }, unless: null, stopAndAsk: null, quoteTexts: [answer], confidence: "medium" }],
     guardrails: [], slots: [], stepReasons: [] };
   generate.mockResolvedValue({ output });
   const compile = () => {

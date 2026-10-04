@@ -8,7 +8,11 @@ import { getMap, getSession, saveCompiledMap, saveMap, saveSession } from "./sto
 import { POST } from "@/app/api/compile/route";
 
 let root: string;
-beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "tacit-compile-lock-")); vi.stubEnv("DATA_DIR", root); });
+beforeEach(async () => {
+  root = await fs.mkdtemp(path.join(os.tmpdir(), "tacit-compile-lock-"));
+  vi.stubEnv("DATA_DIR", root); vi.stubEnv("STORAGE_BACKEND", "local"); vi.stubEnv("STORE_OWNER_ID", "local");
+  vi.stubEnv("VERCEL", ""); vi.stubEnv("SUPABASE_URL", ""); vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "");
+});
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); });
 const deferred = () => { let resolve!: () => void; const promise = new Promise<void>((r) => { resolve = r; }); return { promise, resolve }; };
 
@@ -20,7 +24,7 @@ it("waits for an in-flight session update and returns 409 without overwriting th
   const pending = deferred(), release = deferred();
   const rename = fs.rename.bind(fs);
   vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
-    if (String(to) === path.join(root, "sessions", "race.json")) {
+    if (String(to) === path.join(root, "local", "sessions", "race")) {
       pending.resolve();
       await release.promise;
     }
@@ -54,7 +58,7 @@ it("holds the session lock until map publication, without blocking a different s
   const pending = deferred(), release = deferred(), writes: string[] = [];
   const rename = fs.rename.bind(fs);
   vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
-    if (String(to) === path.join(root, "maps", "publish.json")) { pending.resolve(); await release.promise; }
+    if (String(to) === path.join(root, "local", "maps", "publish")) { pending.resolve(); await release.promise; }
     await rename(from, to);
     writes.push(String(to));
   });
@@ -64,13 +68,13 @@ it("holds the session lock until map publication, without blocking a different s
   try {
     await saveSession(emptySession("other", "capture", "Unrelated", "Expert"));
     expect((await getSession(source.id))?.task).toBe(source.task);
-    expect(writes).toEqual([path.join(root, "sessions", "other.json")]);
+    expect(writes).toEqual([path.join(root, "local", "sessions", "other")]);
   } finally {
     release.resolve();
     await Promise.all([compiling, writing]);
   }
   expect(await compiling).toBe(true);
-  expect(writes.slice(-2)).toEqual([path.join(root, "maps", "publish.json"), path.join(root, "sessions", "publish.json")]);
+  expect(writes.slice(-2)).toEqual([path.join(root, "local", "maps", "publish"), path.join(root, "local", "sessions", "publish")]);
   expect((await getSession(source.id))?.task).toBe("New evidence");
 });
 

@@ -15,15 +15,17 @@ describe("live compiler operator regression (provider mocked)", () => {
     const draft = emptyMap(log.id, log.task, log.expertName);
     draft.steps = [{ id: "s", index: 0, title: "Hold", screenMoment: { t: 1 }, action: { type: "hold" }, decision: "Hold", judgment: true, guardrails: [], confidence: "medium" }];
     const when = { field: "hasPO", op, value: false };
+    const wireCondition = { anyOf: [{ allOf: [when] }] };
     generate.mockResolvedValue({ output: {
-      rules: [{ stepId: "s", title: "Hold", when: JSON.stringify(when), then: '{"status":"hold"}', unless: null,
-        stopAndAsk: JSON.stringify({ who: "procurement lead", when }), quoteTexts: [log.transcript[0].text], confidence: "high" }],
+      rules: [{ stepId: "s", title: "Hold", when: wireCondition, then: { kind: "status", field: null, value: "hold" }, unless: null,
+        stopAndAsk: { who: "procurement lead", when: wireCondition }, quoteTexts: [log.transcript[0].text], confidence: "high" }],
       guardrails: [], slots: [], stepReasons: [],
     } });
     const result = await refineWithLLM(log, draft);
     expect(generate.mock.calls[0][0].instructions).toContain('Equality MUST use "==", never "=" or "eq".');
     expect(result.map.rules).toHaveLength(op === "==" ? 1 : 0);
-    if (op === "==") expect(result.map.rules[0]).toMatchObject({ when, stopAndAsk: { who: "procurement lead", when } });
+    const condition = { any: [{ all: [when] }] };
+    if (op === "==") expect(result.map.rules[0]).toMatchObject({ when: condition, stopAndAsk: { who: "procurement lead", when: condition } });
     expect(result.map.confirmedAt).toBeUndefined();
   });
 });

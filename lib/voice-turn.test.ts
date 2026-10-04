@@ -545,7 +545,7 @@ describe("turn reducer review matrix", () => {
 
   it.each([
     { via: "scribe", upload: true },
-    { via: "typed", upload: true },
+    { via: "typed", upload: false },
     { via: "timeout", upload: false },
   ] as const)("uses clip upload=$upload for $via", ({ via, upload }) => {
     let current = listening({ ...options, timeoutSecs: 1, silenceCloseSecs: 1 });

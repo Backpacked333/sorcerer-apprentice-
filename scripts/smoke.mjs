@@ -23,6 +23,8 @@ const env = {
   ELEVENLABS_API_KEY: "", AI_GATEWAY_API_KEY: "", VERCEL_OIDC_TOKEN: "",
   NEXT_PUBLIC_INTERVIEWER_AGENT_ID: "", NEXT_PUBLIC_TUTOR_AGENT_ID: "",
   NEXT_PUBLIC_EVENT_SOURCE: "dom", DATA_DIR: dataDir, NEXT_TELEMETRY_DISABLED: "1",
+  STORAGE_BACKEND: "local", STORE_OWNER_ID: "local", VERCEL: "",
+  SUPABASE_URL: "", SUPABASE_SERVICE_ROLE_KEY: "",
 };
 const run = (args, cwd = projectDir) => new Promise((resolve, reject) => {
   const child = spawnSmoke(process.execPath, args, { env, cwd, stdio: "inherit" });
@@ -189,8 +191,9 @@ await shot(map, "12-map-corrected");
 const confirmedResponse = map.waitForResponse((response) => response.url().endsWith("/api/sessions/demo_sabine/confirm") && response.request().method() === "POST");
 await (await sel(map, "map-confirm", "text=Yes, that is how it works")).click();
 const confirmed = await confirmedResponse;
-assert.ok(confirmed.ok(), "Teach-back confirmation request must succeed");
-assert.ok((await confirmed.json()).map.confirmedAt, "Teach-back confirmation must persist");
+const confirmationResult = await confirmed.json();
+assert.ok(confirmed.ok(), `Teach-back confirmation request must succeed: ${JSON.stringify(confirmationResult.issues ?? confirmationResult.error)}`);
+assert.ok(confirmationResult.map.confirmedAt, "Teach-back confirmation must persist");
 await map.waitForTimeout(500);
 await shot(map, "13-map-confirmed");
 
@@ -267,6 +270,25 @@ const decisions = await teach.locator("text=Sabine would stop here").count();
 assert.ok(decisions > 0, "Tutor must intervene on a new-hire mistake");
 assert.ok((await teach.locator("text=needed the guard").count()) > 0, "Independent miss must appear in mastery");
 assert.ok((await teach.locator("text=independent: correct without help").count()) > 0, "Independent success must be recorded");
+
+// 6. Every other surface renders without errors: landing, demo mode, claims sandbox, platform (real + demo).
+const tour = await ctx.newPage();
+const visit = async (path) => {
+  const response = await tour.goto(`${BASE}${path}`);
+  assert.equal(response?.status(), 200, `${path} must render`);
+  await tour.waitForTimeout(600);
+};
+for (const path of ["/", "/demo", "/demo/companion", "/claims", "/claims/CLM-30412", "/capture?app=claims&share=0", "/map", "/teach",
+  "/platform", "/platform/sessions", "/platform/demo", "/platform/demo/role/tier-2-escalation-lead", "/platform/demo/role/tier-2-escalation-lead/ontology"]) {
+  await visit(path);
+}
+await visit("/platform");
+const roleHrefs = await tour.locator("a[href^='/platform/role/']").evaluateAll((links) => links.map((a) => a.getAttribute("href") ?? ""));
+const roleHref = roleHrefs.map((h) => h.split("?")[0]).find((h) => /^\/platform\/role\/[^/]+$/.test(h));
+assert.ok(roleHref, "The seeded confirmed map must appear as a role on the platform");
+await visit(roleHref);
+await visit(`${roleHref}/ontology`);
+await shot(tour, "22-platform-ontology");
 assert.deepEqual(errors, [], "Smoke must have no page errors");
 assert.equal(serverError, undefined, "Smoke server must remain alive");
 console.log("PASS: capture, map, confirmation, tutor, independent guard, and page errors");

@@ -44,9 +44,10 @@ if (!erpOnly) {
   await shot(cap, "capture-workspace-1440");
   check(await frame.count() === 1, "workspace has one ERP frame");
   const box = await frame.boundingBox();
-  check(!!box && box.width >= 1000, `frame width ${box?.width ?? 0}`);
-  const side = await cap.locator(".workspace-side").boundingBox();
-  check(!!side && Math.abs(side.width - 420) < 4, `companion width ${side?.width ?? 0}`);
+  check(!!box && box.width >= 1400, `frame is full width (${box?.width ?? 0})`);
+  // The companion floats bottom-right over the full-width ERP (its rectangle is painted out of every frame).
+  const card = await cap.locator(".workspace-companion").boundingBox();
+  check(!!card && card.x + card.width <= 1440 && card.y + card.height <= 900 && card.width >= 340 && card.width <= 460, `floating companion ${card?.width ?? 0}x${card?.height ?? 0}`);
 
   const two = await browser.newContext({ viewport: { width: 480, height: 900 } });
   const comp = await two.newPage();

@@ -30,10 +30,11 @@ describe("compile barrel compatibility", () => {
 
   it("keeps the keyless refinement fallback callable through the barrel", async () => {
     vi.stubEnv("AI_GATEWAY_API_KEY", "");
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "");
     const log = emptySession("split-test", "capture", "Review invoices", "Expert");
     const draft = compiler.compileDeterministic(log);
     const result = await compiler.refineWithLLM(log, draft);
-    expect(result).toEqual({ map: draft, used: false, note: "no AI_GATEWAY_API_KEY; deterministic map" });
+    expect(result).toEqual({ map: draft, used: false, note: "AI Gateway is not configured; deterministic fallback map" });
     expect(result.map).toBe(draft);
   });
 });

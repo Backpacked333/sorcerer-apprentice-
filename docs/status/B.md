@@ -4,11 +4,11 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Task5 route/schema · C2 · [#28](https://github.com/Backpacked333/sorcerer-apprentice-/pull/28)
 
-- Done, pending landing: bounded AI SDK 7 structured generation, nullable wire schema/clean API state, normalized IDs/list suppression, posted/blocked distinction, sanitized errors and keyless 503. Oversized-image stack exhaustion is fixed; the image-field cap is after JSON parsing, not a whole-body streaming limit.
+- Done, merged: bounded AI SDK 7 structured generation, nullable wire schema/clean API state, normalized IDs/list suppression, posted/blocked distinction, sanitized errors and keyless 503. Oversized-image stack exhaustion is fixed; the image-field cap is after JSON parsing, not a whole-body streaming limit.
 - Automated: 36 mocked route/schema tests and 229 full-suite tests, typecheck, production build and CI passed; baseline tests reproduced the old SDK behavior and oversized-image failure. No paid provider calls, reseeding or deployment.
 - Human/live verification: none. Provider accuracy/latency, screenshot prompt-injection resistance, actual UI and human timing remain untested. No claim of human-verified behavior or provider zero retention.
 - Blocked/integration: [#33](https://github.com/Backpacked333/sorcerer-apprentice-/pull/33) supplies the separate pipeline; D [#23](https://github.com/Backpacked333/sorcerer-apprentice-/issues/23) must visibly distinguish current On hold/Posted status and persistent successful Posted banners from blocked/held wording. ERP control events remain DOM-sourced; banner integration is still open.
-- Next: land after independent approval; then integrate #33/D's UI; add a mocked/non-mutating eval harness before any explicitly approved keyed evaluation. Task6 hold/merge and Task7/8 crop/masks remain separate.
+- Next: integrate #33/D's UI; add a mocked/non-mutating eval harness before any explicitly approved keyed evaluation. Task6 hold/merge and Task7/8 crop/masks remain separate.
 - Manual check after integration (not run): share a sandbox invoice, change a field, compare its event/source badge, cancel a save and verify no save boundary, then save successfully and verify exactly one Posted boundary; repeat a blocked save. Keyed network checks require approval; ask a human to judge timing/phrasing.
 
 ## [PR #27](https://github.com/Backpacked333/sorcerer-apprentice-/pull/27) — N2: CI/runtime configuration (merged)
@@ -28,6 +28,12 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 - [PR #27](https://github.com/Backpacked333/sorcerer-apprentice-/pull/27) merged as [858eb99](https://github.com/Backpacked333/sorcerer-apprentice-/commit/858eb99) (N2): CI/runtime configuration; detailed automated results and live-verification gaps above are preserved.
 
+## Prepared (not merged)
+
+- [PR #34](https://github.com/Backpacked333/sorcerer-apprentice-/pull/34) (N2): isolated production smoke with credential/dotenv exclusion, nonce ownership, strict capture/map/confirmation/tutor/independent-409/mastery/console assertions, and cancellation-safe POSIX process-group cleanup.
+- Fresh independent review found and verified the fix for orphaned tsx descendants at `b88ef99`. The gate uses the app's existing text-only speech fallback because headless audio is unavailable; real audio remains untested.
+- Automated: 316 tests, typecheck and production build passed with #27/#8; earlier combined integration passed production smoke, deliberate 409→200 failed correctly, and SIGTERM removed data/released the port. Two final landed-main runs remain required.
+
 ## Verified live by a human (who, when, what they did)
 
 None reported; all results below are automated. No human verification, UI/browser testing, live-provider calls or deployed-storage testing was performed for PR #29.
@@ -41,7 +47,7 @@ None reported; all results below are automated. No human verification, UI/browse
 
 ## Blocked on (lane, handshake id, what exactly)
 
-- PR #28 remains prepared and unmerged; parent owns review and landing of remaining platform dependencies. PRs #26/#29/#30/#27 are merged.
+- Remaining approved order: #34 → #32 → #33. PRs #26/#29/#30/#27/#28 are merged; deployment remains unapproved.
 - C / P-21, P-25 ([#24](https://github.com/Backpacked333/sorcerer-apprentice-/issues/24)): migrate `lib/erp.ts` to store APIs and wire request workspace identity. `currentWorkspace()` returns `"local"`; per-visitor isolation is not delivered.
 - C/D / P-1 ([#24](https://github.com/Backpacked333/sorcerer-apprentice-/issues/24), [#23](https://github.com/Backpacked333/sorcerer-apprentice-/issues/23)): render `frame.url ?? frame.dataUrl` in Teach and WorkMap replay consumers. A/D hello/reannounce producer/subscriber wiring also remains outside this PR.
 
@@ -49,7 +55,7 @@ None reported; all results below are automated. No human verification, UI/browse
 
 ## Next 3 things
 
-1. Parent completes review and lands PR #28 and remaining dependencies in the approved order.
+1. Parent completes review and lands PR #34 and remaining dependencies in the approved order.
 2. Owning lanes integrate store, telemetry and frame contracts, then re-run the keyless gate on landed main; do not treat optional metadata as isolation or automatic wiring.
 3. Complete the live Railway and post-integration human browser/audio checks above, recording results before claiming readiness or live verification.
 

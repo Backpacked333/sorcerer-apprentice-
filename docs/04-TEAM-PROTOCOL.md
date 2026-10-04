@@ -49,6 +49,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/seed.ts`, `lib/seed-boot.test.ts`, `lib/health.test.ts` | **B** | non-destructive sample boot and readiness regressions |
 | `lib/platform-env.test.ts` | **B** | deployment environment example regression |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
+| `lib/smoke-runtime.mjs`, `lib/smoke-runtime.test.ts` | **B** | smoke environment isolation, process cleanup and console guards |
 | `lib/platform-config.test.ts` | **B** | N2 structural regressions for CI, runtime configuration and worktree exclusions |
 | `lib/workmap.ts` | **C** | THE contract: additive only |
 | `lib/workmap.contracts.test.ts` | **C** | legacy/new map compatibility for pre-approved contract additions |

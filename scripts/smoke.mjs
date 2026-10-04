@@ -280,10 +280,11 @@ for (const path of ["/", "/demo", "/demo/companion", "/claims", "/claims/CLM-304
   await visit(path);
 }
 await visit("/platform");
-const roleHref = await tour.locator("a[href^='/platform/role/']").first().getAttribute("href");
+const roleHrefs = await tour.locator("a[href^='/platform/role/']").evaluateAll((links) => links.map((a) => a.getAttribute("href") ?? ""));
+const roleHref = roleHrefs.map((h) => h.split("?")[0]).find((h) => /^\/platform\/role\/[^/]+$/.test(h));
 assert.ok(roleHref, "The seeded confirmed map must appear as a role on the platform");
 await visit(roleHref);
-await visit(`${roleHref.split("?")[0]}/ontology`);
+await visit(`${roleHref}/ontology`);
 await shot(tour, "22-platform-ontology");
 assert.deepEqual(errors, [], "Smoke must have no page errors");
 assert.equal(serverError, undefined, "Smoke server must remain alive");

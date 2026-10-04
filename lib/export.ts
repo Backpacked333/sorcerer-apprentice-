@@ -48,7 +48,9 @@ export function toAgentPrompt(map: WorkMap): string {
     ...map.rules.map((r, i) => `${i + 1}. When ${describeCond(r.when)}${r.unless ? `, unless ${describeCond(r.unless)}` : ""}: ${describeAct(r.then)}. (${r.quotes[0]?.text ?? "no quote"})`),
     "",
     "STOP AND ASK A HUMAN",
-    ...map.rules.filter((r) => r.stopAndAsk).map((r) => `- When ${describeCond(r.stopAndAsk!.when)}: stop, hand the case to ${r.stopAndAsk!.who}, attach the invoice and this rule.`),
+    ...map.rules.filter((r) => r.stopAndAsk).map((r) => r.stopAndAsk!.who
+      ? `- When ${describeCond(r.stopAndAsk!.when)}: stop, hand the case to ${r.stopAndAsk!.who}, attach the invoice and this rule.`
+      : `- When ${describeCond(r.stopAndAsk!.when)}: stop; who to ask is unresolved. Attach the invoice and this rule; do not guess a recipient.`),
     "- When a case matches no rule and a decision is needed: stop, flag it for the expert, do not guess.",
     "",
     "STEPS",
@@ -73,7 +75,9 @@ export function toSopMarkdown(map: WorkMap): string {
   out.push("## Rules");
   for (const r of map.rules) {
     out.push(`- **${r.title}**: when ${describeCond(r.when)}${r.unless ? `, unless ${describeCond(r.unless)}` : ""}, ${describeAct(r.then)}.`);
-    if (r.stopAndAsk) out.push(`  - Stop and ask ${r.stopAndAsk.who} when ${describeCond(r.stopAndAsk.when)}.`);
+    if (r.stopAndAsk) out.push(r.stopAndAsk.who
+      ? `  - Stop and ask ${r.stopAndAsk.who} when ${describeCond(r.stopAndAsk.when)}.`
+      : `  - Stop when ${describeCond(r.stopAndAsk.when)}; who to ask is unresolved.`);
     for (const q of r.quotes) out.push(`  - "${q.text}"`);
   }
   if (map.slots.some((s) => s.status === "open")) {

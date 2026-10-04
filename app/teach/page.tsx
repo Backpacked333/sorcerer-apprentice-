@@ -9,7 +9,7 @@ export default async function TeachIndex({ searchParams }: { searchParams: Promi
   const maps = [];
   for (const s of sessions) {
     const m = await getMap(s.id);
-    if (m) maps.push({ sessionId: s.id, expert: m.expert.name, task: m.task, confirmed: !!m.confirmedAt, rules: m.rules.length, steps: m.steps.length });
+    if (m) maps.push({ sessionId: s.id, expert: m.expert.name, task: m.task, confirmed: !!m.confirmedAt, rules: m.rules.length, steps: m.steps.length, startedAt: s.startedAt });
   }
   return <TeachStart maps={maps} preselect={from} />;
 }

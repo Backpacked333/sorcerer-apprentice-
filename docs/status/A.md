@@ -2,6 +2,7 @@
 
 ### Done and merged (WP ids)
 
+- WA-1 recovery hardening: restored a fully local dependency tree after macOS offloaded 23,677 package files, then added bounded ElevenAgents WebRTC auto-reconnect with a 10-second stability reset, suppressed stale tagged speech during recovery, no duplicate greeting, preserved app-clock/session metadata, and browser fallback only after recovery is exhausted (this PR).
 - WA-1: generic prompts/tools, idempotent provisioning/check script, awaited connection/fallback contract, debug tap, and keyed/keyless `/voice-check` diagnostics (PRs #2, #3, #7).
 - WA-2: client-side ElevenLabs output gate, idle heartbeat, persistent late-speech squelch, and soak counters (PR #22).
 - WA-3: pure turn reducer, protocol/echo helpers, one shared Scribe/WebSpeech hub, app-clock transcript timing, bounded fatal fallback, config reconnect, teardown safety, and the documented `VoiceApi.turn()` React adapter with structural gate/mic/tool/typed/clip wiring (PRs #9, #12, #35 and branch `a/wa3-turn-adapter`).
@@ -16,6 +17,7 @@
 
 ### Not verified yet (and the script to verify)
 
+- HT-1 male ElevenLabs recovery — 2 minutes: hard-refresh `http://localhost:3000/voice-check?role=interviewer`; click **Request / refresh microphone**, allow access, then click **Connect**. Require `Mode: agent`, `Status: connected`, and a `conv_…` conversation id. Click **Send [ASK] sample** once; require the male ElevenLabs interviewer to say the sample exactly once and the mode to remain `agent` (never `fallback: browser speech`). If `reconnect_scheduled` appears in Raw events, require `reconnect_attempt` followed by a new `connect` and then repeat **Send [ASK] sample** once. Report the first row or audible result that differs.
 - HT-1 real round trip — 2 minutes: open `http://localhost:3000/voice-check?role=interviewer`; confirm agent id and Scribe token rows are green; allow the mic; click **Connect** and require connected/id/no sound; click **Send [ASK] sample** and require one sentence with 9001, 1000, 2000; click **Open mic**, say “Because that item belongs to the other department, testing one two three,” then require live partials, one exact Scribe commit, `tool log_answer stepRef=9001:code`, and a four-word-or-shorter acknowledgement. Report the first missing line.
 - HT-2 structural silence — the checkpoint explicitly requires 3 minutes, so no honest 2-minute script can verify it: on `/voice-check?role=interviewer`, connect with gate **CLOSED**, click **Silence soak**; spend 60 seconds silent, 60 seconds typing elsewhere, and 60 seconds reading aloud; require no audible agent speech, automated PASS, `audible unsolicited: 0`, no disconnect, and heartbeat delta at least 15. Record gated utterances separately.
 - HT-3/HT-4 turn exits and speaker echo — blocked until the React `VoiceApi.turn()` adapter lands. Then, in 2 minutes on `/voice-check`: run one tool-backed turn, one no-tool answer, one silent timeout, one immediate abort-on-speech, and one typed answer; require one matching resolve for each. Unplug headphones, send `[ASK]`, stay silent and require every returned segment to be `agent echo` with empty `heard`; repeat saying “my own words only” and require exactly that text. Repeat on `?keyless=1`.
@@ -44,6 +46,7 @@
 
 ### Risks I see for the demo
 
+- Automated recovery is green, but the actual male voice and WebRTC reconnect remain human-audibility checks; do not mark the hotfix live-verified until HT-1 above passes.
 - M1 is missed: real ElevenAgents + real Scribe + real vision + real compile have not completed one end-to-end session.
 - P-12 is implemented and automatically verified, but keyed speech timing, audibility, echo behavior, and microphone coexistence still require the human HT-1/HT-3/HT-4 runs before they can be called live-verified.
 - The quick human silence result is encouraging but does not replace the required three-minute audible soak.

@@ -3,6 +3,20 @@ import { ConversationalConfig } from "@elevenlabs/elevenlabs-js/serialization";
 
 export const REQUIRED_VOICE_MODEL = "eleven_v4_turbo";
 
+export const SKIP_TURN_DESCRIPTION = "Stay silent outside an active tagged exchange or for unrelated background speech. During an active exchange, respond to direct answers, connection checks and requests to repeat or clarify; these do not need a new tag.";
+
+export function answerAcknowledgmentOptions(name: string): Pick<ElevenLabs.ClientToolConfigInput, "preToolSpeech" | "executionMode"> {
+  return name === "log_answer"
+    ? { preToolSpeech: "force", executionMode: "post_tool_speech" }
+    : { preToolSpeech: "off", executionMode: "immediate" };
+}
+
+export function assertAnswerAcknowledgment(tool?: Pick<ElevenLabs.ClientToolConfigInput, "preToolSpeech" | "executionMode" | "expectsResponse">) {
+  if (tool?.preToolSpeech !== "force" || tool.executionMode !== "post_tool_speech" || tool.expectsResponse !== true) {
+    throw new Error("Voice-flow check failed: log_answer must acknowledge before saving and still await its result.");
+  }
+}
+
 export function v4AgentOptions(config: ElevenLabs.ConversationalConfig) {
   // SDK 2.70's outbound enum predates V4; serialize other fields before the wire override.
   const wire = ConversationalConfig.jsonOrThrow({

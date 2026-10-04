@@ -1,3 +1,11 @@
+## Oct 4 · Active-exchange presence [C1-C3, M1-M3]
+
+- Both live agents now distinguish connection/repeat/time requests from unrelated background speech while a tagged question is pending. Warm, brief acknowledgments are allowed; `log_answer` speaks before saving (`pre_tool_speech=force`, `execution_mode=post_tool_speech`) and still awaits the result. No acknowledgment may claim the answer is correct or already saved. Idle/background silence and V4 Turbo remain unchanged.
+- Read-back verified exact prompts and preserved unrelated configuration, knowledge-base, privacy and model settings. Provisioning `--check` now fails on prompt, skip policy or answer-acknowledgment drift. 512 tests, typecheck, build and diff checks passed before live testing.
+- Real production Capture test on frontend `4d76c20`: an unsaved ERP route change triggered a grounded question; "Can you hear me?" received "Yes, I can hear you." in ~856ms sampled waveform latency with no answer tool or browser speech. Both generated turns in `conv_8201m42dqsr6eths3ezkz9nbey94` reported `eleven_v4_turbo`. Controlled synthetic input is not human naturalness acceptance.
+- Blocking app findings: the legacy Capture controller persisted that human commit as `speaker:agent` because the agent had begun replying, and uploaded a timeout clip despite no accepted answer. Stopped before legitimate-answer acknowledgment ordering and tutor checks. Earlier diagnostic-only checks did not establish real Capture/Map/Teach integration; those screens still used legacy `say()` at the tested production revision.
+- Next: correct the real controller path, repeat with an actual task answer and slow clip persistence, then obtain a human listening pass. Map/Teach integration remains a Lane C coordination item.
+
 ## Oct 4 · Background speech and conversational flow [C1, M1-M3, S1]
 
 - Roy's post-deploy listening feedback: voice sounds okay, but nearby voices trigger it and responses feel hesitant. This is not acceptance of the full voice experience.

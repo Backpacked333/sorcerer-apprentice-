@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import type { ElevenLabs } from "@elevenlabs/elevenlabs-js";
-import { assertVoiceFlowAgent, REQUIRED_VOICE_MODEL, voiceFlowAgentOptions } from "../lib/agent-model";
+import { answerAcknowledgmentOptions, assertAnswerAcknowledgment, assertVoiceFlowAgent, REQUIRED_VOICE_MODEL, SKIP_TURN_DESCRIPTION, voiceFlowAgentOptions } from "../lib/agent-model";
 
 for (const file of [".env.local", ".env"]) {
   try {
@@ -79,7 +79,7 @@ function toolConfig(tool: ToolDef): ElevenLabs.ClientToolConfigInput & { type: "
     description: tool.description,
     expectsResponse: tool.expectsResponse,
     responseTimeoutSecs: 20,
-    preToolSpeech: "off",
+    ...answerAcknowledgmentOptions(tool.name),
     ...(hasParameters
       ? {
           parameters: {
@@ -160,7 +160,7 @@ function buildBody(role: Role, toolIds: string[], knowledgeBase?: ElevenLabs.Kno
             skipTurn: {
               type: "system" as const,
               name: "skip_turn",
-              description: "Stay silent when no tagged message was received, or the user needs a moment.",
+              description: SKIP_TURN_DESCRIPTION,
               params: { systemToolType: "skip_turn" as const },
             },
           },
@@ -308,6 +308,7 @@ async function check() {
     const localPrompt = readFileSync(path.join(root, ROLES[role].promptFile), "utf8");
     const remotePrompt = prompt?.prompt ?? "";
     const names = (prompt?.toolIds ?? []).map((id) => toolNameById.get(id) ?? `unknown:${id}`);
+    const answerTool = allTools.find((tool) => prompt?.toolIds?.includes(tool.id) && tool.toolConfig.type === "client" && tool.toolConfig.name === "log_answer")?.toolConfig;
     console.log(JSON.stringify({
       name: agent.name,
       id: agent.agentId,
@@ -319,10 +320,14 @@ async function check() {
       expressiveMode: tts?.expressiveMode ?? false,
       voiceId: tts?.voiceId ?? null,
       tools: names,
+      answerAcknowledgment: answerTool?.type === "client" ? { preToolSpeech: answerTool.preToolSpeech, executionMode: answerTool.executionMode, expectsResponse: answerTool.expectsResponse } : null,
       privacy: agent.platformSettings?.privacy ?? null,
       promptSha1: { remote: sha1(remotePrompt), local: sha1(localPrompt), equal: remotePrompt === localPrompt },
     }, null, 2));
     assertVoiceFlowAgent(agent);
+    if (remotePrompt !== localPrompt) throw new Error(`${agent.name}: remote prompt differs from the local prompt.`);
+    if (prompt?.builtInTools?.skipTurn?.description !== SKIP_TURN_DESCRIPTION) throw new Error(`${agent.name}: skip_turn must allow conversational repair during active exchanges.`);
+    if (role === "interviewer") assertAnswerAcknowledgment(answerTool?.type === "client" ? answerTool : undefined);
   }
 }
 

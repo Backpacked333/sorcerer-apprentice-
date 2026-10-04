@@ -25,8 +25,9 @@
 
 ### Blocked on (lane, handshake id, what exactly)
 
-- Human-only: the running Next process and repository `.env.local` do not contain `ELEVENLABS_API_KEY`; interviewer/tutor agent ids are also absent. A human must load the secret/ids without posting them, restart the correct checkout, grant mic/screen permissions, and judge audio. First shared-agent creation/update remains `[ASK FIRST]`.
-- Lane A, H3 / P-12, issue #40: the pure reducer and shared hub are merged, but `components/voice.tsx` still lacks the documented `VoiceApi.turn()` adapter; HT-3 and Capture adoption cannot run.
+- Human-only: `ELEVENLABS_API_KEY` is loaded and can mint Scribe tokens, but it lacks ElevenLabs `convai_write`; interviewer/tutor agent ids remain absent. A human must grant that key Conversational AI write access without posting it, then Lane A can provision agents, restart the correct checkout, and run the mic/audio checks.
+- Lane A, H3 / P-12, issue #40: `VoiceApi.turn()` / `cancelTurn()` / `submitTyped()` and live phase, partial, STT, session-clock, tool, clip and transcript wiring are implemented on `a/wa3-turn-adapter`; automated adapter/reducer coverage and `/voice-check` controls are green. Keyed HT-1–HT-5 still require provisioned agent ids and human audio verification.
+- WA-1 live bring-up attempted Oct 3 at 8:04 PM ET: ElevenLabs accepted Scribe token minting (`/api/scribe-token` returned a real single-use token) but rejected agent provisioning because the configured key lacks `convai_write`. No agent ids were written to `.env.local`; unblock by granting that key Conversational AI write access, then rerun `npm run agents:create` and rebuild/restart.
 - Lane D, H8, issue #4 / PR #18: the Capture controller/view seam is not on main, blocking WA-4/WA-5 controller integration and the mechanism drawer.
 - Lane B, P-4/P-22, issue #14 / PR #29: `QuestionWindow.spokeAt` and `closedBy` are not on main.
 - Lane B, H10, issue #38: no deployed/current real-vision event has been handed to Lane A for HT-5.
@@ -36,7 +37,7 @@
 
 ### Next 3 things
 
-1. Land issue #40: implement the `VoiceApi.turn()` adapter against the merged reducer/hub, re-review it, and announce `CONTRACT: P-12`.
+1. Land issue #40 and announce `CONTRACT: P-12`; then provision both agents once `convai_write` is enabled and run HT-1–HT-5 with a human listener.
 2. After PRs #18 and #29 land, integrate WA-4/WA-5 into the Capture controller and run HT-5 with B’s real vision event and C’s live compile.
 3. With the valid key and existing agent ids loaded—or explicit approval for first creation/update—run HT-1, the full three-minute HT-2, HT-3, HT-4, and the two-laptop mic check.
 

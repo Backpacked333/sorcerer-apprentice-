@@ -149,8 +149,7 @@ function Preview({ vm, open, masking }: { vm: CaptureVM; open: boolean; masking:
   const [draft, setDraft] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
   const setVideo = (el: HTMLVideoElement | null) => {
     video.current = el;
-    const r = vm.pipeline.videoRef as unknown as { current: HTMLVideoElement | null };
-    r.current = el;
+    vm.pipeline.videoRef.current = el;
   };
 
   useEffect(() => {

@@ -36,6 +36,25 @@ The governor is still the sole speech gate. Off-record, pause, end and unmount a
 `SessionLog.metrics.reasoningLatencyMs/reasoningQuestions/reasoningRuns/reasoningFailures`
 report the last accepted analysis/cumulative activity; these are not live quality scores.
 
+`WorkMap.roleProfile?: RoleProfile` stores proposed subject/relation/object edges, each
+with a literal finalized expert quote, transcript ID and timestamp. Compile generates it
+in parallel with rule refinement; `llm:false` bypasses both. `profileNote` distinguishes
+disabled, missing evidence and provider failure. A changed persisted session rejects
+the compile with 409. Map reads recheck profile provenance against the current session,
+so withdrawn/changed sources are not served. Profile claims remain visibly proposed even
+after Work Map confirmation and are never exported as tutor instructions or executed.
+This is bounded single-session knowledge extraction, not cross-workspace retrieval,
+model fine-tuning, semantic entailment proof or a held-out accuracy benchmark.
+
+Default perception is `google/gemini-3.8-flash` (minimal reasoning); compile and profile
+reasoning default to `anthropic/claude-sonnet-5.5` (high). Gateway API-key and Vercel OIDC
+authentication are supported. Compiler condition/action JSON strings are parsed and
+validated locally; model schema is flat and nullable. Voice provisioning defaults to
+native `gemini-3.7-flash`, then requires a saved `eleven_v4_turbo` via the SDK wire override
+because the installed TTS enum omits V4. `agents:create --check` fails on a wrong model.
+This reuses the implementation already merged into the platform branch in PR #44,
+never silently selects V3. No provisioning/deployment runs are part of these code changes.
+
 ---
 
 ## 1. The Work Map — `lib/workmap.ts` · Owner **C** · Consumers A, B, D

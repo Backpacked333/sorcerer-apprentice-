@@ -1,5 +1,9 @@
 ## Roy-authorized memory integration (C1/C3)
 
+- Provisioning now defaults to Gemini 3.7 Flash, requires V4 Turbo through authenticated
+  wire override reused from platform PR #44, then checks the saved model. The SDK enum
+  does not include V4. Serialization/mismatch tests pass; remote agents were not changed.
+
 - Capture evaluates bounded background proposals (shadow by default). Explicit live mode
   chooses/rephrases eligible candidates through the unchanged governor and tagged ASK.
 - Pause, off-record, end and unmount invalidate packets. No remote agent changes or human

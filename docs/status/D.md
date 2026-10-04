@@ -1,5 +1,10 @@
 # Lane D status
 
+## Roy-authorized profile integration (M2)
+- Work Map has a collapsible proposed-role-profile view with literal quotes and timestamps.
+  It explicitly distinguishes draft relationships from executable, confirmed tutor rules.
+- Automated keyless regression checks only; no human visual/voice acceptance claimed.
+
 Updated on branch `d/experience`. Not merged. Nothing below is a live human verification.
 
 ## Done on this branch (not merged)

@@ -1,6 +1,13 @@
 # Lane C status
 
 ## Background inference integration (Roy-authorized; C1/C3/M2)
+- Added proposed, evidence-linked role profiles compiled alongside rules and persisted in
+  WorkMap. Read-time revalidation removes withdrawn/changed sources. Profiles are visible
+  for review but do not become tutor rules upon map confirmation.
+- Migrated rule inference to AI SDK 7 structured output with flat wire schema, local JSON
+  condition validation, high reasoning, bounded timeout and finalized expert-only quotes.
+- Model IDs checked against the live Gateway catalog. Real inference, held-out semantic
+  accuracy, multilingual coverage, live voice and human acceptance remain unverified.
 - Sonnet 5.5 high reasoning through Gateway; single-flight Capture analysis, shadow default,
   opt-in live packets with exact-state/expiry validation at voice dispatch.
 - Keyless/failure paths preserve deterministic Capture. Mocked route and packet tests pass.

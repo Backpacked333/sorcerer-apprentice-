@@ -1,6 +1,12 @@
 # Lane B status
 
 ## Roy-authorized memory integration (C1/N2)
+- Reused platform PR #44's request-scoped OIDC detection pattern and pinned its already
+  installed `@vercel/oidc` 3.2.0 dependency; no provider-specific SDKs were added.
+- Gemini 3.8 Flash perception default with minimal reasoning, Gateway key/OIDC support.
+  Existing masking, sampling and sequence handling unchanged. No measured latency claim.
+- `getMap` revalidates profile source quotes against the current session. Persistence still
+  uses the checked-in store boundary; this work does not replace the platform's Supabase rollout.
 - Added Gateway reasoning model/mode settings, no dependencies. Stateless same-origin
   endpoint bounds streamed input at 128 KiB and generation at 25 seconds; failures sanitized.
 - Same-origin is not authentication: retain deployment access controls and Gateway budgets.

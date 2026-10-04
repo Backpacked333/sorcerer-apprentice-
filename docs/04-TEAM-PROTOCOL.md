@@ -33,6 +33,9 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 |---|---|---|
 | `lib/memory.ts`, `lib/memory.test.ts` | **C** | bounded application-owned memory, evidence validation and cancellable reasoning handoffs; Roy authorized this cross-lane integration |
 | `lib/reasoning.ts`, `lib/reasoning.test.ts`, `lib/prepared-question.ts`, `app/api/reason/` | **C** | bounded high-reasoning model call and freshness-checked question packets |
+| `lib/role-profile.ts`, `lib/role-profile.test.ts`, `lib/compile.gateway.test.ts` | **C** | profile compile/provenance replay and flat Gateway compiler boundary |
+| `lib/agent-model.ts` | **A** | V4 wire override reused from platform PR #44; saved-model verification |
+| `lib/gateway-auth.ts` | **B** | shared Gateway key/environment/request-scoped OIDC detection |
 | `components/voice.tsx` | **A** | `VoiceApi` is a contract: additive only |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |

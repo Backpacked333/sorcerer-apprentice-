@@ -40,6 +40,18 @@ export function WorkMapView({
   return (
     <div className="space-y-4">
       <p className="t-small text-muted">{headlineCounts({ steps: map.steps })}</p>
+      {!!map.roleProfile?.relationships.length && (
+        <details className="panel space-y-3 p-4">
+          <summary>Proposed role profile · {map.roleProfile.relationships.length} evidence-linked relationships</summary>
+          <p className="t-small text-muted">Draft interpretations, not company policy. These never execute as tutor rules, even after map confirmation.</p>
+          {map.roleProfile.relationships.map((r, i) => (
+            <blockquote key={`${r.evidenceId}-${i}`} className="t-small">
+              <p>{r.subject} · {r.relation.replaceAll("_", " ")} · {r.object}</p>
+              <p className="text-muted">“{r.quote}” — {r.t.toFixed(1)}s · {r.evidenceId}</p>
+            </blockquote>
+          ))}
+        </details>
+      )}
       <div className="timeline">
         {steps.map((s) => (
           <button key={s.id} type="button" className={`timeline-node ${selected?.id === s.id ? "is-on" : ""}`} onClick={() => setSelectedId(s.id)}>

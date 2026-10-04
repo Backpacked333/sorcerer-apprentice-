@@ -4,6 +4,7 @@
  * Everything else in the app is a view of this type. Keep it boring and explicit.
  */
 import { z } from "zod";
+import { RoleProfileSchema } from "./memory";
 
 // ---------- Invoice state as the vision model / ERP telemetry report it ----------
 
@@ -122,6 +123,7 @@ export const WorkMapSchema = z.object({
   task: z.string(),
   expert: z.object({ name: z.string(), language: z.string().default("en") }),
   onet: z.object({ code: z.string(), occupation: z.string(), task: z.string() }).optional(),
+  roleProfile: RoleProfileSchema.optional(),
   steps: z.array(StepSchema),
   rules: z.array(RuleSchema),
   slots: z.array(SlotSchema),

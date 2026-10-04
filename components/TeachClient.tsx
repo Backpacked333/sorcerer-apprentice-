@@ -4,11 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Frame, QuestionWindow, ScreenEvent, SessionLog } from "@/lib/events";
 import { describeEvent } from "@/lib/events";
 import { Matcher, type TutorDecision } from "@/lib/matcher";
+import { createSessionSync } from "@/lib/session-sync";
 import { type InvoiceState, type WorkMap, uid } from "@/lib/workmap";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
 import { VoiceProvider, useTranscriber, useVoice, type ToolHandlers } from "./voice";
 import { TeachView } from "./views/TeachView";
-import type { TeachReplay, TeachVM } from "./views/teach.vm";
+import type { TeachDecision, TeachReplay, TeachVM } from "./views/teach.vm";
 
 export function TeachClient(props: { sessionId: string; agentId?: string; source: EventSource }) {
   const tools = useRef<ToolHandlers>({});
@@ -26,10 +27,13 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
   const [expertLog, setExpertLog] = useState<SessionLog | null>(null);
   const [started, setStarted] = useState(false);
   const [tick, setTick] = useState(0);
-  const [decisions, setDecisions] = useState<(TutorDecision & { t: number })[]>([]);
+  const [decisions, setDecisions] = useState<TeachDecision[]>([]);
   const [phase, setPhase] = useState<"coached" | "independent">("coached");
   const [replay, setReplay] = useState<TeachReplay | null>(null);
   const [ended, setEnded] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [lastReplay, setLastReplay] = useState<TeachReplay | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const matcher = useRef<Matcher | null>(null);
   const logRef = useRef<SessionLog | null>(null);
   const pending = useRef<{ decision: TutorDecision; windowId: string } | null>(null);
@@ -38,6 +42,8 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
   const mapRef = useRef<WorkMap | null>(null);
   mapRef.current = map;
   const expertRef = useRef<SessionLog | null>(null);
+  const sync = useRef<ReturnType<typeof createSessionSync> | null>(null);
+  const contextRevision = useRef<string | null>(null);
   expertRef.current = expertLog;
 
   const rerender = () => setTick((t) => t + 1);
@@ -59,6 +65,17 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     })();
   }, [sessionId]);
 
+  useEffect(() => {
+    if (!voice.connected || !map?.confirmedAt) {
+      contextRevision.current = null;
+      return;
+    }
+    const key = `${map.sessionId}:${map.revision}`;
+    if (contextRevision.current === key) return;
+    contextRevision.current = key;
+    voice.sendContext(`[WORK MAP] ${JSON.stringify(map)}`);
+  }, [map, voice.connected, voice.sendContext]);
+
   const showReplay = useCallback((stepId?: string, ruleTitle?: string) => {
     const m = mapRef.current;
     const ex = expertRef.current;
@@ -67,14 +84,16 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     const frame = step?.screenMoment.frameId ? ex?.frames.find((f) => f.id === step.screenMoment.frameId) : undefined;
     const quote = step?.reason?.text ?? m.rules.find((r) => r.stepId === step?.id)?.quotes[0]?.text;
     const audioId = step?.reason?.audioId ?? m.rules.find((r) => r.stepId === step?.id)?.quotes.find((q) => q.audioId)?.audioId;
-    setReplay({ step, frame, quote, audioUrl: audioId && ex ? `/api/sessions/${ex.id}/clips?audioId=${audioId}` : undefined, rule: ruleTitle });
+    const r: TeachReplay = { step, frame, quote, audioUrl: audioId && ex ? `/api/sessions/${ex.id}/clips?audioId=${audioId}` : undefined, rule: ruleTitle };
+    setReplay(r);
+    setLastReplay(r);
   }, []);
 
   const flagForExpert = useCallback(async (context: string) => {
     const m = mapRef.current;
     const L = logRef.current;
     if (!m || !L) return;
-    const slot = { id: uid("slot"), kind: "novel" as const, question: `Lena hit a case you never showed me: ${context.replace(/^.*?\((.*?)\).*$/, "$1")}. What do you do with it?`, status: "open" as const };
+    const slot = { id: uid("slot"), kind: "novel" as const, question: `${L.expertName || "The new hire"} hit a case you never showed me: ${context.replace(/^.*?\((.*?)\).*$/, "$1")}. What do you do with it?`, status: "open" as const };
     const next = { ...m, slots: [...m.slots, slot] };
     mapRef.current = next;
     setMap(next);
@@ -115,7 +134,7 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
       const state: InvoiceState = { ...(pipelineState.current ?? {}), ...(e.state ?? {}) };
       const d = mt.decide(e, state, e.t);
       if (d.kind !== "none") {
-        setDecisions((xs) => [...xs, { ...d, t: e.t }]);
+        setDecisions((xs) => [...xs, { ...d, t: e.t, guard: e.kind === "save_blocked", cause: { kind: e.kind, field: e.field, to: e.to } }]);
         speak(d);
       }
       rerender();
@@ -125,6 +144,16 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
   const pipeline = useScreenPipeline({ sessionStart: log?.startedAt ?? Date.now(), source, onEvent });
   const pipelineState = pipeline.currentState;
 
+  useEffect(() => {
+    if (!started) return;
+    const interval = window.setInterval(() => {
+      const L = logRef.current;
+      if (L && sync.current) void sync.current.sync(L).catch(() => setSyncError("Could not save this teach session."));
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [started]);
+
+  // mark when the tutor actually started speaking (intervention latency)
   useEffect(() => {
     const p = pending.current;
     const L = logRef.current;
@@ -157,8 +186,13 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     if (!L) return;
     L.endedAt = Date.now();
     L.mastery = matcher.current?.ledger.map((m) => ({ ruleId: m.ruleId, outcome: `${m.outcome} (${m.phase}${m.helpBefore ? ", help before the decision" : ""})`, t: m.t })) ?? [];
+    try {
+      if (sync.current) await sync.current.sync(L);
+    } catch {
+      setSyncError("Could not save this teach session.");
+      return;
+    }
     await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "disarm" }) }).catch(() => {});
-    await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) });
     voice.disconnect();
     pipeline.stop();
     setEnded(true);
@@ -195,23 +229,54 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     },
   };
 
-  const start = async () => {
+  /** Synchronous up to getDisplayMedia (it needs the click's transient activation); the rest is async. */
+  const start = (opts?: { workspace?: boolean }): Promise<void> => {
     const L = logRef.current;
-    if (!L) return;
+    if (!L) return Promise.resolve();
+    const share = new URLSearchParams(window.location.search).get("share") !== "0";
+    const sharing = share ? pipeline.start({ mode: opts?.workspace ? "workspace" : "tab", app: "erp", queue: "newhire" }).catch(() => {}) : Promise.resolve();
     L.startedAt = Date.now();
     L.sourceMapRevision = map?.revision;
-    setStarted(true);
-    if (map?.confirmedAt) await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "arm", mapSessionId: map.sessionId, teachSessionId: L.id }) }).catch(() => {});
-    if (new URLSearchParams(window.location.search).get("share") !== "0") await pipeline.start().catch(() => {});
-    await voice.connect({ firstMessage: `I'll watch while you work. I only speak when ${map?.expert.name ?? "the expert"} would.` });
-    voice.setMicMuted(true);
+    setSyncError(null);
+    sync.current ??= createSessionSync(L.id);
+    const syncRef = sync.current;
+    const fail = (message: string) => {
+      pipeline.stop();
+      setSyncError(message);
+    };
+    return (async () => {
+      try {
+        await syncRef.sync(L);
+      } catch {
+        fail("Could not save this teach session. Try again.");
+        return;
+      }
+      if (!map?.confirmedAt) {
+        fail("A confirmed Work Map is required to start.");
+        return;
+      }
+      // the save guard is armed before the session counts as started (no unguarded save in the first ms)
+      const armed = await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "arm", mapSessionId: map.sessionId, teachSessionId: L.id }) }).catch(() => null);
+      if (!armed?.ok) {
+        fail("Could not arm the teach guard. Reload the confirmed Work Map.");
+        return;
+      }
+      setStartedAt(L.startedAt);
+      setStarted(true);
+      await sharing;
+      await voice.connect({
+        firstMessage: `I'll watch while you work. I only speak when ${map.expert.name} would.`,
+        dynamicVariables: { expert_name: map.expert.name, newhire_name: L.expertName, task: L.task },
+      });
+      voice.setMicMuted(true);
+    })();
   };
 
   const card = matcher.current?.masteryCard() ?? [];
   const missed = card.filter((c) => c.status === "needs_practice");
   const events = log ? log.events.filter((e) => e.kind !== "typing").slice(-8).reverse() : [];
   void tick;
-  const crop = pipeline as { setCropTarget?: (el: HTMLElement | null) => void; surface?: "browser" | "window" | "monitor" };
+  const cur = pipelineState.current;
 
   const vm: TeachVM = {
     log,
@@ -233,12 +298,23 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
       start: pipeline.start,
       activity: pipeline.activity,
       visionLatency: pipeline.visionLatency,
-      ...(typeof crop.setCropTarget === "function" ? { setCropTarget: crop.setCropTarget, surface: crop.surface } : {}),
+      setCropTarget: pipeline.setCropTarget,
+      surface: pipeline.surface,
+      setOccluders: pipeline.setOccluders,
+      selfCapture: pipeline.selfCapture,
+      degraded: pipeline.degraded,
+      lastSentUrl: pipeline.lastSentUrl,
     },
-    currentInvoice: pipelineState.current.invoice,
+    currentInvoice: cur.invoice,
+    currentState: { invoice: cur.invoice, supplier: cur.supplier, amount: cur.amount, category: cur.category, costCenter: cur.costCenter, status: cur.status },
+    startedAt,
+    learnerName: log?.expertName || "New hire",
+    expertName: map?.expert.name,
+    reopenReplay: !replay && lastReplay ? () => setReplay(lastReplay) : undefined,
     events,
     start,
     endSession,
+    syncError,
   };
   return <TeachView vm={vm} />;
 }

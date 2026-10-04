@@ -1,9 +1,15 @@
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { COST_CENTERS, getInvoice, listInvoices } from "@/lib/erp";
-import { ErpHeader } from "@/components/ErpHeader";
+import { ErpShell } from "@/components/erp/ErpShell";
 import { InvoiceForm } from "@/components/InvoiceForm";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  return { title: `MB-ERP · Bill INV-${id}` };
+}
 
 export default async function InvoicePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -14,18 +20,15 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const next = siblings.slice(idx + 1).find((i) => i.status === "open" || i.status === "hold");
   const remainingOpen = siblings.filter((i) => i.status === "open").length;
   return (
-    <main>
-      <ErpHeader title={`Invoice INV-${inv.id}`} queue={inv.queue} />
-      <div className="erp-wrap">
-        <InvoiceForm
-          key={inv.id}
-          invoice={inv}
-          costCenters={COST_CENTERS}
-          nextId={next?.id}
-          queue={inv.queue}
-          queueProgress={{ position: idx + 1, total: siblings.length, remainingOpen }}
-        />
-      </div>
-    </main>
+    <ErpShell queue={inv.queue}>
+      <InvoiceForm
+        key={inv.id}
+        invoice={inv}
+        costCenters={COST_CENTERS}
+        nextId={next?.id}
+        queue={inv.queue}
+        queueProgress={{ position: idx + 1, total: siblings.length, remainingOpen }}
+      />
+    </ErpShell>
   );
 }

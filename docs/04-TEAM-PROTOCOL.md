@@ -32,24 +32,29 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | Path | Owner | Notes |
 |---|---|---|
 | `lib/memory.ts`, `lib/memory.test.ts` | **C** | bounded application-owned memory, evidence validation and cancellable reasoning handoffs; Roy authorized this cross-lane integration |
-| `components/voice.tsx` | **A** | `VoiceApi` is a contract: additive only |
+| `components/voice.tsx`, `lib/voice-turn.tool-evidence.test.ts`, `lib/voice-turn.tool-lifecycle.test.ts` | **A** | `VoiceApi` is a contract: additive only; client-tool evidence acknowledgment and lifecycle regressions |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |
-| `lib/governor.ts`, `lib/curiosity.ts`, `lib/capture-loop.ts`, `lib/capture-config.ts`, `lib/capture-config.test.ts`, `lib/scribe-token.test.ts`, `lib/voice-turn.ts`, `lib/voice-turn*.test.ts`, `lib/voice-turn-adapter.ts`, `lib/voice-connect.test.ts`, `lib/voice-output-gate.test.ts`, `lib/voice-hub.ts`, `lib/voice-hub.test.ts`, `lib/voice-protocol.ts`, `lib/voice-protocol*.test.ts` | **A** | voice timing and configuration, capture-loop decisions, token fallback, turn state machine and adapter, shared transcription/output-gate lifecycle, curiosity and protocol regression tests |
-| `lib/governor.demo.test.ts`, `lib/curiosity.classify.test.ts`, `lib/curiosity.queue.test.ts`, `lib/curiosity.narration.test.ts`, `lib/capture-loop.replay.test.ts` | **A** | WA-5 cadence, attribution, queue and replay regressions |
+| `lib/governor.ts`, `lib/curiosity.ts`, `lib/capture-loop.ts`, `lib/capture-config.ts`, `lib/capture-config.test.ts`, `lib/scribe-token.test.ts`, `lib/voice-turn.ts`, `lib/voice-turn*.test.ts` (including off-record precedence), `lib/voice-turn-adapter.ts`, `lib/voice-connect.test.ts`, `lib/voice-reconnect.test.ts`, `lib/voice-output-gate.test.ts`, `lib/voice-hub.ts`, `lib/voice-hub.test.ts`, `lib/voice-protocol.ts`, `lib/voice-protocol*.test.ts` | **A** | voice timing and configuration, capture-loop decisions, token fallback, turn state machine and adapter, shared transcription/output-gate lifecycle, curiosity and protocol regression tests |
+| `lib/governor.demo.test.ts`, `lib/curiosity.classify.test.ts`, `lib/curiosity.queue.test.ts`, `lib/curiosity.narration.test.ts`, `lib/capture-loop.replay.test.ts`, `lib/capture-loop.integration.test.ts`, `lib/capture-loop.tool-rejection.test.ts`, `lib/capture-loop.withdrawal.test.ts` | **A** | WA-4/WA-5 lifecycle, cadence, attribution, queue and replay regressions; prompt stale-tool rejection and withdrawal of derived runtime evidence |
 | `lib/elevenlabs-sync.ts`, `lib/elevenlabs-sync.test.ts` | **A** | tutor knowledge-base sync and keyless regression tests |
+| `lib/agent-model.ts`, `lib/agent-model*.test.ts` (including bounded-waiting prompts and `lib/agent-model.retry.test.ts`) | **A** | V4 Turbo provisioning compatibility, voice-flow/conversation policy, and remote model/tool release gates |
 | `components/CaptureClient.tsx` (logic), `components/views/capture.vm.ts`, `app/capture/` | **A** | after the seam split (§3) |
 | `components/useScreenPipeline.ts`, `lib/framediff.ts`, `app/api/vision/` | **B** | shared by Capture and Teach |
 | `lib/vision-schema.ts`, `lib/vision-schema.test.ts`, `lib/vision-route.test.ts` | **B** | flat vision wire schema, normalization and mocked route/schema regressions (#28) |
 | `lib/events.ts`, `lib/telemetry.ts` | **B** | contracts: additive only |
 | `lib/visiondiff.ts`, `lib/visiondiff.test.ts`, `lib/vision-pipeline.test.ts` | **B** | pure visual diff, normalized identities and mocked capture lifecycle regressions (#33) |
-| `lib/events.contract.test.ts`, `lib/store.fs.test.ts`, `lib/workspace.ts` | **B** | WB-4 event/hello and filesystem regressions; local-only workspace resolver stub |
+| `lib/events.contract.test.ts`, `lib/store.fs.test.ts`, `lib/workspace.ts` | **B** | WB-4 event/hello and filesystem regressions; private workspace resolver |
 | `lib/redact.ts` | **B** | privacy |
+| `lib/store.ts`, `lib/request.ts`, `lib/store.durable.test.ts`, `lib/session-route.test.ts`, `lib/uploads.test.ts`, `lib/session-sync*.test.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
+| `supabase/migrations/**`, `proxy.ts`, `lib/storage*.ts`, `lib/workspace*.ts`, `lib/session-sync*.ts`, `lib/media*.ts`, `lib/recording-consent*.ts`, `lib/health.test.ts` | **B** | durable workspace storage and transport; `recording-consent.upload.test.ts` covers voice-owned clip upload/withdrawal races |
+| `lib/model-contracts.ts`, `lib/confirmation.ts`, `lib/product.test.ts` | **C** | finite provider schemas and confirmed-map safety gates |
 | `lib/pii-masks.ts`, `lib/pii-masks.test.ts`, `lib/redact.privacy.test.ts` | **B** | P-24 source-scoped DOM rectangles, crop projection, pre-encoding masks and text privacy regressions |
-| `lib/store.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
+| `lib/model-contracts.auth.test.ts` | **B** | Vercel runtime OIDC readiness regression |
+
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
-| `lib/seed.ts`, `lib/seed-boot.test.ts`, `lib/health.test.ts` | **B** | non-destructive sample boot and readiness regressions |
+| `lib/seed.ts`, `lib/seed-boot.test.ts`, `lib/seed.confirmation.test.ts`, `lib/health*.test.ts` | **B** | non-destructive sample boot and readiness regressions |
 | `lib/platform-env.test.ts` | **B** | deployment environment example regression |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
 | `lib/smoke-runtime.mjs`, `lib/smoke-runtime.test.ts` | **B** | smoke environment isolation, process cleanup and console guards |
@@ -57,7 +62,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/workmap.ts` | **C** | THE contract: additive only |
 | `lib/workmap.contracts.test.ts` | **C** | legacy/new map compatibility for pre-approved contract additions |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
-| `lib/compile/{steps,rules-regex,slots,rules-llm,fill,correct}.ts`, `lib/compile.split.test.ts` | **C** | compiler internals; `lib/compile.ts` retains the public API |
+| `lib/compile/{steps,rules-regex,slots,rules-llm,fill,correct,evidence}.ts`, `lib/compile.split.test.ts`, `lib/compile.evidence-integrity.test.ts` | **C** | compiler internals and quote-evidence integrity; `lib/compile.ts` retains the public API |
 | `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |
 | `app/api/compile/`, `app/api/teachback/`, `app/api/sessions/[id]/{map,slot,confirm}/` | **C** | |
 | `components/MapClient.tsx`, `components/TeachClient.tsx` (logic), `components/views/{map,teach}.vm.ts`, `app/map/`, `app/teach/` | **C** | after the seam split (§3) |
@@ -67,10 +72,18 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `components/views/*View.tsx`, `components/ui/**` | **D** | all presentational JSX. `capture.vm.ts` is A's and `map.vm.ts` / `teach.vm.ts` are C's from the seam-split merge |
 | `components/erp/**`, `components/demo/**` | **D** | PII publisher, queue reset, presenter tabs, embed class, health strip, demo room |
 | `lib/erp-ui.ts`, `lib/ui/**` | **D** | presentational helpers and their tests |
+| `lib/experience.presentation.test.ts` | **D** | server-rendered knowledge UI and presence regressions |
 | `app/error.tsx`, `app/not-found.tsx`, `scripts/d-shots.mjs`, `docs/pitch/**` | **D** | error screens, layout shots, submission copy |
 | `components/WorkMapView.tsx`, `components/Meter.tsx`, `components/TeachStart.tsx` | **D** | |
 | `components/InvoiceForm.tsx`, `components/ErpHeader.tsx`, `app/erp/`, `lib/erp-model.ts`, `app/demo/` | **D** | ERP UI **and the scenario data** (seed invoices are a contract: announce changes; the ERP server + guard is C) |
 | `README.md`, `docs/05-DEMO-AND-SUBMISSION.md`, deck, video | **D** | |
+| `components/glass/**`, `lib/ui/{moods,geometry,layout,capture-copy,mapview,teachview}.ts` (+ tests), `components/ui/LayoutReveal.tsx`, `lib/ui-copy.coverage.test.ts` | **D** | Liquid Glass design system: orb moods, companion card, overlays, scrubber; moods derive only from real state |
+| `components/companion/{capture,map,teach}/**` | **A** / **C** / **C** | presentational companion sub-views (seam rules apply: no fetch, no SDK) |
+| `lib/capture-frame.ts`, `lib/capture-frame.test.ts` | **B** | one frame painter: crop to the ERP, paint out occluders, masks and DOM PII before any read or encode |
+| `app/claims/**`, `components/claims/**`, `lib/claims-model.ts`, `lib/vision-claims.test.ts` | **D** (UI) / **B** (vision) | claims workbench sandbox, vision-only, fictional, no business rules |
+| `app/platform/**`, `components/platform/**`, `lib/platform/**` | **C** (derive/load) / **D** (UI) | company map, role memory, ontology: real derivations plus the labelled demo dataset |
+| `app/demo/companion/`, `components/demo/companion/**`, `components/landing/**`, `lib/demo/**` | **D** | demo mode gallery and tour (fictional fixtures), landing illustration, health status |
+| `components/erp/ErpShell.tsx`, `app/erp/QueueTable.tsx`, `lib/erp-ui.ts`, `lib/erp-ui.confirm.test.ts` | **D** | MB-ERP shell |
 | `docs/status/<lane>.md` | each lane | your running status, updated by your AI on every PR |
 | `docs/01…04`, `AGENTS.md` | all | change only by announcing `CONTRACT:` in chat |
 

@@ -17,7 +17,7 @@ export function buildSlots(map: WorkMap, seen: { categories: Set<string>; flags:
   const slots: Slot[] = [];
   for (const step of map.steps) {
     if (step.judgment && !step.reason) {
-      slots.push({ id: uid("slot"), kind: "reason", stepId: step.id, question: `On invoice ${step.invoice}, ${step.decision.toLowerCase()}. What made you do that?`, status: "open" });
+      slots.push({ id: uid("slot"), kind: "reason", stepId: step.id, question: `${step.invoice ? `On invoice ${step.invoice}` : "On that case"}, ${step.decision.toLowerCase()}. What made you do that?`, status: "open" });
     }
   }
   for (const rule of map.rules) {

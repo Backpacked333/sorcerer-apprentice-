@@ -1,4 +1,4 @@
-# 03 · Contracts — the interfaces between lanes
+| P-10 | `GET /api/health` → `{ ok, storage: { configured, reachable, backend }, integrations, keys, agents, store, commit }`. 503 for unavailable storage; provider presence is `configured`/`degraded`, not a live provider check. No shared demo seed prerequisite. `Cache-Control: no-store`. | B | D (preflight screen) |ntracts — the interfaces between lanes
 
 > These are the seams that let four swarms build in parallel. They describe the code **as it is on `main`**.
 > Rules: **additive changes only**; the owner updates this file in the same PR and posts `CONTRACT:` in chat; breaking changes need every consuming lane's OK and are forbidden after M2. If this doc and `main` disagree, `main` wins — fix the doc.
@@ -133,7 +133,7 @@ Helpers: `emptySession(id, mode, task, expertName)` · `describeEvent(e): string
 
 All added fields are optional; existing logs remain valid. `save_intent` describes a save requested but not yet posted, unlike `save_clicked`. `Frame.dataUrl` is now optional so URL-only frames are valid; consumers must render `frame.url ?? frame.dataUrl`. `sample` marks sample sessions; `ws` is metadata, not automatic session isolation. Adding fields does not wire their producers or consumers.
 
-`stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change it.
+Persisted `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change the persisted form. Capture's transient `[ASK]` tool payload appends `::window:<QuestionWindow.id>` so a delayed `log_answer.stepRef` can be correlated to one turn; Capture compares the complete reference to the current question and never persists the suffix. Stale/missing refs return an immediate `not_logged` correction without dispatching a turn event or enriching an old window; they must not wait for the replacement turn to finish.
 
 ### Telemetry channel — `lib/telemetry.ts` · Owner **B**
 
@@ -164,6 +164,28 @@ useScreenPipeline({ sessionStart: number /*epoch ms*/, source: "vision"|"dom"|"b
 - `source: "both"` (default): vision is primary; an ERP telemetry event waits 2.5 s for vision to report the same change and only fills in what vision missed. Events vision saw first carry `source: "vision"` (+ `alsoSeenBy: "dom"` when the ERP agreed).
 - `setPaused(true)` and `bumpEpoch()` advance a **consent epoch**; any vision result from an older epoch is discarded. Masks are painted before a frame leaves the browser.
 - The governor (A) reads `signals`; the matcher (C) reads `currentState`. B must keep both refs' meaning stable.
+
+#### Capture frame pipeline (additive to P-23/P-24, overhaul WP1)
+
+Every pixel that leaves the pipeline (the 64×36 diff thumbnail, the 1024 px vision frame, the 960 px stored still) is drawn by **one** helper, `drawFrame` in `lib/capture-frame.ts`: `drawImage(video, crop)` → paint occluders + manual masks + DOM PII (opaque `#000`, `paintMaskRects`) → only then `getImageData` / `toDataURL`. All new fields are optional for callers; with no crop target, no occluders and no masks the frame is drawn exactly as before, and `?share=0` never calls `start()`.
+
+```ts
+start(opts?: { mode?: "tab" | "workspace"; app?: "erp" | "claims"; queue?: string }): Promise<void>
+setCropTarget(el: HTMLElement | null): void   // the ERP iframe or its wrapper; crop applies only on a self-tab capture
+setOccluders(els: HTMLElement[]): void         // every Tacit surface floating over the ERP; painted out of every frame
+surface: "browser" | "window" | "monitor" | undefined
+selfCapture: boolean                            // browser surface and video aspect within 2 % of innerWidth/innerHeight (or a matching Capture Handle)
+degraded: "wrong_surface" | null                // workspace mode on a non-self surface: no vision frames, no stills; telemetry continues
+lastSentUrl: string | null                      // the last masked JPEG that left the browser (vision frame or still): the honest "What I see"
+piiMode: "dom" | "manual-only"                  // whether DOM-published PII rects are being painted on the current frames
+```
+
+- `start()` calls `getDisplayMedia` synchronously before any `await`; call it first inside the click handler. `"tab"` (default) keeps the original prompt `{ video: { frameRate: 4 }, audio: false }`. `"workspace"` asks `{ video: { displaySurface: "browser", frameRate: { ideal: 5, max: 10 } }, audio: false, preferCurrentTab: true, surfaceSwitching: "exclude", monitorTypeSurfaces: "exclude" }`. A click event passed as `opts` is ignored.
+- Occluders: per element, the union of its `getBoundingClientRect()` over the last 750 ms (sampled every 100 ms while sharing and before every frame), padded `{ t: 32, r: 52, b: 72, l: 52 }` CSS px, snapped outward to 8 px and held 5 s before shrinking (so a breathing card never moves the black box's edges), projected into crop/video space (DPR and letterboxing handled). Only applied on a self-tab capture: on any other surface this tab's rects are not in the frame.
+- DOM PII, same tab (workspace iframe): the pipeline reads `iframe.contentDocument.querySelectorAll("[data-pii]")` synchronously each frame (`collectPiiRects`) and adds the iframe content-box offset. Two windows: `PiiPublisher` broadcasts on `"tacit-erp-pii"` with `sourceId = piiSourceId({ origin, app, queue })` = `"<sandbox origin>|<app>|<queue>"` (queue from `?queue=` or the ERP header link), on layout/scroll/resize/DOM change and a 1 s heartbeat; the pipeline subscribes with the same pairing (`start({ queue })`, default `"expert"` for `erp`) and paints rects no older than 3 s, only when the surface is a browser tab other than this one. Otherwise `piiMode` is `"manual-only"`.
+- Manual masks stay normalized to the full video frame and are re-projected into the crop.
+- `POST /api/vision` body gains `app: "erp" | "claims"` (default `"erp"`); the route's schema strips unknown keys, so older servers accept it.
+- Not verifiable by an agent: the share picker, Capture Handle behaviour, and the painted preview in a real Chrome share. Human check: workspace share → the "What I see" preview (`lastSentUrl`) shows the card area and PII black, and the governor still reaches "asking".
 
 ---
 
@@ -198,18 +220,19 @@ useVoice(): VoiceApi
 type TranscriptMeta = { startedAtMs: number; endedAtMs: number; speaker: "human"|"agent" };
 useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?, meta?), onAgentEcho?(text, startSecs?, endSecs?, meta?), onCommand?(command, text, meta), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
-type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
+type ToolResult = string | void | { dispatch: false; message: string };
+type ToolHandlers = Partial<Record<ToolName, (params) => ToolResult | Promise<ToolResult>>>;   // pages assign tools.current = {…}
 
 type TurnPhase = "idle"|"sending"|"waiting_for_speech"|"speaking"|"listening"|"closing";
 interface TurnOptions {
   tag: string; text: string; spoken?: string; listen?: boolean; timeoutSecs?: number; maxSecs?: number;
-  recordClip?: { sessionId: string }; abortOnHumanSpeech?: boolean; watchdogSecs?: number;
-  silenceCloseSecs?: number; ackMaxSecs?: number; onPhase?: (phase: TurnPhase, at: number) => void;
+  recordClip?: { sessionId: string; consentEpoch?: () => number; onError?: (error: unknown) => void }; abortOnHumanSpeech?: boolean; watchdogSecs?: number;
+  silenceCloseSecs?: number; ackMaxSecs?: number; answerTool?: ToolName; onPhase?: (phase: TurnPhase, at: number) => void;
 }
 interface TurnResult {
   spoke: boolean; heard: string; via: "tool"|"scribe"|"typed"|"timeout"|"aborted"|"spoken";
   tool?: { name: ToolName; params: Record<string, unknown> }; audioId?: string;
-  sentAt: number; spokeAt?: number; askedAt: number; answeredAt?: number; closedAt: number;
+  sentAt: number; spokeAt?: number; askedAt: number; answerStartedAt?: number; answeredAt?: number; closedAt: number;
   spokenBy?: "agent"|"fallback"; spokenText?: string; heardSource?: "scribe"|"agent_asr"|"typed";
   command?: "off_record"|"not_now";
   abortReason?: "resumed"|"user"|"superseded"|"paused"|"disconnected"|"silent";
@@ -256,6 +279,22 @@ Application-injected messages (`[TAG] …`) are **application control, never exp
 
 Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `tools.current[name]`. A new tool = A adds it to `tools.json` + `TOOL_NAMES` + re-runs `npm run agents:create`; the consuming lane writes the handler.
 
+**Voice timeout quality:** `VoiceApi.turn()` allows eight seconds for agent speech by default (an explicit `watchdogSecs` still wins). If no speech starts within that window, its existing labeled browser fallback and late-agent squelch apply. This avoids replacing a healthy V4 response at the former four-second boundary while retaining recovery for a true send/transport failure.
+
+**Answer acceptance:** `VoiceApi.turn()` defaults listening `ASK`/`DEBRIEF` turns to `answerTool: "log_answer"`. When the agent speaks, raw Scribe/agent-ASR text alone cannot fill the slot: wait for the matching tool or resolve as an empty timeout within the existing bounds. A logged reason becomes `heard` only when it literally occurs in Scribe or agent ASR, excluding unrelated text accumulated in the same window; unmatched model text is never a quote. Late raw commits cannot promote an unconfirmed timeout. Typed answers and browser/keyless speech retain their existing completion paths. Other tags are unchanged.
+
+**Evidence timing:** recognition committed before `askedAt` (question finished / listening opened) is provisional interruption evidence only and cannot enter `heard`, `QuestionWindow.answerText`, or the quotable expert transcript. A later human-attributed commit after listen-open may become authoritative. `TurnResult.answerStartedAt` records when the accepted recognition segment began; `audioId` is returned only when that interval begins at or after `askedAt`, so a clip is never paired with text that predates recording.
+
+Guarded `log_answer` calls are checked against that same verbatim evidence **before** invoking the page handler or dispatching TOOL. Missing/mismatched evidence returns `not_logged`, preserves the current listening/deadline state, and supplies committed transcript data for an exact-text retry; number spelling is not normalized into an invented quote. Struck/typed/aborted closes reject without exposing their transcript. A page's current-window reference check still applies to otherwise eligible calls. Legacy callers without a guarded turn are unchanged.
+
+This pre-handler gate applies as soon as an answer tool is configured, before the agent's speech source is known; only intentional browser-fallback turns bypass it. Calls before listening return `not_logged` without reaching the handler. Once a tool-confirmed answer is accepted, further `log_answer` calls cannot replace it, including direct reducer events during closing. A first valid answer may still arrive during timeout closing, and `mark_off_record` still overrides accepted evidence.
+
+The interviewer acknowledges a **new human answer**, not an internal correction retry. `log_answer` uses `pre_tool_speech=auto`, `execution_mode=post_tool_speech` and `expects_response=true`: allow that acknowledgment before persistence, but do not force speech before every retry. The prompt permits one silent correction from current literal evidence, never a closed/withdrawn question or unrelated speech; failed saving is not described as success.
+
+**Privacy precedence:** `mark_off_record` bypasses answer-tool matching while listening or closing. It supersedes pending typed/tool answers and timeouts with an empty `aborted` result carrying `command: "off_record"`; the clip is discarded and late answer events cannot restore evidence.
+
+Capture withdrawal also invalidates derived in-memory evidence: narration badges/quotes, affected candidates and dependent follow-ups, deferred questions, and curiosity context. Transcript/window overlap counts, not only start timestamps. Delayed screen/transcript callbacks within a struck interval must not repopulate those caches; genuinely later evidence remains eligible.
+
 **The verbatim rule:** the page records the expert's words from **Scribe** (what was actually said), not from the tool's `reason` param (which the LLM may reword). `reason` is only a fallback when Scribe heard nothing.
 
 ---
@@ -267,15 +306,17 @@ All routes are Next.js route handlers; `params` is a Promise in Next 16 (`const 
 | Method · Path | Owner | Body → Response | Notes |
 |---|---|---|---|
 | `GET /api/sessions` | B | → `{ sessions: {id,mode,task,expertName,startedAt,endedAt}[] }` | newest first |
-| `POST /api/sessions` | B | `{ mode?, task?, expertName?, sourceMapSessionId? }` → `{ session: SessionLog }` | ids: `s_…` capture, `t_…` teach |
+| `POST /api/sessions` | B | `{ mode?, task?, expertName?, sourceMapSessionId? }` → `{ session: SessionLog }` | ids: `s_…` capture, `t_…` teach; teach requires an owned confirmed map and records its revision |
 | `GET /api/sessions/:id` | B | → `{ session, map \| null }` | |
-| `PUT /api/sessions/:id` | B | `SessionLog` → `{ ok, events, frames }` | browser owns the log during a session; whole-log sync, last write wins |
-| `POST /api/sessions/:id/clips` | B | multipart `audioId`, `file` (webm) → `{ ok, audioId }` | the expert's answer audio |
-| `GET /api/sessions/:id/clips?audioId=` | B | → `audio/webm` | replay audio |
+| `PUT /api/sessions/:id` | B | `SessionLog` → `{ ok, events, frames }` | existing workspace-owned session only; whole-log sync is serialized per browser session; frame metadata contains private same-origin URLs, never base64 |
+| `POST /api/sessions/:id/clips` | B | multipart `audioId`, `file` (webm) → `{ ok, audioId }` | ≤3 MiB WebM expert answer audio; private workspace storage; 20 uploads/minute/workspace |
+| `GET /api/sessions/:id/clips?audioId=` | B | → `audio/webm` | replay only when the current workspace session references the clip |
+| `POST /api/sessions/:id/frames?frameId=` | B | binary JPEG/PNG → `{ ok, frameId, url }` | ≤750 KiB; private workspace storage; 120 uploads/minute/workspace |
+| `GET /api/sessions/:id/frames?frameId=` | B | → `image/jpeg` or `image/png` | private frame only when referenced by the current workspace session |
 | `GET /api/sessions/:id/map` | C | → `{ map }` · 404 until compiled | |
-| `PUT /api/sessions/:id/map` | C | `WorkMap` → `{ map }` | expert edits/deletes before confirming; Zod-validated |
-| `POST /api/sessions/:id/slot` | C | `{ slotId, text, t?, audioId? }` → `{ map, understanding }` | a debrief answer fills one slot |
-| `POST /api/sessions/:id/confirm` | C | `{ confirmed, correction?, t? }` → `{ map, teachback, understanding, open, knowledge }` | yes locks + syncs tutor KB; correction patches |
+| `PUT /api/sessions/:id/map` | C | `WorkMap` → `{ map }` | revision-bound edit; every accepted edit clears `confirmedAt` |
+| `POST /api/sessions/:id/slot` | C | `{ slotId, text, revision, t?, audioId? }` → `{ map, understanding }` | a debrief answer fills one slot; stale revision returns 409 |
+| `POST /api/sessions/:id/confirm` | C | `{ confirmed, correction?, revision, t? }` → `{ map, teachback, understanding, open, knowledge }` | current teach-back required; yes confirms, correction invalidates; no shared tutor KB mutation |
 | `POST /api/compile` | C | `{ sessionId, llm?: boolean }` → `{ map, llm: boolean, note?, understanding, teachback }` | deterministic pass, then validated LLM refinement when a key is set |
 | `POST /api/teachback` | C | `{ sessionId }` → `{ text, sure: string[], unsure: string[] }` | generated from the map, ≤ 130 words |
 | `POST /api/vision` | B | `{ seq, image }` → `{ seq, screen, state, banner, uiActivity, piiRegions, confidence, model, latencyMs }` · 503 with `mock: true` without key | one frame in, visible state out; details below |
@@ -297,7 +338,7 @@ All routes are Next.js route handlers; `params` is a Promise in Next 16 (`const 
 - API `state` is the cleaned `InvoiceState`, not the nullable provider object: unread/null fields are omitted, false/zero preserved, invoice prefixes removed, category/route/status tokenized (`on_hold` → `hold`), and selected cost-center codes retain leading zeros. List/other screens return `{}` even if the model filled state fields. Previous state must not supply missing observations.
 - `banner: posted` means a visible successful saved/posted confirmation, never a Save button or an open dialog; `blocked` means held/not-posted. Consumers must not infer success from Cancel, a blocked banner or `approved` status alone. Full visual-save integration depends on pipeline [#33](https://github.com/Backpacked333/sorcerer-apprentice-/pull/33) and D's persistent Posted/status UI [#23](https://github.com/Backpacked333/sorcerer-apprentice-/issues/23); it is not live-verified.
 - Execution: AI SDK 7 `generateText` + `Output.object`, `timeout.totalMs: 8000`, `maxRetries: 0`, `maxOutputTokens: 500`; route `maxDuration: 30`. The provider receives a JPEG file part with raw base64, no data-URL prefix. Screenshot text is explicitly untrusted; masks must not be guessed through. These are implementation/prompt safeguards, not a claim of evaluated prompt-injection resistance or provider accuracy.
-- Errors: missing key is checked first and returns HTTP 503 `{ error: "AI_GATEWAY_API_KEY not set; use NEXT_PUBLIC_EVENT_SOURCE=dom", mock: true }` without a provider call. Invalid input with a configured key returns 400 `{ error: "invalid vision request" }`; a caught `TimeoutError` returns 504 `{ error: "vision timeout", seq }`; other generation errors return 502 `{ error: "vision unavailable", seq }`. Provider exception text/credentials are never returned. Mock 503 is not an observed frame; client shutdown/counters are supplied separately by #33.
+- Errors: missing key is checked first and returns HTTP 503 `{ error: "AI Gateway is not configured; vision is unavailable", mock: true }` without a provider call. Invalid input with a configured key returns 400 `{ error: "invalid vision request" }`; a caught `TimeoutError` returns 504 `{ error: "vision timeout", seq }`; other generation errors return 502 `{ error: "vision unavailable", seq }`. Provider exception text/credentials are never returned. Mock 503 is not an observed frame; client shutdown/counters are supplied separately by #33.
 
 ---
 
@@ -325,17 +366,20 @@ interface GuardRecord { mapSessionId: string; teachSessionId: string; armedAt: n
 getGuard(teachSessionId?: string, ws?: string): Promise<GuardRecord | undefined>
 saveGuard(g: { mapSessionId: string; teachSessionId: string; ttlMs?: number }, ws?: string): Promise<GuardRecord>
 clearGuard(teachSessionId?: string, ws?: string): Promise<void>
-// lib/workspace.ts (B): local-only placeholder, no cookie/request lookup yet
-currentWorkspace(): Promise<string>               // resolves to "local"
+// lib/workspace.ts (B): private cookie resolver; explicit local development override
+currentWorkspace(): Promise<string>               // visitor workspace
+
 ```
 
-`dataDir()` reads `DATA_DIR` per call, defaulting to `<cwd>/.data`. Sessions/maps use `sessions/<id>.json` / `maps/<id>.json`; clips/frames use `clips/<sessionId>/<audioId>.webm` / `frames/<sessionId>/<frameId>.jpg`. Media saves return the filesystem path, not a browser URL. ERP and guards use `ws/<ws>/erp.json` and `ws/<ws>/guards.json`. Omitted `ws` resolves through the **local-only stub**; session/map/media paths and session listings are not workspace-scoped. P-25 cookie isolation is not implemented here.
+`dataDir()` reads `DATA_DIR` per call, defaulting to `<cwd>/.data`. Local sessions/maps/media are private under `<dataDir>/<workspace>/`. Production on Vercel requires Supabase PostgreSQL and private Storage; never writes local files. Both migrations in `supabase/migrations/` must be applied in filename order.
 
-All path IDs must match `/^[\w-]{1,64}$/`. Writes use temporary files plus atomic rename, serialized per file within one Node process; guard read-modify-write operations share that serialization. Bulk deletion validates every ID before deleting; single deletion returns `false` for a missing file. Missing lists return `[]`. Only ENOENT is treated as missing: corrupt JSON, invalid records and other I/O errors throw, without stale cache fallback or reseeding. ERP validation rejects non-array state and non-object entries; it is not a full invoice schema validator.
+`currentWorkspace()` aliases `getWorkspaceId()`: production resolves the HttpOnly `tacit_ws` cookie, never a browser-supplied workspace field. Explicit workspace arguments may not select another visitor; alternate workspaces are supported only in explicit local development with `STORE_OWNER_ID`. A fresh visitor seeds samples through the home page’s **Load the sample Work Map** server action, not a shared boot-time seed.
 
-Guards are keyed by teach session. Saving re-arms that session with a default 30-minute TTL (or finite nonnegative `ttlMs`); validated input is snapshotted before awaiting. `getGuard(id)` excludes expired records; without an ID it returns the newest unexpired guard by `armedAt`, with persisted private sequence metadata breaking timestamp ties. No matching active guard returns `undefined`. `clearGuard(id)` clears one; `clearGuard()` clears all in the current workspace; `clearGuard(undefined, ws)` clears all in an explicit workspace. Clearing does not silently replace corrupt guard data.
+Storage IDs match `/^[\w-]{1,64}$/`. Local writes are atomic and serialized per file. Bulk deletion validates all IDs first. Missing records return undefined; corrupt JSON, invalid session/map records and I/O errors throw. Map reads always validate with WorkMapSchema. Evidence withdrawal removes linked clips/frames and invalidates the derived map before saving the new log.
 
-**Lane C integration remains:** `lib/erp.ts` still writes legacy `.data/erp.json` and `.data/erp-guard.json` directly until migrated to these APIs ([#24](https://github.com/Backpacked333/sorcerer-apprentice-/issues/24)). Existing signatures are preserved; consumers import the store (and `lib/erp.ts`'s sandbox exports), not `fs`.
+The incoming invoice-only `getErpState/saveErpState` API coexists with `getErpSnapshot/saveErpSnapshot` (invoices + active save guard), `saveErpInvoices`, `saveErpGuard`, `patchErpInvoice`, and `allowRateLimit`. `lib/erp.ts` uses the durable snapshot APIs; it never accesses files directly. Its active save guard checks confirmation and the teach session's source-map revision.
+
+The additive `getGuard/saveGuard/clearGuard` API preserves upstream per-teach-session TTL behavior, with PostgreSQL `teach_guards` in production and private local records in development. Default TTL is 30 minutes; persisted sequence metadata breaks equal-time ties. These TTL records do not replace the active save guard or silently permit saves when a map becomes stale.
 
 ---
 
@@ -346,12 +390,17 @@ Guards are keyed by teach session. Saving re-arms that session with a default 30
 | `ELEVENLABS_API_KEY` | server (A) | Scribe tokens, agent creation, KB sync. Server-side only. |
 | `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | client (A) | empty → browser-speech fallback |
 | `ELEVENLABS_VOICE_ID`, `AGENT_LLM` | `create-agents.ts` (A) | voice and agent LLM |
-| `ELEVENLABS_PRIVATE_AGENTS`, `ELEVENLABS_TTS_MODEL` | server/voice integration (A) | Deployment examples use `1` and `eleven_v4_turbo`; lane A must provide server-issued conversation tokens. Flags alone do not implement private-agent authentication. |
+| `ELEVENLABS_PRIVATE_AGENTS` | server/voice integration (A) | Deployment examples use `1`; lane A must provide server-issued conversation tokens. Flags alone do not implement private-agent authentication. |
 | `DATA_DIR` | server filesystem store (B) | Local default `.data`; Railway `/app/.data` on a persistent volume with exactly one Node replica. |
-| `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile; server-only. Missing key makes vision return 503 `mock: true`, without provider invocation. |
+| `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile; server-only. API key or request-context Vercel OIDC token. Missing credentials makes vision return 503 `mock: true`, without provider invocation. |
 | `VISION_MODEL` | server (B) | vision gateway slug; defaults to `anthropic/claude-haiku-4.5` when unset. No model bake-off or fallback/eval env contract is introduced by #28. |
 | `COMPILE_MODEL` | server (C) | compile gateway model slug; unchanged by the vision work |
+| `ELEVENLABS_TTS_MODEL` | `create-agents.ts` (A) | optional assertion; only `eleven_v4_turbo` is accepted. Provisioning always sends V4 Turbo and verifies the saved model. |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |
+| `STORAGE_BACKEND` | server (B) | `local` or `supabase`; Vercel requires Supabase |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | server (B) | required together; service-role key is never sent to the browser |
+| `SUPABASE_STORAGE_BUCKET` | server (B) | private media bucket; default `tacit-media` |
+| `STORE_OWNER_ID` | local scripts (B) | optional local workspace owner; request routes always use the private cookie |
 | `NEXT_PUBLIC_SILENCE_SECS` | client (A) | Expert-speech quiet period before a normal window may open; default `2.5` seconds. |
 | `NEXT_PUBLIC_STILL_SECS` | client (A) | Screen-still period before a normal window may open; default `2` seconds. |
 | `NEXT_PUBLIC_COOLDOWN_SECS` | client (A) | Minimum time between normal question windows; demo default `20` seconds. |
@@ -384,6 +433,8 @@ Optional fields a view already reads, and which stay absent until the owning lan
 | `TeachVM` | `practice` | C | no "Practice this" button |
 | `TeachVM` | `pipeline.setCropTarget` | C | same companion fallback as Capture |
 
+Capture exposes the WA-4/WA-5 controller state additively: `turnPhase`, `gateOpen`, `stt`, `deferred`, `deferredCount`, `reasonHeardItems`, `noisy`, `chainedCount`, and `forced`. `reasonHeard` remains the latest display string for the current view; `reasonHeardItems` is the timestamped evidence list. `deferred` is the persisted P-15 payload and `deferredCount` is its render-ready count. Views may ignore these fields until their presentation lands.
+
 `CropHandle` (`setCropTarget?`, `surface?`) lives on `capture.vm.ts` and is shared by the teach pipeline pick.
 
 ---
@@ -414,11 +465,23 @@ Cost centers: `4711` opex maintenance · `0400` capex machinery · `4120` opex f
 
 ## 9. Pre-approved additive changes (no further discussion needed; just announce `CONTRACT:` when landed)
 
+### Durable deployment contract (Supabase + Vercel)
+
+Roy authorized the cross-lane deployment work on Oct 3. Store function signatures remain stable; request context scopes sessions, maps, ERP, guard and media to the anonymous workspace cookie. No login or shared global tutor knowledge-base writes are introduced.
+
+- `POST /api/teachback` also returns `revision`. Confirmation sends that `revision`; stale confirmation or incomplete evidence/debrief returns 409. Map edits, slot answers and corrections invalidate `confirmedAt`.
+- Teach-session creation requires a confirmed source map; guard arming requires the same workspace's teach session and matching map revision. Draft export and autopilot return 409.
+- Provider wire schemas in `lib/model-contracts.ts` are finite and nullable; internal `WorkMap`/`Cond` contracts remain unchanged. Compile and vision use `generateText` + `Output.object`.
+- `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are server-only. Production has no filesystem fallback. See `.env.example` and README for backend selection and deployment.
+- Shared ElevenLabs agent configuration is not mutated on confirmation. The current confirmed map is sent only as context to its own tutor conversation.
+
+These are intentional safety tightenings: clients must handle 409 by reviewing the latest map rather than claiming success.
+
 See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are binding so lanes can code against them before they land.
 
 | # | Change | Owner | Consumers |
 |---|---|---|---|
-| P-1 | `POST /api/sessions/:id/frames` (multipart `frameId`, `file` jpeg) + `GET …/frames?frameId=`; `Frame.dataUrl` becomes optional and `Frame.url?: string` is added. Frames stop travelling inside the session JSON. | B | A (Capture sync), C (replay), D (WorkMapView, replay view) — render `frame.url ?? frame.dataUrl` |
+| P-1 | `POST /api/sessions/:id/frames?frameId=` (binary JPEG/PNG, ≤750 KiB) + `GET …/frames?frameId=`; `Frame.dataUrl` remains a string and persisted logs replace capture data URLs with same-origin private media URLs. | B | A (Capture sync), C (replay), D (WorkMapView, replay view) |
 | P-2 | `saveFrame(sessionId, frameId, bytes)` / `readFrame(sessionId, frameId)` in `lib/store.ts` | B | — |
 | P-3 | `GET /api/agent-token?role=interviewer\|tutor` → `{ token \| signedUrl }` for private agents; `VoiceApi.connect` uses it transparently | A | — |
 | P-4 | `QuestionWindow.closedBy?: "tool" \| "scribe_fallback" \| "timeout" \| "user"` | A | C (metrics) |
@@ -428,8 +491,9 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 | P-8 | `ScreenEvent.latencyMs?: number` (change → event) and `SessionLog.metrics.visionP50Ms` | B | D (measured slide) |
 | P-9 | `VoiceApi.lastError?: string`, `VoiceApi.degraded: boolean` (voice or STT fell back mid-session) | A | D (honest badge) |
 | P-10 | `GET /api/health` → `{ ok, keys: { elevenlabs, gateway }, agents: { interviewer, tutor, private, ttsModel }, sample: { present }, store: "fs", commit }`. Credential/agent presence is boolean; commit is a safe SHA or `unknown`. No-store; 200 only when both sample session/map pairs are complete and the Teach sample is confirmed, otherwise 503 without internal errors. | B | D (preflight screen) |
+
 | P-11 | `EventKind` gains **`"save_intent"`**: posted by the ERP when the save-confirm opens, carrying the *proposed* `state`. A sandbox verdict like `save_blocked`: delivered in every source mode, never a vision event, never a compiled step. | B (type, pipeline) · D (`InvoiceForm` posts it) | C (matcher intervenes on it) |
-| P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
+| P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. Optional `recordClip.consentEpoch()` invalidates pending clip acquisition/uploads when Capture strikes evidence; `onError` reports upload/withdrawal failures. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
 | P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`), `sessionStartMs?: number`, and `keyterms?: string[]`; it resolves only when the agent session is connected | A | C passes names in Map and Teach; A/C pass the app clock and session vocabulary |
 | P-14 | `TelemetryMessage` gains optional `queue?: Queue`, `sandboxSession?: string`, `reannounce?: boolean`; `postHello/subscribeHello` use the separate hello control contract (§2). ERP re-announcement of `invoice_opened` still requires publisher integration. | B · D | A, C |
 | P-15 | `SessionLog.deferred?: { kind: string; question: string; stepRef: string }[]` — live candidates that were deferred, stale or never asked | B (type) · A (writes) | C (`buildSlots` asks them first) |
@@ -453,3 +517,10 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 - `projectPiiRects(rects, viewport, crop = viewport): PiiRegion[]` maps publisher-normalized rectangles into crop-normalized rectangles. `viewport` and `crop` are `{ x, y, w, h }` in the **captured tab's CSS pixels**. For an embedded ERP, `viewport` is its content box excluding iframe borders; `crop` is the actual workspace capture rectangle. Full iframe crop: `crop = viewport`. Standalone ERP tab: both equal `{ x: 0, y: 0, w: viewportWidth, h: viewportHeight }`. Invalid geometry throws; nonfinite/out-of-view rectangles are discarded or clipped.
 - `paintPiiMasks(canvas, projectedRects): number` paints opaque black, outward-rounded pixels and returns the count; missing context/invalid canvas size throws. Use a fresh/resized, unclipped canvas: **draw → paint → encode/upload/store**. This applies to outgoing vision frames and stored stills.
 - **Unwired / human-unverified:** D must mark actual fields and publish on layout/scroll/resize; B must pair the selected surface, reject stale/unpaired layout data, project the current crop and invoke masking before every relevant encode. Helpers alone make no end-to-end privacy guarantee. Human network/stored-frame checks remain required after integration; no such verification has been performed for this PR.
+
+## 10. Claims workbench sandbox · vision `app` param and `ScreenEvent.subject` (additive)
+
+- **`POST /api/vision`** body gains `app?: "erp" | "claims"`. Absent, `"erp"` or any unknown value → the invoice schema, prompt and response exactly as before. Keyless still returns `503 { mock: true }` for both apps.
+- `app: "claims"` uses `ClaimsVisionWire` + `CLAIMS_VISION_PROMPT` (`lib/vision-schema.ts`; flat, every field `.nullable()`: `screen ∈ {claim_list, claim_detail, other}`, `state: { claim, cause, coverage, nextStep, reserve, priorClaims }`, `uiActivity`, `piiRegions`, `confidence`). Response: `{ seq, app: "claims", screen, state: {}, claim: ClaimState, banner: "none", uiActivity, piiRegions, confidence, model, latencyMs }`. `state` (the invoice state) is always empty; claim fields only on `claim_detail`; `nextStep` is a token `approve | deny | escalate`.
+- **`ScreenEvent.subject?: { type: "invoice" | "claim"; id: string }`** (`lib/events.ts`). `diffVision` routes frames with `app: "claims"` to `diffClaims`, which emits `screen_changed` (claim opened / left, `boundary`) and `field_changed` (`field ∈ cause | coverage | nextStep | reserve | priorClaims`) with `subject: { type: "claim", id }`, `source: "vision"`. It **never** sets `invoice` or the invoice `state`. `describeEvent` names the subject when there is no invoice.
+- The claims sandbox (`/claims`, `/claims/[id]`, `lib/claims-model.ts`) posts **no telemetry**; capturing it is vision-only. Its data is fictional and encodes no decision rules. The capture pipeline must send `app: "claims"` when the embedded/shared surface is the claims workbench.

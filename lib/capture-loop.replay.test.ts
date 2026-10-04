@@ -38,6 +38,7 @@ const result = (partial: Partial<TurnResult>): TurnResult => ({
   heard: "",
   via: "timeout",
   askedAt: 10,
+  answeredAt: 15,
   sentAt: 8,
   closedAt: 20,
   ...partial,
@@ -79,7 +80,10 @@ describe("window outcome mapping", () => {
     expect(windowOutcome(result({ via: "aborted", command: "off_record" }))).toMatchObject({ outcome: "off_record", candidateStatus: "expired", governor: "short_close", strike: true });
     expect(windowOutcome(result({ via: "aborted", command: "not_now" }))).toMatchObject({ outcome: "aborted", candidateStatus: "debrief", userDeferred: true });
     expect(windowOutcome(result({ via: "aborted", abortReason: "paused" }))).toMatchObject({ outcome: "aborted", candidateStatus: "queued", retryAfter: 26 });
+    expect(windowOutcome(result({ via: "aborted", abortReason: "disconnected" }))).toMatchObject({ outcome: "aborted", candidateStatus: "queued", retryAfter: 26 });
     expect(windowOutcome(result({ via: "aborted", abortReason: "resumed", spoke: false }))).toMatchObject({ outcome: "remove", candidateStatus: "queued", governor: "abort" });
+    expect(windowOutcome(result({ via: "aborted", abortReason: "silent", spoke: false }))).toMatchObject({ outcome: "remove", candidateStatus: "queued", governor: "abort" });
+    expect(windowOutcome(result({ via: "aborted", abortReason: "superseded", spoke: false }))).toMatchObject({ outcome: "remove", candidateStatus: "queued", governor: "abort" });
   });
 });
 

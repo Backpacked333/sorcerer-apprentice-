@@ -21,6 +21,20 @@ function clip(r: PiiRegion): PiiRegion | undefined {
  */
 export function publishPiiRects(sourceId: string, doc?: Document): PiiRectsMessage | undefined {
   if (!sourceId?.trim()) throw new Error("PII publisher identity required");
+  const rects = collectPiiRects(doc);
+  if (!rects) return;
+  const message = { sourceId, at: Date.now(), rects };
+  if (typeof BroadcastChannel !== "undefined") {
+    const channel = new BroadcastChannel(PII_CHANNEL);
+    try { channel.postMessage(message); } finally { channel.close(); }
+  }
+  return message;
+}
+
+/** Recognized `[data-pii]` rectangles, normalized to (and clipped by) `doc`'s own viewport. No broadcast.
+ * Used directly by the capture pipeline to read a same-origin iframe synchronously.
+ * Returns undefined without usable document geometry. */
+export function collectPiiRects(doc?: Document): PiiRegion[] | undefined {
   doc ??= typeof document === "undefined" ? undefined : document;
   const view = doc?.defaultView;
   if (!doc || !view || !validRect({ x: 0, y: 0, w: view.innerWidth, h: view.innerHeight })) return;
@@ -32,12 +46,13 @@ export function publishPiiRects(sourceId: string, doc?: Document): PiiRectsMessa
     const bounded = clip({ x: r.x / view.innerWidth, y: r.y / view.innerHeight, w: r.width / view.innerWidth, h: r.height / view.innerHeight, kind });
     if (bounded) rects.push(bounded);
   }
-  const message = { sourceId, at: Date.now(), rects };
-  if (typeof BroadcastChannel !== "undefined") {
-    const channel = new BroadcastChannel(PII_CHANNEL);
-    try { channel.postMessage(message); } finally { channel.close(); }
-  }
-  return message;
+  return rects;
+}
+
+/** Pairing value between a sandbox page's PiiPublisher and a capture subscriber (two-window mode):
+ * the sandbox origin, the app and the queue. Not authentication; see P-24. */
+export function piiSourceId(p: { origin: string; app?: string; queue?: string }): string {
+  return `${p.origin}|${p.app ?? "erp"}|${p.queue ?? "default"}`;
 }
 
 function visibleRect(el: Element, view: Window) {
@@ -98,6 +113,16 @@ export function projectPiiRects(rects: readonly PiiRegion[], viewport: CaptureRe
 export function paintPiiMasks(canvas: HTMLCanvasElement, rects: readonly PiiRegion[]): number {
   const context = canvas.getContext("2d");
   if (!context || !validRect({ x: 0, y: 0, w: canvas.width, h: canvas.height })) throw new Error("Cannot mask frame");
+  return paintMaskRects(context, canvas.width, canvas.height, rects);
+}
+
+/** Same painting as paintPiiMasks, on a context whose drawing surface is `width` x `height` px.
+ * Opaque #000, outward-rounded, transform/alpha/composite/filter reset. Returns the number of painted rects. */
+export function paintMaskRects(
+  context: Pick<CanvasRenderingContext2D, "save" | "restore" | "resetTransform" | "fillRect" | "globalAlpha" | "globalCompositeOperation" | "filter" | "fillStyle">,
+  width: number, height: number, rects: readonly PiiRegion[],
+): number {
+  if (!validRect({ x: 0, y: 0, w: width, h: height })) throw new Error("Cannot mask frame");
   context.save();
   try {
     context.resetTransform();
@@ -107,8 +132,8 @@ export function paintPiiMasks(canvas: HTMLCanvasElement, rects: readonly PiiRegi
     context.fillStyle = "#000";
     const bounded = rects.flatMap((r) => clip(r) ?? []);
     for (const r of bounded) {
-      const x = Math.floor(r.x * canvas.width), y = Math.floor(r.y * canvas.height);
-      context.fillRect(x, y, Math.ceil((r.x + r.w) * canvas.width) - x, Math.ceil((r.y + r.h) * canvas.height) - y);
+      const x = Math.floor(r.x * width), y = Math.floor(r.y * height);
+      context.fillRect(x, y, Math.ceil((r.x + r.w) * width) - x, Math.ceil((r.y + r.h) * height) - y);
     }
     return bounded.length;
   } finally { context.restore(); }

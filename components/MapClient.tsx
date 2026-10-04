@@ -28,11 +28,13 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
   const [phase, setPhase] = useState<MapPhase>("idle");
   const [current, setCurrent] = useState<Slot | null>(null);
   const [heard, setHeard] = useState("");
-  const [teachback, setTeachback] = useState<{ text: string; sure: string[]; unsure: string[] } | null>(null);
+  const [teachback, setTeachback] = useState<{ text: string; sure: string[]; unsure: string[]; revision?: number } | null>(null);
   const [rounds, setRounds] = useState(0);
   const [debriefOn, setDebriefOn] = useState(false);
   const [autopilot, setAutopilot] = useState<AutopilotStep[] | null>(null);
   const [running, setRunning] = useState(false);
+  const [debriefStartedAt, setDebriefStartedAt] = useState<number | null>(null);
+  const [knowledge, setKnowledge] = useState(false);
   const heardRef = useRef("");
   const currentRef = useRef<Slot | null>(null);
   currentRef.current = current;
@@ -128,17 +130,23 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
 
   const confirmMap = useCallback(
     async (confirmed: boolean, text?: string) => {
-      const res = await fetch(`/api/sessions/${sessionId}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmed, correction: text, t: (Date.now() - startedAt.current) / 1000 }) });
+      const res = await fetch(`/api/sessions/${sessionId}/confirm`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ confirmed, correction: text, revision: teachback?.revision, t: (Date.now() - startedAt.current) / 1000 }) });
       const data = await res.json();
+      if (!res.ok) {
+        setNote(data.error ?? "Confirmation failed. Please retry.");
+        if (data.map) setMap(data.map);
+        return;
+      }
       setMap(data.map);
       if (confirmed) {
+        setKnowledge(!!data.knowledge?.synced);
         setPhase("confirmed");
         voiceRef.current.say("CONFIRMED", "The expert confirmed the teach-back. Say thank you in one short sentence and stop.", "Thank you. That is how it works. I have it.");
         voiceRef.current.setMicMuted(true);
         return;
       }
       const prev = teachback?.text ?? "";
-      const next = data.teachback as { text: string; sure: string[]; unsure: string[] };
+      const next = { ...data.teachback, revision: data.map.revision } as { text: string; sure: string[]; unsure: string[]; revision: number };
       setTeachback(next);
       setRounds((r) => r + 1);
       const changed = diffSentences(prev, next.text);
@@ -167,6 +175,7 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
   const startDebrief = async () => {
     if (!map) return;
     setDebriefOn(true);
+    setDebriefStartedAt(Date.now());
     await voice.connect({ firstMessage: "Thanks, that was clear. I have a few things I am still unsure about." });
     window.setTimeout(() => askNext(map), 2500);
   };
@@ -240,6 +249,12 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
     recompile,
     runAutopilot,
     onMapChange,
+    knowledge,
+    partial: debriefOn ? transcriber.partial : "",
+    debriefStartedAt,
+    micOpen: !voice.micMuted,
+    selectedStepId: current?.stepId ?? null,
+    confirmed: !!map?.confirmedAt || phase === "confirmed",
   };
   return <MapView vm={vm} />;
 }

@@ -388,42 +388,29 @@ export async function saveErpSnapshot(state: { invoices: Invoice[]; guard: unkno
   await writeJson(localPath(workspace, "erp"), state);
 }
 
-export async function saveErpInvoices(invoices: Invoice[]): Promise<void> {
+async function upsertErpField(patch: { invoices: Invoice[] } | { guard: unknown | null }): Promise<void> {
   const workspace = await owner();
   if (backend() === "supabase") {
     const client = db();
     const { data, error } = await client.from("erp_state").select("owner_id").eq("owner_id", workspace).maybeSingle();
     if (error) throw error;
-    if (data) {
-      const { error: updateError } = await client.from("erp_state").update({ invoices }).eq("owner_id", workspace);
-      if (updateError) throw updateError;
-    } else {
-      const { error: insertError } = await client.from("erp_state").upsert({ owner_id: workspace, invoices, guard: null }, { onConflict: "owner_id" });
-      if (insertError) throw insertError;
-    }
+    const { error: writeError } = data
+      ? await client.from("erp_state").update(patch).eq("owner_id", workspace)
+      : await client.from("erp_state").upsert({ owner_id: workspace, invoices: [], guard: null, ...patch }, { onConflict: "owner_id" });
+    if (writeError) throw writeError;
     return;
   }
-  const state = await getErpSnapshot();
-  await saveErpSnapshot({ ...state, invoices });
+  const file = localPath(workspace, "erp");
+  await serialized(file, async () => {
+    const state = (await readJson<ErpState>(file)) ?? { invoices: [], guard: null };
+    await atomicWrite(file, JSON.stringify({ ...state, ...patch }));
+  });
 }
 
+export async function saveErpInvoices(invoices: Invoice[]): Promise<void> { await upsertErpField({ invoices }); }
+
 export async function saveErpGuard(guard: unknown | null): Promise<void> {
-  const workspace = await owner();
-  if (backend() === "supabase") {
-    const client = db();
-    const { data, error } = await client.from("erp_state").select("owner_id").eq("owner_id", workspace).maybeSingle();
-    if (error) throw error;
-    if (data) {
-      const { error: updateError } = await client.from("erp_state").update({ guard }).eq("owner_id", workspace);
-      if (updateError) throw updateError;
-    } else {
-      const { error: insertError } = await client.from("erp_state").upsert({ owner_id: workspace, invoices: [], guard }, { onConflict: "owner_id" });
-      if (insertError) throw insertError;
-    }
-    return;
-  }
-  const state = await getErpSnapshot();
-  await saveErpSnapshot({ ...state, guard });
+  await upsertErpField({ guard });
 }
 
 export async function patchErpInvoice(id: string, patch: Partial<Invoice>): Promise<Invoice | undefined> {

@@ -1,6 +1,7 @@
 import type { TranscriptSegment } from "../events";
 import { extractThresholds } from "../curiosity";
 import { type Cond, type Quote, type Rule, type Step, uid } from "../workmap";
+import { confirmedByOf } from "./evidence";
 
 export const COST_CENTER_LABEL: Record<string, string> = { "4711": "opex", "0400": "capex", "4120": "opex freight", "4300": "opex facilities", "4050": "opex consumables" };
 
@@ -18,7 +19,7 @@ export function deriveRules(steps: Step[], transcript: TranscriptSegment[], invo
     if (!step.judgment) continue;
     const text = said(step);
     const quotes = allQuotes(step);
-    const confirmedBy = quotes.map((q) => (q.source === "counterfactual" ? "counterfactual" : q.source === "debrief" ? "debrief" : "live")) as Rule["confirmedBy"];
+    const confirmedBy = confirmedByOf(quotes);
     const confidence: Rule["confidence"] = quotes.some((q) => q.source === "counterfactual") ? "high" : step.reason ? "medium" : "low";
 
     // cost center coding: a rule needs a stated threshold; nothing is assumed on the expert's behalf

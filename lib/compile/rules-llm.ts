@@ -1,8 +1,8 @@
 import { generateText, Output } from "ai";
 import { gatewayConfigured, modelAction, modelCondition, RefinementSchema } from "../model-contracts";
 import type { SessionLog } from "../events";
-import { evalCond, type Quote, type Rule, type WorkMap, uid } from "../workmap";
-import { isQuotableTranscript, isQuotableWindow } from "./evidence";
+import { evalCond, type Quote, type WorkMap, uid } from "../workmap";
+import { confirmedByOf, isQuotableTranscript, isQuotableWindow, sourceForWindowKind } from "./evidence";
 import { buildSlots, seenCases } from "./slots";
 
 const ALLOWED_FIELDS = new Set(["amount", "category", "supplier", "entity", "invoiceMonth", "costCenter", "hasAssetNumber", "knownSupplier", "hasPO", "route", "status"]);
@@ -41,7 +41,7 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
     const findQuote = (text: string): Quote | undefined => {
       if (!text.trim()) return undefined;
       const w = quotableWindows.find((window) => window.answerText?.includes(text));
-      if (w) return { text, t: w.answeredAt!, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" };
+      if (w) return { text, t: w.answeredAt!, audioId: w.answerAudioId, source: sourceForWindowKind(w.kind) };
       const s = standaloneTranscript.find((segment) => segment.text.includes(text));
       return s ? { text, t: s.t, source: "narration" } : undefined;
     };
@@ -78,7 +78,7 @@ export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ 
         const unless = r.unless ? modelCondition(r.unless) : undefined;
         const stopAndAsk = r.stopAndAsk ? { who: r.stopAndAsk.who, when: modelCondition(r.stopAndAsk.when) } : undefined;
         evalCond(when, {});
-        map.rules.push({ id: uid("rule"), stepId: r.stepId, title: r.title, when, then, unless, stopAndAsk, quotes, confidence: r.confidence, confirmedBy: Array.from(new Set(quotes.map((q) => (q.source === "counterfactual" ? "counterfactual" : q.source === "debrief" ? "debrief" : "live")))) as Rule["confirmedBy"] });
+        map.rules.push({ id: uid("rule"), stepId: r.stepId, title: r.title, when, then, unless, stopAndAsk, quotes, confidence: r.confidence, confirmedBy: Array.from(new Set(confirmedByOf(quotes))) });
       } catch (error) {
         rejected.push(`"${r.title}": ${error instanceof Error ? error.message : "invalid condition or action"}`);
         continue;

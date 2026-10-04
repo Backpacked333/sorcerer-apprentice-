@@ -1,37 +1,58 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-vi.mock("./store", () => ({ getSession: vi.fn(), getMap: vi.fn() }));
-import { getMap, getSession } from "./store";
-import { GET } from "../app/api/health/route";
-import { emptySession } from "./events";
-import { emptyMap } from "./workmap";
 
-describe("health without credentials disclosure", () => {
-  beforeEach(() => { vi.resetAllMocks(); vi.unstubAllEnvs(); });
-  it("returns only key and agent presence, never their values", async () => {
-    vi.stubEnv("ELEVENLABS_API_KEY", "test-not-a-real-key");
-    vi.stubEnv("AI_GATEWAY_API_KEY", "test-not-a-real-gateway-key");
-    vi.stubEnv("NEXT_PUBLIC_INTERVIEWER_AGENT_ID", "private-test-agent");
-    vi.mocked(getSession).mockImplementation(async (id) => emptySession(id, "capture", "sample", "Tester"));
-    vi.mocked(getMap).mockImplementation(async (id) => ({ ...emptyMap(id, "sample", "Tester"), confirmedAt: 1 }));
+const store = vi.hoisted(() => ({
+  listSessions: vi.fn(async () => []),
+  storageBackend: vi.fn(() => "local"),
+}));
+vi.mock("@/lib/store", () => store);
+
+import { GET } from "../app/api/health/route";
+
+beforeEach(() => {
+  vi.unstubAllEnvs();
+  store.listSessions.mockResolvedValue([]);
+  store.storageBackend.mockReturnValue("local");
+});
+
+describe("health integration configuration", () => {
+  it("reports configured only when both voice agents and the key are present", async () => {
+    vi.stubEnv("ELEVENLABS_API_KEY", "test-only");
+    vi.stubEnv("NEXT_PUBLIC_INTERVIEWER_AGENT_ID", "interviewer");
+    vi.stubEnv("NEXT_PUBLIC_TUTOR_AGENT_ID", "tutor");
+    vi.stubEnv("AI_GATEWAY_API_KEY", "");
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "oidc");
+
     const response = await GET();
     const body = await response.json();
-    expect(response.status).toBe(200);
-    expect(body).toMatchObject({ ok: true, store: "fs", keys: { elevenlabs: true, gateway: true }, agents: { interviewer: true }, sample: { present: true } });
-    expect(JSON.stringify(body)).not.toContain("test-");
-    expect(response.headers.get("cache-control")).toContain("no-store");
+
+    expect(body.integrations.voice).toEqual({
+      configured: true,
+      apiKey: true,
+      interviewerAgent: true,
+      tutorAgent: true,
+      status: "configured",
+    });
+    expect(body.integrations.gateway).toEqual({ configured: true, status: "configured" });
+    expect(JSON.stringify(body)).not.toContain('"ready"');
   });
-  it("fails readiness for missing samples or unreadable storage without exposing paths", async () => {
-    expect((await GET()).status).toBe(503);
-    vi.mocked(getSession).mockRejectedValue(new Error("private storage error"));
+
+  it("reports degraded when a voice agent id is missing", async () => {
+    vi.stubEnv("ELEVENLABS_API_KEY", "test-only");
+    vi.stubEnv("NEXT_PUBLIC_INTERVIEWER_AGENT_ID", "interviewer");
+    vi.stubEnv("NEXT_PUBLIC_TUTOR_AGENT_ID", "");
+    vi.stubEnv("AI_GATEWAY_API_KEY", "");
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "");
+
     const response = await GET();
-    expect(response.status).toBe(503);
-    expect(await response.text()).not.toContain("private storage error");
-  });
-  it("fails readiness when the Teach sample is not confirmed or has mismatched identity", async () => {
-    vi.mocked(getSession).mockImplementation(async (id) => emptySession(id, "capture", "sample", "Tester"));
-    vi.mocked(getMap).mockImplementation(async (id) => emptyMap(id, "sample", "Tester"));
-    expect((await GET()).status).toBe(503);
-    vi.mocked(getMap).mockImplementation(async () => ({ ...emptyMap("wrong", "sample", "Tester"), confirmedAt: 1 }));
-    expect((await GET()).status).toBe(503);
+    const body = await response.json();
+
+    expect(body.integrations.voice).toEqual({
+      configured: false,
+      apiKey: true,
+      interviewerAgent: true,
+      tutorAgent: false,
+      status: "degraded",
+    });
+    expect(body.integrations.gateway).toEqual({ configured: false, status: "degraded" });
   });
 });

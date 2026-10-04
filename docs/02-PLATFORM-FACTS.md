@@ -8,6 +8,8 @@ Pinned versions (all are the current npm `latest`): `@elevenlabs/react` 1.16.0 (
 
 ## 1. The twelve facts that change code tonight
 
+**Oct 4 release override:** Roy requires `eleven_v4_turbo` for both agents ([official V4 page](https://elevenlabs.io/v4)); the historical V3 recommendations below are superseded. SDK 2.70's outbound enum still rejects V4. `lib/agent-model.ts` serializes the remaining conversation settings and uses the SDK's `additionalBodyParameters` escape hatch to set the wire model without editing generated dependencies. Provisioning and `--check` reject any other saved model. Live account support, Expressive Mode behavior, and audible quality remain unverified until the real-key checks pass; a model label or configured health status is not proof of execution.
+
 | # | Fact | Consequence | Lane |
 |---|---|---|---|
 | 1 | `startSession()` returns **void**, not a promise. The session comes up asynchronously; use `onConnect` / `status === "connected"`. | `await voice.connect()` resolves before the session exists. `connect()` must return a promise resolved by `onConnect` (rejected by `onError` or a 12 s timeout). | A |

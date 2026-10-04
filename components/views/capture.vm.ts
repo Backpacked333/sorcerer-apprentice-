@@ -54,6 +54,7 @@ export interface CaptureVM {
   setHolding(b: boolean): void;
   submitTypedAnswer(text: string): void;
   synced: number | null;
+  syncError?: string | null;
   /** Set by lane A when narration already filled the reason. */
   reasonHeard?: string;
   reasonHeardItems: { stepRef: string; quote: string; t: number }[];

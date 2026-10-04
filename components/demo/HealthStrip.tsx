@@ -11,10 +11,11 @@ export function HealthStrip() {
         if (!res.ok) return "Status unavailable";
         const data = await res.json().catch(() => null);
         const keys = (data?.keys ?? {}) as Record<string, unknown>;
-        const voice = keys.eleven || keys.elevenlabs ? "Voice: ElevenAgents live" : "Voice: browser fallback";
-        const vision = keys.gateway || keys.vision ? "Vision: live model" : "Vision: ERP telemetry only";
-        const sample = data?.sample === false ? "Sample data: missing" : "Sample data: present";
-        return `${voice} · ${vision} · ${sample}`;
+        const voiceConfigured = data?.integrations?.voice?.configured ?? Boolean(keys.eleven || keys.elevenlabs);
+        const gatewayConfigured = data?.integrations?.gateway?.configured ?? Boolean(keys.gateway || keys.vision);
+        const voice = voiceConfigured ? "Voice: ElevenLabs configured" : "Voice: browser fallback";
+        const vision = gatewayConfigured ? "Vision: Gateway configured" : "Vision: ERP telemetry only";
+        return `${voice} · ${vision} · Configuration is not a live provider check`;
       })
       .catch(() => "Status unavailable")
       .then((line) => { if (!cancelled) setText(line); });

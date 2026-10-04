@@ -25,6 +25,16 @@
 /lib/events.ts                        @LANE_B
 /lib/telemetry.ts                     @LANE_B
 /lib/store.ts                         @LANE_B
+/lib/store.durable.test.ts            @LANE_B
+/lib/session-route.test.ts            @LANE_B
+/lib/uploads.test.ts                  @LANE_B
+/lib/session-sync.test.ts             @LANE_B
+/lib/request.ts                       @LANE_B
+/lib/recording-consent*.ts            @LANE_B
+/lib/health.test.ts                   @LANE_B
+/lib/workspace.ts                     @LANE_B
+/lib/session-sync.ts                  @LANE_B
+/proxy.ts                              @LANE_B
 /lib/export.ts                        @LANE_B
 /lib/autopilot.ts                     @LANE_B
 /app/api/vision/                      @LANE_B

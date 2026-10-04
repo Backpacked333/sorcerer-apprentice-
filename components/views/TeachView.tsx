@@ -197,6 +197,7 @@ function Column({ vm, presenter, mode }: { vm: TeachVM; presenter: boolean; mode
             </div>
           )}
           </div>
+          {vm.syncError && <p role="alert" className="banner banner-degraded">{vm.syncError}</p>}
           <video ref={vm.pipeline.videoRef} muted playsInline className="see-thumb" />
         </div>
         {vm.started && (

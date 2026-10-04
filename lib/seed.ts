@@ -14,6 +14,7 @@ import { seedInvoices, toInvoiceState, type Invoice } from "./erp";
 import { getMap, getSession, saveMap, saveSession } from "./store";
 import { disarmTeachGuard, resetErp } from "./erp";
 import { openSlots } from "./workmap";
+import { confirmationIssues } from "./confirmation";
 
 const inv = seedInvoices();
 const byId = (id: string) => inv.find((i) => i.id === id)!;
@@ -42,16 +43,16 @@ function buildSession(id: string): SessionLog {
   push({ t: 12, source: "dom", kind: "invoice_opened", invoice: "4471", state: toInvoiceState(a), frame: frameFor(a, 12) });
   push({ t: 24, source: "dom", kind: "typing", invoice: "4471", uiActivity: "typing" });
   push({ t: 41, source: "dom", kind: "field_changed", invoice: "4471", field: "costCenter", from: "4711", to: "0400", state: { ...toInvoiceState(a), costCenter: "0400" }, frame: frameFor(a, 41, { costCenter: "0400" }, "costCenter") });
-  push({ t: 58, source: "dom", kind: "field_changed", invoice: "4471", field: "assetNumber", from: "", to: "A-2026-118", state: { ...toInvoiceState(a), costCenter: "0400", hasAssetNumber: true } });
+  push({ t: 58, source: "dom", kind: "field_changed", invoice: "4471", field: "assetNumber", from: "", to: "A-2026-118", state: { ...toInvoiceState(a), costCenter: "0400", hasAssetNumber: true }, frame: frameFor(a, 58, { costCenter: "0400", assetNumber: "A-2026-118" }) });
   push({ t: 96, source: "dom", kind: "save_clicked", invoice: "4471", boundary: true, state: { ...toInvoiceState(a), costCenter: "0400", status: "approved", hasAssetNumber: true }, frame: frameFor(a, 96, { costCenter: "0400", status: "approved" }) });
   push({ t: 101, source: "dom", kind: "invoice_closed", invoice: "4471", boundary: true });
   push({ t: 110, source: "dom", kind: "invoice_opened", invoice: "4472", state: toInvoiceState(b), frame: frameFor(b, 110) });
   push({ t: 131, source: "dom", kind: "route_changed", invoice: "4472", field: "route", from: "single", to: "second_approval", state: { ...toInvoiceState(b), route: "second_approval" }, frame: frameFor(b, 131, { route: "second_approval" }, "route") });
-  push({ t: 170, source: "dom", kind: "save_clicked", invoice: "4472", boundary: true, state: { ...toInvoiceState(b), route: "second_approval", status: "approved" } });
+  push({ t: 170, source: "dom", kind: "save_clicked", invoice: "4472", boundary: true, state: { ...toInvoiceState(b), route: "second_approval", status: "approved" }, frame: frameFor(b, 170, { route: "second_approval", status: "approved" }) });
   push({ t: 174, source: "dom", kind: "invoice_closed", invoice: "4472", boundary: true });
   push({ t: 182, source: "dom", kind: "invoice_opened", invoice: "4473", state: toInvoiceState(c), frame: frameFor(c, 182) });
   push({ t: 205, source: "dom", kind: "status_changed", invoice: "4473", field: "status", from: "open", to: "hold", state: { ...toInvoiceState(c), status: "hold" }, frame: frameFor(c, 205, { status: "hold" }, "status") });
-  push({ t: 240, source: "dom", kind: "save_clicked", invoice: "4473", boundary: true, state: { ...toInvoiceState(c), status: "hold" } });
+  push({ t: 240, source: "dom", kind: "save_clicked", invoice: "4473", boundary: true, state: { ...toInvoiceState(c), status: "hold" }, frame: frameFor(c, 240, { status: "hold" }) });
   push({ t: 244, source: "dom", kind: "invoice_closed", invoice: "4473", boundary: true });
   s.events = E;
   s.frames = F;
@@ -111,6 +112,8 @@ export async function seedDemo({ ifMissing = false }: { ifMissing?: boolean } = 
     };
     for (const slot of openSlots(m2)) fillSlot(m2, slot.id, { text: answers[slot.kind] ?? answers.exception, t: 300, source: "debrief" });
     applyCorrection(m2, "No, only Bäcker. The other suppliers go through normally in December.", 340);
+    const issues = confirmationIssues(m2);
+    if (issues.length) throw new Error(`Invalid scripted sample: ${issues.join(" ")}`);
     m2.confirmedAt = Date.now();
     for (const r of m2.rules) {
       if (!r.confirmedBy.includes("teachback")) r.confirmedBy.push("teachback");

@@ -8,6 +8,7 @@ export async function POST(req: Request) {
   const { sessionId, apply = true } = (await req.json()) as { sessionId: string; apply?: boolean };
   const map = await getMap(sessionId);
   if (!map) return NextResponse.json({ error: "no map" }, { status: 404 });
+  if (!map.confirmedAt) return NextResponse.json({ error: "Confirm the Work Map before applying it" }, { status: 409 });
   await resetErp("autopilot");
   const queue = await listInvoices("autopilot");
   const steps = [];

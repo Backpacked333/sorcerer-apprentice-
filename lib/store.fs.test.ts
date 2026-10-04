@@ -9,7 +9,7 @@ import { currentWorkspace } from "./workspace";
 import { WorkMapSchema } from "./workmap";
 
 let root: string;
-beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "tacit-store-")); vi.stubEnv("DATA_DIR", root); });
+beforeEach(async () => { root = await fs.mkdtemp(path.join(os.tmpdir(), "tacit-store-")); vi.stubEnv("DATA_DIR", root); vi.stubEnv("STORAGE_BACKEND", "local"); vi.stubEnv("STORE_OWNER_ID", "local"); vi.stubEnv("VERCEL", ""); vi.stubEnv("SUPABASE_URL", ""); vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", ""); });
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); await fs.rm(root, { recursive: true, force: true }); });
 
 it.each(["Frame", "Clip"] as const)("round-trips, serializes and deletes %s bytes", async (kind) => {
@@ -28,7 +28,7 @@ it.each(["Frame", "Clip"] as const)("round-trips, serializes and deletes %s byte
   await store[`delete${kind}s`]("s", ["one", "two"]);
   expect(await read("s", "one")).toBeUndefined();
   expect(await read("s", "two")).toBeUndefined();
-  expect(await fs.readdir(path.join(root, `${kind.toLowerCase()}s`, "s"))).toEqual([]);
+  expect(await fs.readdir(path.join(root, "local", "s", `${kind.toLowerCase()}s`))).toEqual([]);
 });
 
 it.each(["../x", "", "x/y", "x\\y", "a".repeat(65)])("rejects unsafe path id %j", async (id) => {
@@ -53,23 +53,23 @@ it("reads DATA_DIR per call, does not resurrect deleted sessions/maps, and surfa
   expect(await store.getMap("session")).toBeUndefined();
   expect(await store.listSessions()).toEqual([]);
   vi.stubEnv("DATA_DIR", root);
-  await fs.unlink(path.join(root, "sessions", "session.json"));
+  await fs.unlink(path.join(root, "local", "sessions", "session"));
   expect(await store.getSession(session.id)).toBeUndefined();
-  await fs.unlink(path.join(root, "maps", "session.json"));
+  await fs.unlink(path.join(root, "local", "maps", "session"));
   expect(await store.getMap("session")).toBeUndefined();
   for (const [sub, read] of [["sessions", store.getSession], ["maps", store.getMap]] as const) {
-    await fs.mkdir(path.join(root, sub), { recursive: true });
-    await fs.writeFile(path.join(root, sub, "bad.json"), "{");
+    await fs.mkdir(path.join(root, "local", sub), { recursive: true });
+    await fs.writeFile(path.join(root, "local", sub, "bad"), "{");
     await expect(read("bad")).rejects.toThrow();
-    await fs.mkdir(path.join(root, sub, "directory.json"));
+    await fs.mkdir(path.join(root, "local", sub, "directory"));
     await expect(read("directory")).rejects.toMatchObject({ code: "EISDIR" });
     expect(await read("missing")).toBeUndefined();
   }
   await expect(store.listSessions()).rejects.toThrow();
-  await fs.writeFile(path.join(root, "maps", "bad.json"), "{}");
+  await fs.writeFile(path.join(root, "local", "maps", "bad"), "{}");
   await expect(store.getMap("bad")).rejects.toThrow();
   for (const raw of ["null", "{}", "[]"]) {
-    await fs.writeFile(path.join(root, "sessions", "bad.json"), raw);
+    await fs.writeFile(path.join(root, "local", "sessions", "bad"), raw);
     await expect(store.getSession("bad")).rejects.toThrow();
   }
 });
@@ -83,7 +83,7 @@ it("round-trips isolated ERP workspaces and never treats corrupt ERP as missing"
   await store.saveErpState([], "visitor");
   expect(await store.getErpState("visitor")).toEqual([]);
   for (const raw of ["{", "null", "{}", "[null]", "[[]]", "[1]"]) {
-    await fs.writeFile(path.join(root, "ws", "local", "erp.json"), raw);
+    await fs.writeFile(path.join(root, "local", "erp"), raw);
     await expect(store.getErpState()).rejects.toThrow();
   }
 });
@@ -109,7 +109,7 @@ it("serializes guard updates, expires/rearms per teach session and clears only t
   await arm("__proto__");
   expect((await store.getGuard("__proto__"))?.teachSessionId).toBe("__proto__");
   for (const raw of ["{", "null", "[]", '{"bad":{}}']) {
-    await fs.writeFile(path.join(root, "ws", "local", "guards.json"), raw);
+    await fs.writeFile(path.join(root, "local", "guards"), raw);
     await expect(store.getGuard()).rejects.toThrow();
     await expect(arm("first")).rejects.toThrow();
   }
@@ -118,7 +118,7 @@ it("serializes guard updates, expires/rearms per teach session and clears only t
 it("persists recency across equal timestamps, numeric IDs and rearming", async () => {
   vi.spyOn(Date, "now").mockReturnValue(1000);
   const first = await store.saveGuard({ mapSessionId: "map1", teachSessionId: "first" });
-  await fs.writeFile(path.join(root, "ws", "local", "guards.json"), JSON.stringify({ first }));
+  await fs.writeFile(path.join(root, "local", "guards"), JSON.stringify({ first }));
   expect(await store.getGuard()).toEqual(first);
   const second = await store.saveGuard({ mapSessionId: "map2", teachSessionId: "second" });
   expect(second.armedAt).toBe(first.armedAt);
@@ -154,7 +154,7 @@ it("keeps the old file on write failure, cleans temp files, and recovers its wri
   vi.spyOn(fs, "rename").mockRejectedValueOnce(new Error("disk error"));
   await expect(store.saveFrame("s", "f", new Uint8Array([2]))).rejects.toThrow("disk error");
   expect(Array.from((await store.readFrame("s", "f"))!)).toEqual([1]);
-  expect(await fs.readdir(path.join(root, "frames", "s"))).toEqual(["f.jpg"]);
+  expect(await fs.readdir(path.join(root, "local", "s", "frames"))).toEqual(["f.jpg"]);
   await store.saveFrame("s", "f", new Uint8Array([3]));
   expect(Array.from((await store.readFrame("s", "f"))!)).toEqual([3]);
   vi.spyOn(fs, "readFile").mockRejectedValueOnce(Object.assign(new Error("denied"), { code: "EACCES" }));

@@ -3,6 +3,8 @@ import { getMap, listSessions } from "@/lib/store";
 import { pickSample } from "@/lib/ui/landing";
 import { BrowserCheck } from "@/components/ui/BrowserCheck";
 import { HealthStrip } from "@/components/demo/HealthStrip";
+import { seedDemo } from "@/lib/seed";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +45,14 @@ export default async function Home() {
                 <Link className="btn" href={`/teach?from=${sample}`}>Be the new hire</Link>
               </div>
             ) : (
-              <p className="mt-4 t-small text-muted">No sample is loaded. Run npm run seed:session, then reload.</p>
+              <form action={async () => {
+                "use server";
+                await seedDemo({ ifMissing: true });
+                redirect("/map/demo_sabine_confirmed");
+              }}>
+                <p className="mt-4 t-small text-muted">A scripted example with synthetic evidence, separate from your own captures.</p>
+                <button type="submit" className="btn btn-primary mt-4">Load the sample Work Map</button>
+              </form>
             )}
           </section>
           <section className="panel p-6">

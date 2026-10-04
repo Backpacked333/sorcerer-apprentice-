@@ -32,6 +32,7 @@ export interface TeachVM {
   events: ScreenEvent[];
   start(): Promise<void>;
   endSession(): Promise<void>;
+  syncError?: string | null;
   /** Lane C. The view never infers listening from silence. */
   tutorState?: "watching" | "speaking" | "listening";
   practice?: (ruleId: string) => void;

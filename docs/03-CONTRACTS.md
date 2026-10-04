@@ -275,6 +275,8 @@ Today: JSON files under `.data/{sessions,maps,clips}/` plus `.data/erp.json` and
 | `ELEVENLABS_API_KEY` | server (A) | Scribe tokens, agent creation, KB sync. Server-side only. |
 | `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | client (A) | empty → browser-speech fallback |
 | `ELEVENLABS_VOICE_ID`, `AGENT_LLM` | `create-agents.ts` (A) | voice and agent LLM |
+| `ELEVENLABS_PRIVATE_AGENTS`, `ELEVENLABS_TTS_MODEL` | server/voice integration (A) | Deployment examples use `1` and `eleven_v4_turbo`; lane A must provide server-issued conversation tokens. Flags alone do not implement private-agent authentication. |
+| `DATA_DIR` | server filesystem store (B) | Local default `.data`; Railway `/app/.data` on a persistent volume with exactly one Node replica. |
 | `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile |
 | `VISION_MODEL`, `COMPILE_MODEL` | server (B, C) | gateway model slugs |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |

@@ -13,6 +13,7 @@ import { CaptureView } from "./views/CaptureView";
 import type { CaptureVM } from "./views/capture.vm";
 import { buildMemory, MemoryFlight } from "@/lib/memory";
 import { PreparedQuestions } from "@/lib/prepared-question";
+import { recordTypedAnswer } from "@/lib/capture-answer";
 
 const OFF_RECORD = /\b(off the record|scratch that|don'?t keep that|do not keep that|strike that)\b/i;
 
@@ -148,7 +149,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   }, []);
 
   const closeWindow = useCallback(
-    async (outcome: QuestionWindow["outcome"], extra?: { answerText?: string; logged?: QuestionWindow["logged"] }) => {
+    async (outcome: QuestionWindow["outcome"], extra?: { logged?: QuestionWindow["logged"] }) => {
       const g = governor.current;
       const w = g.window;
       if (!w) return;
@@ -161,10 +162,9 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
         qw.closedAt = t;
         qw.outcome = outcome;
         if (extra?.logged) qw.logged = extra.logged;
-        if (extra?.answerText) qw.answerText = [qw.answerText, extra.answerText].filter(Boolean).join(" ");
         if (outcome === "answered" && !qw.answerText && qw.logged?.reason) qw.answerText = qw.logged.reason;
         if (outcome === "answered") qw.answeredAt ??= t;
-        qw.answerAudioId = audioId;
+        qw.answerAudioId = L.transcript.some((s) => s.typedFor === qw.id) ? undefined : audioId;
       }
       if (outcome === "answered") queue.current.markFilled(w.candidateId);
       else {
@@ -416,7 +416,12 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     setHolding,
     submitTypedAnswer: (text) => {
       if (!text.trim() && !openWin?.answerText) return;
-      void closeWindow("answered", { answerText: text.trim() || undefined });
+      if (text.trim()) {
+        const redacted = recordTypedAnswer(log.current, governor.current.window?.id, text, nowSecs());
+        if (redacted === undefined) return;
+        entitiesRedacted.current += redacted;
+      }
+      void closeWindow("answered");
     },
     synced,
   };

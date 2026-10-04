@@ -45,6 +45,8 @@ export interface ScreenEvent {
 
 export interface TranscriptSegment {
   id: string;
+  /** Explicit expert typing, not STT or an agent summary; references its question window. */
+  typedFor?: string;
   t: number; // start, seconds since session start
   tEnd?: number;
   text: string;

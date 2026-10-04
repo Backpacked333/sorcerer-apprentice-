@@ -37,6 +37,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/agent-model.ts` | **A** | V4 wire override reused from platform PR #44; saved-model verification |
 | `lib/gateway-auth.ts` | **B** | shared Gateway key/environment/request-scoped OIDC detection |
 | `lib/compile.conflict.test.ts` | **C** | compile conflict and recoverable empty-map view regression |
+| `lib/capture-answer.ts`, `lib/capture-answer.test.ts`, `lib/store.compile-race.test.ts` | **C** | explicit typed expert evidence and atomic compile publication regressions; Roy-authorized A/B integration seams |
 | `lib/compile.operators.test.ts` | **C** | live-discovered equality grammar regression; invalid operators remain rejected |
 | `components/voice.tsx` | **A** | `VoiceApi` is a contract: additive only |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |

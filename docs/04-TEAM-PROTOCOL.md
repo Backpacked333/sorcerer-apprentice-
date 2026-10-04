@@ -45,6 +45,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/store.ts`, `lib/request.ts`, `lib/store.durable.test.ts`, `lib/session-route.test.ts`, `lib/uploads.test.ts`, `lib/session-sync.test.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
 | `supabase/migrations/**`, `proxy.ts`, `lib/storage*.ts`, `lib/workspace*.ts`, `lib/session-sync*.ts`, `lib/media*.ts`, `lib/recording-consent*.ts`, `lib/health.test.ts` | **B** | durable workspace storage and transport |
 | `lib/model-contracts.ts`, `lib/confirmation.ts`, `lib/product.test.ts` | **C** | finite provider schemas and confirmed-map safety gates |
+| `lib/model-contracts.auth.test.ts` | **B** | Vercel runtime OIDC readiness regression |
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |

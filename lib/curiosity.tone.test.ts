@@ -12,10 +12,15 @@ const event = (partial: Partial<ScreenEvent> & Pick<ScreenEvent, "kind">): Scree
 
 describe("grounded question tone", () => {
   it("describes a hold-to-active status change as taking the invoice off hold", () => {
-    const questions = templates(event({ kind: "status_changed", field: "status", from: "hold", to: "active" }));
+    const statusEvent = event({ kind: "status_changed", field: "status", from: "hold", to: "active" });
+    const questions = templates(statusEvent);
 
     expect(questions.why).toBe("You took INV-4474 off hold. What changed?");
     expect(questions.why).not.toMatch(/changed status|from hold to active/i);
+
+    const candidates = buildCandidates(statusEvent, newContext(), 12);
+    expect(candidates.map(({ kind }) => kind)).toEqual(["why", "limit", "who", "counterfactual", "stop"]);
+    expect(candidates[0]).toMatchObject({ kind: "why", question: "You took INV-4474 off hold. What changed?", stepRef: "INV-4474:status" });
   });
 
   it("describes the second-approval route in coworker language", () => {
@@ -41,6 +46,8 @@ describe("grounded question tone", () => {
     const questions = templates(event({ kind: "field_changed", field: "paymentTerms", from: "net_30", to: "net_45" }));
 
     expect(questions.why).toBe("You updated the payment terms on INV-4474 from net_30 to net_45. What drove that change?");
+    expect(questions.limit).toBe("Is there an amount, or a kind of supplier, where you would handle the payment terms on INV-4474 differently?");
     expect(questions.why).not.toContain("paymentTerms");
+    expect(questions.limit).not.toContain("paymentTerms");
   });
 });

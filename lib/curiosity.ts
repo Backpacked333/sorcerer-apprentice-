@@ -59,7 +59,11 @@ export function classifyEvent(e: ScreenEvent, ctx: CuriosityContext): { cls: Eve
     // an edit of a value that was already filled in (the system default) is the strongest judgment signal
     return { cls: "edit_prefilled", value: e.from && e.from !== "" ? 0.9 : 0.7 };
   }
-  if (e.kind === "status_changed" && (e.to === "hold" || e.to === "rejected")) return { cls: "hold_or_reroute", value: 0.9 };
+  if (
+    e.kind === "status_changed"
+    && (["hold", "on hold", "rejected"].includes(normalized(e.to))
+      || (["hold", "on hold"].includes(normalized(e.from)) && ["active", "open"].includes(normalized(e.to))))
+  ) return { cls: "hold_or_reroute", value: 0.9 };
   if (e.kind === "route_changed") return { cls: "hold_or_reroute", value: 0.85 };
   if (e.kind === "invoice_opened" && e.state) {
     const supplier = e.state.supplier ?? "";
@@ -125,7 +129,7 @@ function routeChangeWhy(e: ScreenEvent, inv: string): string {
 
 export function templates(e: ScreenEvent): Partial<Record<CandidateKind, string>> {
   const inv = invoiceRef(e.invoice);
-  const field = labelField(e.field);
+  const field = humanField(e.field);
   const amount = e.state?.amount;
   const to = e.to ?? "";
   switch (e.kind) {

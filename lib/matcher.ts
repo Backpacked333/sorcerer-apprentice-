@@ -41,10 +41,8 @@ export function stopRules(map: WorkMap, state: InvoiceState): Rule[] {
   return map.rules.filter((r) => r.stopAndAsk && evalCond(r.when, state) && !(r.unless && evalCond(r.unless, state)) && evalCond(r.stopAndAsk.when, state));
 }
 
-/** Invoice types the expert never worked on. The matcher refuses to guess on these. */
-function isNovelCase(map: WorkMap, state: InvoiceState): boolean {
-  const seenCategories = new Set(map.steps.map((s) => s.invoice).filter(Boolean));
-  void seenCategories;
+/** Fixed novelty heuristic: credit notes, negative amounts, and invoices without a PO are cases the matcher refuses to guess on. */
+function isNovelCase(state: InvoiceState): boolean {
   const cat = (state.category ?? "").toLowerCase();
   const novelCategory = cat === "credit_note" || (state.amount !== undefined && state.amount < 0) || state.hasPO === false;
   return novelCategory;
@@ -94,7 +92,7 @@ export class Matcher {
 
     // 1. A new invoice opened: maybe ask for a prediction, maybe flag novelty
     if (e.kind === "invoice_opened") {
-      if (isNovelCase(this.map, state) && inv && !this.flagged.has(inv)) {
+      if (isNovelCase(state) && inv && !this.flagged.has(inv)) {
         this.flagged.add(inv);
         const note = this.map.notes.find((n) => (n.topic === "credit_note" && ((state.category ?? "") === "credit_note" || (state.amount ?? 0) < 0)) || (n.topic === "no_po" && state.hasPO === false));
         if (note) {

@@ -21,7 +21,8 @@ type InvoiceState = {                // what vision / ERP telemetry report about
 };
 
 type Quote = { text: string; t: number; audioId?: string;          // VERBATIM expert words; t = seconds since session start
-               source: "live" | "narration" | "debrief" | "counterfactual"; translation?: string };
+               source: "live" | "narration" | "debrief" | "counterfactual"; translation?: string;
+               evidence?: "demonstrated" | "described" };
 
 type Cond = { all: Cond[] } | { any: Cond[] } | { not: Cond }
           | { field: string; op: ">"|">="|"<"|"<="|"=="|"!="|"in"|"matches"|"exists";
@@ -37,7 +38,7 @@ type Step = { id: string; index: number; title: string; invoice?: string;
   confidence: "high"|"medium"|"low" };
 
 type Rule = { id: string; stepId?: string; title: string; when: Cond; then: Act; unless?: Cond;
-  stopAndAsk?: { who: string; when: Cond }; quotes: Quote[];
+  stopAndAsk?: { who?: string; when: Cond; quote?: Quote }; quotes: Quote[];
   confidence: "high"|"medium"|"low"; confirmedBy: ("live"|"counterfactual"|"debrief"|"teachback")[] };
 
 type Slot = { id: string; kind: "reason"|"limit"|"exception"|"escalation"|"counterfactual"|"novel";
@@ -46,6 +47,7 @@ type Slot = { id: string; kind: "reason"|"limit"|"exception"|"escalation"|"count
 type WorkMap = { sessionId: string; task: string; expert: { name: string; language: string };
   onet?: { code: string; occupation: string; task: string };
   steps: Step[]; rules: Rule[]; slots: Slot[];
+  seen?: { categories: string[]; entities: string[]; suppliers: string[] };
   privacy: { framesSeen: number; framesKept: number; entitiesRedacted: number; offRecord: { from: number; to: number }[] };
   notes: { topic: string; question: string; quote: Quote }[];   // debrief answers about cases not seen today
   revision: number;                                             // bumped by saveMap() on every save
@@ -54,6 +56,8 @@ type WorkMap = { sessionId: string; task: string; expert: { name: string; langua
 ```
 
 Exported helpers (stable signatures): `evalCond(cond, state): boolean` · `describeCond(cond): string` · `describeAct(act): string` · `actionMatchesRule(rule, state): boolean | undefined` (`undefined` = nothing decided yet) · `openSlots(map): Slot[]` · `understanding(map): number` (0..1) · `isComplete(map): boolean` · `emptyMap(sessionId, task, expertName)` · `uid(prefix)`.
+
+P-6/P-16/P-17 compatibility: legacy maps and quotes still parse without new fields. Absence of `evidence` does not mean demonstrated; absence of `seen` means unrecorded, not an empty observed universe. `stopAndAsk.quote` is the stop-specific evidence, distinct from the main rule's quotes. An absent `who` remains unknown, never a default person or role. Producers and consumers adopt these fields in follow-up work; this schema change alone does not establish provenance or novelty behavior.
 
 **Invariants every lane relies on**
 
@@ -69,7 +73,7 @@ Exported helpers (stable signatures): `evalCond(cond, state): boolean` · `descr
 
 ```ts
 type EventKind = "screen_changed" | "invoice_opened" | "invoice_closed" | "field_changed" | "status_changed"
-               | "route_changed" | "save_clicked" | "save_blocked" | "typing";
+               | "route_changed" | "save_intent" | "save_clicked" | "save_blocked" | "typing";
 type EventSource = "vision" | "dom";          // "dom" = the sandbox ERP's own telemetry. NEVER disguise one as the other.
 
 interface ScreenEvent { id: string; t: number;               // t = seconds since session start
@@ -77,7 +81,7 @@ interface ScreenEvent { id: string; t: number;               // t = seconds sinc
   invoice?: string; field?: string; from?: string; to?: string;
   state?: InvoiceState;                                       // merged invoice state after the event
   uiActivity?: "typing"|"reading"|"navigating"|"idle";
-  frameId?: string; confidence?: number;
+  frameId?: string; confidence?: number; latencyMs?: number;  // change → event latency in ms
   alsoSeenBy?: EventSource;                                   // set when the second source confirmed the same change
   mode?: "coached"|"independent";                             // teach only, reported by the sandbox per case
   blocked?: { ruleId: string; title: string; quote?: string; who?: string };  // save_blocked only
@@ -90,28 +94,44 @@ interface TranscriptSegment { id: string; t: number; tEnd?: number; text: string
 interface QuestionWindow { id: string; candidateId: string;
   kind: "why"|"counterfactual"|"limit"|"stop"|"who"|"debrief"|"intervene"|"predict";
   question: string; stepRef?: string;                          // "<invoice>:<field|kind>", e.g. "4471:costCenter"
-  openedAt: number; askedAt?: number; answeredAt?: number; closedAt?: number;
+  openedAt: number; spokeAt?: number;                         // agent started speaking
+  askedAt?: number; answeredAt?: number; closedAt?: number;   // askedAt: question finished, listening mic opened
+  closedBy?: "tool"|"scribe_fallback"|"timeout"|"user";
   outcome?: "answered"|"timeout"|"aborted"|"off_record";
   answerText?: string; answerAudioId?: string;
   logged?: { reason?: string; guardrail?: string; kind?: string }; }   // from the agent's log_answer call
 
-interface Frame { id: string; t: number; dataUrl: string; width: number; height: number; piiRegionsBlurred: number; }
+interface Frame { id: string; t: number; dataUrl?: string; url?: string; width: number; height: number; piiRegionsBlurred: number; }
 
 interface SessionLog { id: string; mode: "capture"|"teach"; task: string; expertName: string;
   startedAt: number; endedAt?: number;                         // epoch ms
   events: ScreenEvent[]; transcript: TranscriptSegment[]; windows: QuestionWindow[]; frames: Frame[];
   offRecord: { from: number; to: number }[]; metrics?: Record<string, number>;
+  deferred?: { kind: string; question: string; stepRef: string }[];
+  sample?: boolean; ws?: string;
   mastery?: { ruleId: string; outcome: string; t: number }[]; flagged?: { t: number; context: string }[];
   sourceMapSessionId?: string; sourceMapRevision?: number; }   // teach only
 ```
 
 Helpers: `emptySession(id, mode, task, expertName)` · `describeEvent(e): string` (the one-line rendering used for agent context and feeds) · `labelField(f)`.
 
+All added fields are optional; existing logs remain valid. `save_intent` describes a save requested but not yet posted, unlike `save_clicked`. `Frame.dataUrl` is now optional so URL-only frames are valid; consumers must render `frame.url ?? frame.dataUrl`. `sample` marks sample sessions; `ws` is metadata, not automatic session isolation. Adding fields does not wire their producers or consumers.
+
 `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change it.
 
 ### Telemetry channel — `lib/telemetry.ts` · Owner **B**
 
-`BroadcastChannel("tacit-erp")`, same-origin, same browser profile. Message: `{ kind: EventKind; at: number /*epoch ms*/; invoice?; field?; from?; to?; state?: InvoiceState; boundary?; mode?; blocked? }`. API: `postTelemetry(msg)` (ERP side, lane D's `InvoiceForm`) and `subscribeTelemetry(handler)` (pipeline side).
+`BroadcastChannel("tacit-erp")`, same-origin, same browser profile. `TelemetryMessage`: `{ kind: EventKind; at: number /*epoch ms*/; invoice?; field?; from?; to?; state?: InvoiceState; boundary?; mode?; blocked?; queue?: Queue; sandboxSession?: string; reannounce?: boolean }`. `Queue` is `"expert" | "newhire" | "autopilot"` from `lib/erp-model.ts`; **queue is optional**, preserving existing publishers.
+
+```ts
+interface TelemetryHello { type: "hello"; at: number; sessionId: string; queues?: Queue[] }
+postTelemetry(msg: Omit<TelemetryMessage, "at">): void;
+subscribeTelemetry(handler: (m: TelemetryMessage) => void): () => void;
+postHello(h: { sessionId: string; queues?: Queue[] }): void;
+subscribeHello(handler: (h: TelemetryHello) => void): () => void;
+```
+
+Both post helpers stamp epoch-ms `at`. `subscribeTelemetry` excludes messages with `type === "hello"`; `subscribeHello` receives only those control messages. Subscriptions return channel-closing cleanup functions. Without a browser/BroadcastChannel the helpers are no-ops. The hello/reannounce contracts enable ERP resynchronization; producers and consumers still need their lane integrations.
 
 ### The screen pipeline hook — `components/useScreenPipeline.ts` · Owner **B** · Consumers A (Capture), C (Teach), D (views)
 
@@ -139,7 +159,7 @@ interface VoiceApi {
   connected: boolean; status: string; isSpeaking: boolean; micMuted: boolean;
   messages: { role: "user"|"agent"; text: string; t: number }[];
   degraded: boolean; lastError?: string;    // true/reason when voice or STT is on a labeled fallback
-  connect(opts?: { firstMessage?: string; prompt?: string; language?: string; dynamicVariables?: Record<string,string> }): Promise<void>;
+  connect(opts?: { firstMessage?: string; prompt?: string; language?: string; dynamicVariables?: Record<string,string>; sessionStartMs?: number; keyterms?: string[] }): Promise<void>;
   disconnect(): void;
   getId(): string | undefined;              // safe before/after a live agent session
   say(tag: string, text: string, spoken?: string): void;   // agent mode: sends "[TAG] text" as a user message; fallback: speaks `spoken ?? text`
@@ -159,7 +179,8 @@ type VoiceDebugEvent = { at: number; src: "agent"|"scribe"|"turn"|"gate"|"tool";
 interface VoiceProviderProps { agentId?: string; tools: MutableRefObject<ToolHandlers>; onDebugEvent?: (event: VoiceDebugEvent) => void }
 <VoiceProvider agentId={id} tools={ref} onDebugEvent={callback}>…</VoiceProvider>
 useVoice(): VoiceApi
-useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?), language? })
+type TranscriptMeta = { startedAtMs: number; endedAtMs: number; speaker: "human"|"agent" };
+useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?, meta?), onAgentEcho?(text, startSecs?, endSecs?, meta?), onCommand?(command, text, meta), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
 type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
 
@@ -179,7 +200,7 @@ interface TurnResult {
 }
 ```
 
-**What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. Remote ElevenLabs stream audio receives the current gate volume synchronously before LiveKit invokes `play()` and remains inaudible outside an authorized first-message, `say()`, legacy-mic or `turn()` window; ordinary clips/replays are not intercepted. A user-activity heartbeat prevents idle timeout turns, and an authorized response that does not start within 8 seconds is persistently gated closed and reported until another response is explicitly authorized or the voice disconnects. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; anything transcribed while `isSpeaking` is never attributed to the human; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
+**What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. Remote ElevenLabs stream audio receives the current gate volume synchronously before LiveKit invokes `play()` and remains inaudible outside an authorized first-message, `say()`, legacy-mic or `turn()` window; ordinary clips/replays are not intercepted. A user-activity heartbeat prevents idle timeout turns, and an authorized response that does not start within 8 seconds is persistently gated closed and reported until another response is explicitly authorized or the voice disconnects. `VoiceInner` owns one shared Scribe connection while an enabled transcriber subscriber or voice session exists; `?stt=off` prevents microphone acquisition. One demand window mints at most one token; fatal Scribe errors latch a labeled WebSpeech fallback until demand stops, and a language/device/keyterm/background-filter change performs one controlled reconnect. Expected-close state is connection-generation scoped, so a suppressed old SDK CLOSE cannot mask a later replacement failure. Transcript times use the application clock once `sessionStartMs` is known. Agent/fallback echo is routed only to `onAgentEcho`; human barge-in and the human suffix of a mixed segment remain human. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
 
 ### 3.1 Tag protocol (page → agent, via `say`)
 
@@ -250,20 +271,45 @@ All routes are Next.js route handlers; `params` is a Promise in Next 16 (`const 
 | `GET /api/export?sessionId=&format=policy\|prompt\|sop` | B | → file download | stretch X1 |
 | `POST /api/autopilot` | B | `{ sessionId, apply? }` → `{ steps, remaining }` | runs the policy over the `autopilot` queue, halts where she would |
 
-`SaveVerdict` (`lib/matcher.ts`): `{ blocked: boolean; ruleId?; title?; quote?; who?; reason? }`. The guard enforces **only a confirmed map** and only learned rules.
+`SaveVerdict` (`lib/matcher.ts`): `{ blocked: boolean; ruleId?; title?; quote?; who?; reason?; missing?: string }`. `missing` is an optional human-readable failed condition (P-16). The guard enforces **only a confirmed map** and only learned rules.
 
 ---
 
 ## 5. Persistence — `lib/store.ts` · Owner **B**
 
 ```ts
-getSession(id): Promise<SessionLog | undefined>     saveSession(s): Promise<void>
+dataDir(): string
+getSession(id: string): Promise<SessionLog | undefined>
+saveSession(s: SessionLog): Promise<void>
 listSessions(): Promise<Pick<SessionLog,"id"|"mode"|"task"|"expertName"|"startedAt"|"endedAt">[]>
-getMap(sessionId): Promise<WorkMap | undefined>     saveMap(map): Promise<void>      // saveMap bumps map.revision
-saveClip(sessionId, audioId, bytes): Promise<string>     readClip(sessionId, audioId): Promise<Uint8Array | undefined>
+getMap(sessionId: string): Promise<WorkMap | undefined>
+saveMap(map: WorkMap): Promise<void>               // bumps map.revision
+saveClip(sessionId: string, audioId: string, bytes: Uint8Array): Promise<string>
+readClip(sessionId: string, audioId: string): Promise<Uint8Array | undefined>
+deleteClip(sessionId: string, audioId: string): Promise<boolean>
+deleteClips(sessionId: string, audioIds: string[]): Promise<void>
+saveFrame(sessionId: string, frameId: string, bytes: Uint8Array): Promise<string>
+readFrame(sessionId: string, frameId: string): Promise<Uint8Array | undefined>
+deleteFrame(sessionId: string, frameId: string): Promise<boolean>
+deleteFrames(sessionId: string, frameIds: string[]): Promise<void>
+listFrameIds(sessionId: string): Promise<string[]>
+getErpState(ws?: string): Promise<Invoice[] | undefined>
+saveErpState(invoices: Invoice[], ws?: string): Promise<void>
+interface GuardRecord { mapSessionId: string; teachSessionId: string; armedAt: number; expiresAt: number }
+getGuard(teachSessionId?: string, ws?: string): Promise<GuardRecord | undefined>
+saveGuard(g: { mapSessionId: string; teachSessionId: string; ttlMs?: number }, ws?: string): Promise<GuardRecord>
+clearGuard(teachSessionId?: string, ws?: string): Promise<void>
+// lib/workspace.ts (B): local-only placeholder, no cookie/request lookup yet
+currentWorkspace(): Promise<string>               // resolves to "local"
 ```
 
-Today: JSON files under `.data/{sessions,maps,clips}/` plus `.data/erp.json` and `.data/erp-guard.json` (written directly by `lib/erp.ts` — moving behind the store, P-21). Whatever B changes underneath for the deploy, **these signatures do not change**; other lanes import only these functions (and `lib/erp.ts`'s exports for the sandbox).
+`dataDir()` reads `DATA_DIR` per call, defaulting to `<cwd>/.data`. Sessions/maps use `sessions/<id>.json` / `maps/<id>.json`; clips/frames use `clips/<sessionId>/<audioId>.webm` / `frames/<sessionId>/<frameId>.jpg`. Media saves return the filesystem path, not a browser URL. ERP and guards use `ws/<ws>/erp.json` and `ws/<ws>/guards.json`. Omitted `ws` resolves through the **local-only stub**; session/map/media paths and session listings are not workspace-scoped. P-25 cookie isolation is not implemented here.
+
+All path IDs must match `/^[\w-]{1,64}$/`. Writes use temporary files plus atomic rename, serialized per file within one Node process; guard read-modify-write operations share that serialization. Bulk deletion validates every ID before deleting; single deletion returns `false` for a missing file. Missing lists return `[]`. Only ENOENT is treated as missing: corrupt JSON, invalid records and other I/O errors throw, without stale cache fallback or reseeding. ERP validation rejects non-array state and non-object entries; it is not a full invoice schema validator.
+
+Guards are keyed by teach session. Saving re-arms that session with a default 30-minute TTL (or finite nonnegative `ttlMs`); validated input is snapshotted before awaiting. `getGuard(id)` excludes expired records; without an ID it returns the newest unexpired guard by `armedAt`, with persisted private sequence metadata breaking timestamp ties. No matching active guard returns `undefined`. `clearGuard(id)` clears one; `clearGuard()` clears all in the current workspace; `clearGuard(undefined, ws)` clears all in an explicit workspace. Clearing does not silently replace corrupt guard data.
+
+**Lane C integration remains:** `lib/erp.ts` still writes legacy `.data/erp.json` and `.data/erp-guard.json` directly until migrated to these APIs ([#24](https://github.com/Backpacked333/sorcerer-apprentice-/issues/24)). Existing signatures are preserved; consumers import the store (and `lib/erp.ts`'s sandbox exports), not `fs`.
 
 ---
 
@@ -274,6 +320,8 @@ Today: JSON files under `.data/{sessions,maps,clips}/` plus `.data/erp.json` and
 | `ELEVENLABS_API_KEY` | server (A) | Scribe tokens, agent creation, KB sync. Server-side only. |
 | `NEXT_PUBLIC_INTERVIEWER_AGENT_ID`, `NEXT_PUBLIC_TUTOR_AGENT_ID` | client (A) | empty → browser-speech fallback |
 | `ELEVENLABS_VOICE_ID`, `AGENT_LLM` | `create-agents.ts` (A) | voice and agent LLM |
+| `ELEVENLABS_PRIVATE_AGENTS`, `ELEVENLABS_TTS_MODEL` | server/voice integration (A) | Deployment examples use `1` and `eleven_v4_turbo`; lane A must provide server-issued conversation tokens. Flags alone do not implement private-agent authentication. |
+| `DATA_DIR` | server filesystem store (B) | Local default `.data`; Railway `/app/.data` on a persistent volume with exactly one Node replica. |
 | `AI_GATEWAY_API_KEY` | server (B, C) | Vercel AI Gateway: vision + compile |
 | `VISION_MODEL`, `COMPILE_MODEL` | server (B, C) | gateway model slugs |
 | `NEXT_PUBLIC_EVENT_SOURCE` | client (B) | `vision` \| `both` (default) \| `dom` |
@@ -295,27 +343,21 @@ Anything prefixed `NEXT_PUBLIC_` ships to the browser: never a secret.
 
 ## 7. View-models — `components/views/*.vm.ts` · Owners **A** (capture), **C** (map, teach) · Consumer **D**
 
-Created by D's seam-split PR (protocol §3). Shape rule: a `vm` is a plain object of **render-ready state + callbacks**, no SDK objects, no refs except `videoRef`.
+Created by D's seam-split PR (protocol §3). Shape rule: a `vm` is a plain object of **render-ready state + callbacks**, no SDK objects, no refs except `videoRef`. The TypeScript interfaces in the three `*.vm.ts` files are the source of truth. A client builds that object and returns `<XView vm={vm} />`. A view renders it and does not fetch.
 
-```ts
-// capture.vm.ts (A) — minimum fields after the split; A adds more as needed
-interface CaptureVM { started: boolean; expertName: string; task: string; consented: boolean;
-  setExpertName, setTask, setConsented, start(): Promise<void>, endTask(): Promise<void>;
-  sessionId: string; voice: Pick<VoiceApi,"mode"|"connected"|"status"|"isSpeaking">; sttEngine: "scribe"|"webspeech"|"none";
-  pipeline: { videoRef, sharing, start(), activity, framesSeen, framesSent, dropped, visionLatency, visionError, masks, addMask, clearMasks, paused };
-  decision?: Decision; questionsLast10Min: number; budget: number;          // the governor meter
-  openWindow?: QuestionWindow & { phase: "asking"|"answering" }; partial: string;
-  queued: Candidate[]; askedCount: number; guardrailAsked: boolean; toDebrief: number;
-  events: ScreenEvent[]; candidateFor(eventId): Candidate | undefined; transcript: TranscriptSegment[];
-  ledger: { framesSeen: number; framesKept: number; entitiesRedacted: number; secondsStruck: number };
-  strike(): void; notNow(): void; holding: boolean; setHolding(b: boolean): void;
-  submitTypedAnswer(text: string): void; synced: number | null; }
-// map.vm.ts (C): map, session frames, phase, currentSlot, heard, teachback, rounds, metrics, autopilot state,
-//                startDebrief(), submitAnswer(text), confirm(yes, correction?), recompile(llm), runAutopilot(), onMapChange(map)
-// teach.vm.ts (C): log, map, started, ended, phase, decisions[], replay, card[], missed[], pipeline view, start(), endSession(), closeReplay()
-```
+Optional fields a view already reads, and which stay absent until the owning lane sets them:
 
-D may *read* any field and call any callback. D never imports `lib/governor`, `lib/matcher`, the ElevenLabs SDK, or `fetch`es an API from a view.
+| View-model | Field | Owner | What the view does when it is missing |
+|---|---|---|---|
+| `CaptureVM` | `voice.degraded`, `voice.lastError` | A | badges stay on `mode` / `connected` |
+| `CaptureVM` | `reasonHeard` | A | the "reason heard" chip stays hidden |
+| `CaptureVM` | `pipeline.setCropTarget`, `pipeline.surface` | A, from B's pipeline | real vision uses the companion layout |
+| `MapVM` | `lastPatch`, `pending`, `canonical`, `matrix`, `knowledge`, `llm` | C | teach-back has no rule diff; confirm stays clickable; headline counts recorded steps; no matrix |
+| `TeachVM` | `tutorState` | C | presence stays Watching or Speaking from `voice.isSpeaking`. The view never infers listening |
+| `TeachVM` | `practice` | C | no "Practice this" button |
+| `TeachVM` | `pipeline.setCropTarget` | C | same companion fallback as Capture |
+
+`CropHandle` (`setCropTarget?`, `surface?`) lives on `capture.vm.ts` and is shared by the teach pipeline pick.
 
 ---
 
@@ -323,15 +365,19 @@ D may *read* any field and call any callback. D never imports `lib/governor`, `l
 
 | Queue | Invoice | What it is | Role in the demo |
 |---|---|---|---|
-| expert | 4471 | Müller Werkzeugbau, €7,850 CNC spindle unit, prefilled 4711 | re-code to 0400 (capex) |
-| expert | 4472 | Novak Logistik s.r.o. (subsidiary), €2,300 intercompany freight | send for second approval |
-| expert | 4473 | Bäcker Elektrotechnik, €1,180, dated Dec 2 | put on hold |
-| newhire (coached) | 4490 | Hoffmann Maschinen, **€7,200** hydraulic press controller, prefilled 4711 | the brief's unseen case: tutor intervenes before save |
-| newhire (coached) | 4491 | Schmidt Reinigung, €640, dated Dec 4 | tutor stays quiet: the December hold is Bäcker-only |
-| newhire (coached) | 4492 | Müller, −€420 credit note, no PO | never shown: tutor quotes the debrief or flags it |
-| newhire (independent) | 4493 | Krüger Automation, €8,900 equipment | tutor silent; guard is the only backstop |
-| newhire (independent) | 4494 | Novak (subsidiary), €2,750 freight | tutor silent |
-| autopilot | 4501–4505 | four routine, one unknown supplier (4505) | stretch X1: agent halts where she would |
+| expert | 4470 | Schmidt Reinigung, €640 office cleaning, prefilled 4300, dated 2025-11-25 | routine warm-up: nothing to change, post it |
+| expert | 4471 | Müller Werkzeugbau, €7,850 CNC spindle unit, prefilled 4711, dated 2025-11-26 | re-code to 0400 (capex) |
+| expert | 4472 | Novak Logistik s.r.o. (subsidiary), €2,300 intercompany freight, dated 2025-11-27 | send for second approval |
+| expert | 4473 | Bäcker Elektrotechnik, €1,180, dated 2025-12-02 | put on hold |
+| expert | 4474 | Hartmann Werkzeuge, €1,460 bench vise, prefilled 4711, dated 2025-11-28 | routine: nothing to change, post it |
+| newhire (coached) | 4490 | Hoffmann Maschinen, **€7,200** hydraulic press controller, cost center starts empty, dated 2025-12-03 | the brief's unseen case: tutor intervenes before save |
+| newhire (coached) | 4491 | Schmidt Reinigung, €640, dated 2025-12-04, cost center starts empty | tutor stays quiet: the December hold is Bäcker-only |
+| newhire (coached) | 4492 | Müller, −€420 credit note, no PO, cost center starts empty | never shown: tutor quotes the debrief or flags it |
+| newhire (independent) | 4493 | Krüger Automation, €8,900 equipment, cost center starts empty | tutor silent; guard is the only backstop |
+| newhire (independent) | 4494 | Novak (subsidiary), €2,750 freight, cost center starts empty | tutor silent |
+| autopilot | 4501–4505 | four routine, one unknown supplier (4505); dates in 2025; 4502 asset `A-2025-117` | stretch X1: agent halts on the unknown supplier |
+
+`Invoice` also carries `contactName`, `contactEmail`, `contactPhone` and `iban` on the expert and new-hire rows. Those fields never enter `InvoiceState`. `toInvoiceState` omits an empty `costCenter`. A normal save commits `status: "posted"`. Dates are all in 2025.
 
 The **business reasoning is not in the code or any prompt** — only fields are. The expert's rules live on a private role card (`docs/05-DEMO-AND-SUBMISSION.md`) that must never be copied into `agents/*.md`, compile prompts, seed data or tests of the live path. Changing an invoice's id, amount, supplier, date or queue is a `CONTRACT:` change (D's script and video depend on them).
 
@@ -354,18 +400,18 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 | P-7 | `WorkMap.expert.language` is honored end to end; `Quote.translation` filled at compile when language ≠ `en` (stretch X2) | C + A | D |
 | P-8 | `ScreenEvent.latencyMs?: number` (change → event) and `SessionLog.metrics.visionP50Ms` | B | D (measured slide) |
 | P-9 | `VoiceApi.lastError?: string`, `VoiceApi.degraded: boolean` (voice or STT fell back mid-session) | A | D (honest badge) |
-| P-10 | `GET /api/health` → `{ ok, keys: { elevenlabs, gateway }, agents: { interviewer, tutor }, store: "fs"\|"…" , commit }` | B | D (preflight screen) |
+| P-10 | `GET /api/health` → `{ ok, keys: { elevenlabs, gateway }, agents: { interviewer, tutor, private, ttsModel }, sample: { present }, store: "fs", commit }`. Credential/agent presence is boolean; commit is a safe SHA or `unknown`. No-store; 200 only when both sample session/map pairs are complete and the Teach sample is confirmed, otherwise 503 without internal errors. | B | D (preflight screen) |
 | P-11 | `EventKind` gains **`"save_intent"`**: posted by the ERP when the save-confirm opens, carrying the *proposed* `state`. A sandbox verdict like `save_blocked`: delivered in every source mode, never a vision event, never a compiled step. | B (type, pipeline) · D (`InvoiceForm` posts it) | C (matcher intervenes on it) |
 | P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
-| P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`) and resolves only when the session is connected | A | C passes names in Map and Teach |
-| P-14 | `TelemetryMessage` gains `queue: Queue` and `sandboxSession?: string`; a `"hello"` message from a subscriber makes an open `InvoiceForm` re-announce `invoice_opened` | B · D | A, C |
+| P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`), `sessionStartMs?: number`, and `keyterms?: string[]`; it resolves only when the agent session is connected | A | C passes names in Map and Teach; A/C pass the app clock and session vocabulary |
+| P-14 | `TelemetryMessage` gains optional `queue?: Queue`, `sandboxSession?: string`, `reannounce?: boolean`; `postHello/subscribeHello` use the separate hello control contract (§2). ERP re-announcement of `invoice_opened` still requires publisher integration. | B · D | A, C |
 | P-15 | `SessionLog.deferred?: { kind: string; question: string; stepRef: string }[]` — live candidates that were deferred, stale or never asked | B (type) · A (writes) | C (`buildSlots` asks them first) |
 | P-16 | `Rule.stopAndAsk` gains `quote?: Quote`; `stopAndAsk.who` becomes optional (set only when the expert named someone); `SaveVerdict` gains `missing?: string` (human-readable failed condition) | C | D (held-save panel), A (tutor line) |
 | P-17 | `WorkMap.seen?: { categories: string[]; entities: string[]; suppliers: string[] }` recorded at compile; novelty is derived from it | C | B (autopilot) |
 | P-18 | `DELETE /api/sessions/:id/clips?audioId=` and `DELETE /api/sessions/:id/frames?frameId=`; `POST /api/demo/reset` → resets ERP queues, reseeds the sample sessions, disarms every guard | B | A (strike), D (`/demo`), C (Teach start) |
 | P-19 | `POST /api/erp/invoices` (create a practice invoice in the `newhire` queue) | C | D (outcome card button) |
 | P-20 | `canonicalSteps(map)` and `evidenceMatrix(map)` exported from `lib/workmap.ts` (pure, derived — no schema change) | C | D (Work Map view) |
-| P-21 | `lib/store.ts` gains `getErpState/saveErpState`, `getGuard/saveGuard/clearGuard(teachSessionId)`; `lib/erp.ts` stops touching `fs` | B | C |
+| P-21 | `lib/store.ts` gains `getErpState/saveErpState`, `getGuard/saveGuard/clearGuard(teachSessionId?, ws?)` (§5); C still must migrate `lib/erp.ts` away from direct `fs` | B | C |
 | P-22 | `QuestionWindow.spokeAt?: number` (agent started speaking); `askedAt` keeps meaning "question finished, mic open" | A | C (`metrics.ts`) |
 | P-23 | **Workspace capture:** `useScreenPipeline().start(opts?: { mode?: "tab" \| "workspace"; cropTo?: HTMLElement })`. `"workspace"` uses current-tab capture cropped to `cropTo` (the ERP frame); if Region Capture is unavailable the pipeline paints out everything outside `cropTo`'s rectangle before any frame is sent or stored. Returns `surface: "browser" \| "window" \| "monitor"` on the hook | B | A (Capture), C (Teach), D (workspace layout passes the frame element through the `vm`) |
 | P-24 | **DOM-published PII rectangles:** the ERP marks personal data with `data-pii="name\|email\|iban\|phone"` and broadcasts normalized rectangles on `BroadcastChannel("tacit-erp-pii")` `{ at, rects: PiiRegion[] }`; the pipeline paints them (offset by the frame's position in workspace mode) **before upload** when the surface is a browser tab | D (ERP marks + publisher) · B (pipeline) | A5 |

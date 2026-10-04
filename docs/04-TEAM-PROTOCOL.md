@@ -32,6 +32,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | Path | Owner | Notes |
 |---|---|---|
 | `lib/memory.ts`, `lib/memory.test.ts` | **C** | bounded application-owned memory, evidence validation and cancellable reasoning handoffs; Roy authorized this cross-lane integration |
+| `lib/reasoning.ts`, `lib/reasoning.test.ts`, `lib/prepared-question.ts`, `app/api/reason/` | **C** | bounded high-reasoning model call and freshness-checked question packets |
 | `components/voice.tsx` | **A** | `VoiceApi` is a contract: additive only |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |

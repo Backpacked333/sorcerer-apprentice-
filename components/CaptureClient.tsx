@@ -11,6 +11,8 @@ import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
 import { VoiceProvider, useTranscriber, useVoice, type ToolHandlers } from "./voice";
 import { CaptureView } from "./views/CaptureView";
 import type { CaptureVM } from "./views/capture.vm";
+import { buildMemory, MemoryFlight } from "@/lib/memory";
+import { PreparedQuestions } from "@/lib/prepared-question";
 
 const OFF_RECORD = /\b(off the record|scratch that|don'?t keep that|do not keep that|strike that)\b/i;
 
@@ -47,6 +49,10 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const chunks = useRef<Blob[]>([]);
   const entitiesRedacted = useRef(0);
   const dirty = useRef(false);
+  const reasoning = useRef(new MemoryFlight());
+  const prepared = useRef(new PreparedQuestions());
+  const reasoningOff = useRef(false);
+  const ended = useRef(false);
   const voiceRef = useRef(voice);
   voiceRef.current = voice;
 
@@ -176,13 +182,14 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const openQuestion = useCallback(
     (c: Candidate) => {
       const t = nowSecs();
+      const question = prepared.current.get(buildMemory(log.current, queue.current.items), c.id) ?? c.question;
       const w = governor.current.open(c.id, t);
       queue.current.markAsked(c.id);
       const L = log.current;
       const recentEvents = L.events.filter((e) => !e.redacted && e.kind !== "typing").slice(-3).map(describeEvent).join("; ");
-      L.windows.push({ id: w.id, candidateId: c.id, kind: c.kind, question: c.question, stepRef: c.stepRef, openedAt: t });
+      L.windows.push({ id: w.id, candidateId: c.id, kind: c.kind, question, stepRef: c.stepRef, openedAt: t });
       spokeStarted.current = false;
-      voiceRef.current.say("ASK", `${c.question} | stepRef=${c.stepRef} | on screen: ${recentEvents}`, c.question);
+      voiceRef.current.say("ASK", `${question} | stepRef=${c.stepRef} | on screen: ${recentEvents}`, question);
       dirty.current = true;
       rerender();
     },
@@ -191,6 +198,8 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
 
   const strike = useCallback(
     (fromSecs?: number, toSecs?: number) => {
+      reasoning.current.invalidate();
+      prepared.current.clear();
       const L = log.current;
       const t = nowSecs();
       const w = governor.current.window;
@@ -220,11 +229,14 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   }, [closeWindow]);
 
   const endTask = useCallback(async () => {
+    ended.current = true;
+    reasoning.current.invalidate();
+    prepared.current.clear();
     const L = log.current;
     if (governor.current.window) await closeWindow("timeout");
     L.endedAt = Date.now();
     queue.current.drainToDebrief();
-    L.metrics = { ...computeMetrics(L), framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred } as unknown as Record<string, number>;
+    L.metrics = { ...L.metrics, ...computeMetrics(L), framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred } as unknown as Record<string, number>;
     await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) });
     voiceRef.current.disconnect();
     pipeline.stop();
@@ -280,7 +292,8 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
         return;
       }
       const force = queue.current.askedCount >= 2 && !queue.current.guardrailAsked;
-      const c = queue.current.pick(force, t);
+      const preferredId = prepared.current.preferred(buildMemory(log.current, queue.current.items));
+      const c = queue.current.pick(force, t, 3, preferredId);
       if (c && g.canOpen(s, c.value)) openQuestion(c);
     }, 500);
     return () => window.clearInterval(id);
@@ -292,12 +305,38 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       if (!dirty.current) return;
       dirty.current = false;
       const L = log.current;
-      L.metrics = { framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred };
+      L.metrics = { ...L.metrics, framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred };
       const res = await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) }).catch(() => null);
       if (res?.ok) setSynced(Date.now());
     }, 5000);
     return () => window.clearInterval(id);
   }, [started, pipeline.framesSeen, pipeline.piiBlurred]);
+
+  useEffect(() => {
+    const flight = reasoning.current, packets = prepared.current;
+    if (!started || holding) return;
+    const id = window.setInterval(() => {
+      if (ended.current || reasoningOff.current) return;
+      const read = () => buildMemory(log.current, queue.current.items);
+      if (!read().questions.length) return;
+      void flight.run(read, async (memory, signal) => {
+        const res = await fetch("/api/reason", { method: "POST", signal: AbortSignal.any([signal, AbortSignal.timeout(28000)]),
+          headers: { "content-type": "application/json" }, body: JSON.stringify(memory) });
+        if (!res.ok) throw new Error("Reasoning unavailable");
+        return res.json();
+      }, (result) => {
+        reasoningOff.current = result.mode === "off";
+        if (result.mode === "live") packets.set(read(), result.questions);
+        log.current.metrics = { ...log.current.metrics, reasoningLatencyMs: result.latencyMs ?? 0,
+          reasoningQuestions: result.questions?.length ?? 0, reasoningRuns: (log.current.metrics?.reasoningRuns ?? 0) + 1 };
+        dirty.current = true;
+      }).catch(() => {
+        log.current.metrics = { ...log.current.metrics, reasoningFailures: (log.current.metrics?.reasoningFailures ?? 0) + 1 };
+        dirty.current = true;
+      });
+    }, 15000);
+    return () => { window.clearInterval(id); flight.invalidate(); packets.clear(); };
+  }, [started, holding]);
 
   const start = async () => {
     const res = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });

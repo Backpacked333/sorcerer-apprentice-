@@ -1,5 +1,10 @@
 # Lane B status
 
+## Roy-authorized memory integration (C1/N2)
+- Added Gateway reasoning model/mode settings, no dependencies. Stateless same-origin
+  endpoint bounds streamed input at 128 KiB and generation at 25 seconds; failures sanitized.
+- Same-origin is not authentication: retain deployment access controls and Gateway budgets.
+
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
 
 ## Task5 route/schema · C2 · [#28](https://github.com/Backpacked333/sorcerer-apprentice-/pull/28)

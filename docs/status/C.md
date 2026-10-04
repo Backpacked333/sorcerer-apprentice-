@@ -1,5 +1,11 @@
 # Lane C status
 
+## Background inference integration (Roy-authorized; C1/C3/M2)
+- Sonnet 5.5 high reasoning through Gateway; single-flight Capture analysis, shadow default,
+  opt-in live packets with exact-state/expiry validation at voice dispatch.
+- Keyless/failure paths preserve deterministic Capture. Mocked route and packet tests pass.
+- Next: profile persistence/Map visibility; no live provider or human timing acceptance yet.
+
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
 
 ## Done and merged (WP ids)

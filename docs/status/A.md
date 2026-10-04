@@ -1,3 +1,10 @@
+## Roy-authorized memory integration (C1/C3)
+
+- Capture evaluates bounded background proposals (shadow by default). Explicit live mode
+  chooses/rephrases eligible candidates through the unchanged governor and tagged ASK.
+- Pause, off-record, end and unmount invalidate packets. No remote agent changes or human
+  timing/voice acceptance performed; live evaluation awaits credentials.
+
 ## Checkpoint M1 — 8:02 PM ET
 
 ### Done and merged (WP ids)

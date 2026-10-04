@@ -21,6 +21,21 @@ only if the complete bounded input is still identical. Callers must invalidate o
 consent/pause/end and recheck prepared questions at dispatch. No cross-session retrieval.
 This foundation alone does not invoke models, persist a profile or authorize speech.
 
+`POST /api/reason` accepts `MemorySchema` (128 KiB maximum), returns mode plus validated
+questions/profile/model/latency, and never writes a session or a map. Same-origin is
+required; it is **not authentication**. Keep the app behind its deployment access controls
+and configure Gateway spend limits before exposing paid inference to untrusted traffic.
+`REASONING_MODEL` defaults to `anthropic/claude-sonnet-5.5`, using high reasoning with
+a 25-second timeout and no retries. `REASONING_MODE=shadow` is the default; `live` opts
+into prepared questions and `off` disables inference. No key/OIDC also disables it.
+Capture runs at most one request at a time on a 15-second schedule when candidates exist;
+it does not wait for reasoning. Packets expire after 20 seconds and require unchanged
+memory at dispatch. Optional fourth `CandidateQueue.pick` argument `preferredId` chooses
+only inside the existing eligible pool (age, parent, retry and forced-guardrail constraints).
+The governor is still the sole speech gate. Off-record, pause, end and unmount abort work.
+`SessionLog.metrics.reasoningLatencyMs/reasoningQuestions/reasoningRuns/reasoningFailures`
+report the last accepted analysis/cumulative activity; these are not live quality scores.
+
 ---
 
 ## 1. The Work Map — `lib/workmap.ts` · Owner **C** · Consumers A, B, D

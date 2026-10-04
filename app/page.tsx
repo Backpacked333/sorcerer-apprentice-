@@ -3,6 +3,8 @@ import { getMap, listSessions } from "@/lib/store";
 import { pickSample } from "@/lib/ui/landing";
 import { BrowserCheck } from "@/components/ui/BrowserCheck";
 import { HealthStrip } from "@/components/demo/HealthStrip";
+import { seedDemo } from "@/lib/seed";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
@@ -46,7 +48,14 @@ export default async function Home() {
               {sampleId ? <>
                 <Link href={`/map/${sampleId}`} className="btn btn-primary px-5 py-3">Open a finished Work Map <span aria-hidden="true">↗</span></Link>
                 <Link href={`/teach?from=${sampleId}`} className="btn px-5 py-3">Be the new hire</Link>
-              </> : <button type="button" className="btn btn-primary px-5 py-3" disabled>No sample Work Map yet</button>}
+              </> : <form action={async () => {
+                "use server";
+                await seedDemo({ ifMissing: true });
+                redirect("/map/demo_sabine_confirmed");
+              }}>
+                <p className="mb-3 max-w-lg text-sm text-muted">A scripted example with synthetic evidence, separate from your own captures.</p>
+                <button type="submit" className="btn btn-primary px-5 py-3">Load the sample Work Map</button>
+              </form>}
               <Link href="/capture" className="btn px-5 py-3">Share your know-how</Link>
             </div>
             <p className="mt-4 text-sm text-muted">{sampleId ? "Explore a confirmed sample, or capture something new." : "No confirmed sample is available. You can still capture something new."}</p>

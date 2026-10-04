@@ -1,4 +1,4 @@
-import { createElement } from "react";
+import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import Home from "@/app/page";
@@ -10,8 +10,12 @@ import type { Decision } from "./governor";
 import { presenceOf, type PresenceInput } from "./ui/presence";
 import { WorkMapSchema } from "./workmap";
 import { getMap, listSessions } from "./store";
+import { seedDemo } from "./seed";
+import { redirect } from "next/navigation";
 
 vi.mock("./store", () => ({ getMap: vi.fn(), listSessions: vi.fn() }));
+vi.mock("./seed", () => ({ seedDemo: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -32,6 +36,16 @@ const renderMap = (value = map, editable = false) => renderToStaticMarkup(create
   map: value, frames: [], sessionId: value.sessionId, editable, onChange: () => {},
 }));
 
+function sampleAction(page: ReactNode): (() => Promise<void>) | undefined {
+  const nodes = Children.toArray(page);
+  while (nodes.length) {
+    const node = nodes.pop();
+    if (!isValidElement<{ action?: () => Promise<void>; children?: ReactNode }>(node)) continue;
+    if (node.type === "form") return node.props.action;
+    nodes.push(...Children.toArray(node.props.children));
+  }
+}
+
 describe("knowledge-first presentation", () => {
   it("keeps all entry paths and clearly labels keyless mode and the missing sample", async () => {
     const html = renderToStaticMarkup(await Home());
@@ -39,7 +53,9 @@ describe("knowledge-first presentation", () => {
     expect(html).toContain('aria-label="How Simon works"');
     expect(html).not.toContain("Tacit");
     for (const path of ["/map", "/capture", "/teach", "/erp"]) expect(html).toContain(`href="${path}"`);
-    expect(html).toMatch(/<button[^>]*disabled=""[^>]*>No sample Work Map yet<\/button>/);
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*>Load the sample Work Map<\/button>/);
+    expect(html).toContain("A scripted example with synthetic evidence, separate from your own captures.");
+    expect(seedDemo).not.toHaveBeenCalled();
     expect(html).toContain("No confirmed sample is available.");
     expect(html).not.toContain("/teach?from=");
     expect(html).toContain("Keyless mode uses ERP telemetry and browser speech");
@@ -56,8 +72,11 @@ describe("knowledge-first presentation", () => {
     ].map((s) => ({ ...s, task: map.task, expertName: map.expert.name }));
     vi.mocked(listSessions).mockResolvedValue(sessions);
     vi.mocked(getMap).mockImplementation(async (id) => ({ ...map, sessionId: id, confirmedAt: id === "demo_draft" ? undefined : 100 }));
-    const html = renderToStaticMarkup(await Home());
+    const page = await Home();
+    const html = renderToStaticMarkup(page);
     expect(html).toContain('href="/map/demo_latest"');
+    expect(sampleAction(page)).toBeUndefined();
+    expect(seedDemo).not.toHaveBeenCalled();
     expect(html).toContain('href="/teach?from=demo_latest"');
     expect(html).toContain("Open a finished Work Map");
     expect(html).toContain("Explore a confirmed sample");
@@ -74,7 +93,30 @@ describe("knowledge-first presentation", () => {
     expect(html).toContain("No confirmed sample is available.");
     expect(html).not.toContain('href="/map/demo_pending"');
     expect(html).not.toContain("/teach?from=");
+    expect(html).toContain("Load the sample Work Map");
+    expect(seedDemo).not.toHaveBeenCalled();
     expect((await DemoPage()).props.sampleMap).toBeUndefined();
+  });
+
+  it("seeds missing samples only on explicit submission, before opening the confirmed example", async () => {
+    vi.mocked(seedDemo).mockImplementation(async () => {
+      expect(redirect).not.toHaveBeenCalled();
+      return { samples: ["demo_sabine", "demo_sabine_confirmed"] };
+    });
+    const action = sampleAction(await Home());
+    expect(action).toBeTypeOf("function");
+    expect(seedDemo).not.toHaveBeenCalled();
+    await action!();
+    expect(seedDemo).toHaveBeenCalledExactlyOnceWith({ ifMissing: true });
+    expect(redirect).toHaveBeenCalledExactlyOnceWith("/map/demo_sabine_confirmed");
+  });
+
+  it("does not redirect to a finished sample when seeding fails", async () => {
+    vi.mocked(seedDemo).mockRejectedValue(new Error("storage unavailable"));
+    const action = sampleAction(await Home());
+    expect(action).toBeTypeOf("function");
+    await expect(action!()).rejects.toThrow("storage unavailable");
+    expect(redirect).not.toHaveBeenCalled();
   });
 
   it("puts the decision and literal evidence before the screen moment", () => {

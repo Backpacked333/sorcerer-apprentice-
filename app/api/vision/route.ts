@@ -2,12 +2,13 @@ import { NextResponse } from "next/server";
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { fromWire, VisionWire, VISION_PROMPT } from "@/lib/vision-schema";
+import { gatewayConfigured } from "@/lib/model-contracts";
 
 export const maxDuration = 30;
 const RequestBody = z.object({ seq: z.number().int().nonnegative(), image: z.string().max(4 * 1024 * 1024) });
 
 export async function POST(req: Request) {
-  if (!process.env.AI_GATEWAY_API_KEY) return NextResponse.json({ error: "AI_GATEWAY_API_KEY not set; use NEXT_PUBLIC_EVENT_SOURCE=dom", mock: true }, { status: 503 });
+  if (!gatewayConfigured()) return NextResponse.json({ error: "AI Gateway is not configured; vision is unavailable", mock: true, degraded: true }, { status: 503 });
   const parsed = RequestBody.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: "invalid vision request" }, { status: 400 });
   const body = parsed.data;

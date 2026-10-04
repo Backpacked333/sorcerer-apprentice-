@@ -9,6 +9,7 @@ import { COST_CENTERS } from "@/lib/erp-model";
 import { Governor, type Decision, type GovernorConfig } from "@/lib/governor";
 import { computeMetrics } from "@/lib/metrics";
 import { redactText } from "@/lib/redact";
+import { createSessionSync } from "@/lib/session-sync";
 import { buildAsk, keytermsFrom } from "@/lib/voice-protocol";
 import type { TurnResult } from "@/lib/voice-turn";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
@@ -41,6 +42,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const [partial, setPartial] = useState("");
   const [holding, setHolding] = useState(false);
   const [synced, setSynced] = useState<number | null>(null);
+  const [syncError, setSyncError] = useState<string | null>(null);
   const [consented, setConsented] = useState(false);
   const [noisy, setNoisy] = useState(false);
 
@@ -52,6 +54,8 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   ctx.current.valueLabels ??= Object.fromEntries(COST_CENTERS.map(({ code, label }) => [code, label]));
   const entitiesRedacted = useRef(0);
   const dirty = useRef(false);
+  const sync = useRef<ReturnType<typeof createSessionSync> | null>(null);
+  const recordingConsentEpoch = useRef(0);
   const holdingRef = useRef(false);
   const voiceRef = useRef(voice);
   const activeTurn = useRef<Promise<TurnResult> | null>(null);
@@ -156,6 +160,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   }, [nowSecs]);
 
   const redactRange = useCallback((fromSecs?: number, toSecs?: number) => {
+    recordingConsentEpoch.current += 1;
     const session = log.current;
     const now = nowSecs();
     const currentWindow = governor.current.window;
@@ -250,7 +255,11 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       listen: true,
       timeoutSecs: governor.current.config.windowTimeoutSecs,
       maxSecs: 60,
-      recordClip: { sessionId: session.id },
+      recordClip: {
+        sessionId: session.id,
+        consentEpoch: () => recordingConsentEpoch.current,
+        onError: () => setSyncError("Could not save or discard the answer audio."),
+      },
       abortOnHumanSpeech: true,
       onPhase: (phase, at) => {
         if (activeWindowId.current !== openWindow.id) return;
@@ -314,7 +323,16 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     const currentPipeline = pipelineRef.current;
     session.metrics = { ...computeMetrics(session), framesSeen: currentPipeline?.framesSeen ?? 0, entitiesRedacted: entitiesRedacted.current + (currentPipeline?.piiBlurred ?? 0) } as unknown as Record<string, number>;
     await syncPromise.current?.catch(() => undefined);
-    await fetch(`/api/sessions/${session.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(session) });
+    try {
+      if (!sync.current) throw new Error("capture sync not initialized");
+      await sync.current.sync(session);
+      setSyncError(null);
+    } catch {
+      ending.current = false;
+      dirty.current = true;
+      setSyncError("Could not save this capture. Try again.");
+      return;
+    }
     dirty.current = false;
     voiceRef.current.disconnect();
     currentPipeline?.stop();
@@ -402,12 +420,15 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       dirty.current = false;
       const currentPipeline = pipelineRef.current;
       session.metrics = { framesSeen: currentPipeline?.framesSeen ?? 0, entitiesRedacted: entitiesRedacted.current + (currentPipeline?.piiBlurred ?? 0) };
-      const request = fetch(`/api/sessions/${session.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(session) })
-        .then((response) => {
-          if (response.ok) setSynced(Date.now());
-          else dirty.current = true;
+      const request = (sync.current?.sync(session) ?? Promise.reject(new Error("capture sync not initialized")))
+        .then(() => {
+          setSynced(Date.now());
+          setSyncError(null);
         })
-        .catch(() => { dirty.current = true; });
+        .catch(() => {
+          dirty.current = true;
+          setSyncError("Could not save this capture.");
+        });
       syncPromise.current = request;
       await request;
       if (syncPromise.current === request) syncPromise.current = null;
@@ -417,9 +438,20 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   }, [started]);
 
   const start = async () => {
-    const response = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });
-    const { session } = await response.json();
+    if (!consented) return;
+    setSyncError(null);
+    let session: SessionLog;
+    try {
+      const response = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });
+      if (!response.ok) throw new Error("session creation failed");
+      ({ session } = await response.json());
+      if (!session?.id) throw new Error("session creation failed");
+    } catch {
+      setSyncError("Could not create a capture session.");
+      return;
+    }
     log.current = session;
+    sync.current = createSessionSync(session.id);
     log.current.startedAt = Date.now();
     deferredSignature.current = "";
     ending.current = false;
@@ -505,6 +537,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     setHolding: setCaptureHolding,
     submitTypedAnswer: (text) => voiceRef.current.submitTyped(text),
     synced,
+    syncError,
     reasonHeard: reasons.at(-1)?.quote,
     reasonHeardItems: reasons,
     noisy,

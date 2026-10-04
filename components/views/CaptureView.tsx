@@ -266,6 +266,7 @@ function Companion({ vm, presenter, mode }: { vm: CaptureVM; presenter: boolean;
             </div>
           )}
 
+          {vm.syncError && <p role="alert" className="banner banner-degraded">{vm.syncError}</p>}
           <Preview vm={vm} masking={masking} drawing={drawing} setDrawing={setDrawing} box={box} setBox={setBox} />
         </div>
 

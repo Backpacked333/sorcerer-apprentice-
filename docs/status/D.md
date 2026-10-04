@@ -1,6 +1,6 @@
 # Lane D status
 
-Updated 2026-10-04 on `d/human-knowledge-ui`, with main `6511744` integrated. This remains a focused presentation pass, not a claim of full Lane D acceptance.
+Updated 2026-10-04 on `d/human-knowledge-ui`, with main `bf29290` integrated. This remains a focused presentation pass, not a claim of full Lane D acceptance.
 
 ## Simon branding · WD-2 / WD-5 / WD-10 / WD-12 / P1
 
@@ -20,7 +20,7 @@ Already on main and retained here:
 Not yet merged. Implemented on this branch:
 - WD-5 / N5: warmer tokens, loaded Inter and JetBrains Mono, visible keyboard focus, reduced-motion support; removed decorative glow and repeating animation.
 - WD-12 / N5: knowledge-first landing with Work Maps as the primary destination; existing Capture, Teach and ERP paths retained; keyless mode explicitly labeled.
-- WD-12 / N2 review follow-up: dynamically select the newest confirmed, nonempty `demo_` capture map through read-only store calls. The landing page links straight to that map and preselects it for Teach; missing/unconfirmed samples produce an explicit disabled sample action. Real captures are not promoted as public samples.
+- WD-12 / N2 review follow-up: dynamically select the newest confirmed, nonempty `demo_` capture map through read-only store calls. The landing page links straight to that map and preselects it for Teach. Without an eligible sample, retain main's explicit **Load the sample Work Map** server action and synthetic-evidence disclosure; seeding happens only on submission with `ifMissing: true`, never during rendering. Real captures are not promoted as public samples.
 - WD-6 / A1: a small expressive dot driven by the existing governor state, with native expandable timing details. No voice, microphone or privacy-state inference from the dot.
 - WD-7 / M3: decision and literal expert reasoning before screenshots; evidence counts rather than confidence labels; draft/confirmed state; guardrail summaries separated from verbatim `quote.text`; missing evidence disclosed.
 - Integration: the companion keeps its state/label/privacy copy and uses the quiet dot; the Work Map keeps frame URLs, regions, translations and the optional evidence matrix. Editing calls the existing `onMapChange` callback, which now persists in the controller, rather than sending a duplicate PUT from the view. The demo room uses the same safe sample selector as the landing page.
@@ -32,7 +32,7 @@ None. No live-provider, deployed, voice or screen-sharing verification claimed.
 
 ## Not verified yet (and the script to verify)
 
-- Automated with main `6511744` integrated: typecheck, all 493 tests (47 files, including 29 D presentation/selection cases), production build and diff whitespace check passed. Coverage includes Simon landing branding and the new URL-only frame contract. Build output confirms `/` and `/demo` render dynamically. No lint script is configured. Non-failing Vite config and dynamic-filesystem tracing warnings remain.
+- Automated with main `bf29290` integrated: typecheck, all 565 tests (63 files, including 31 D presentation/selection cases), production build and diff whitespace check passed. Coverage includes Simon branding, URL-only frames, explicit sample-loading submission and no redirect when seeding fails. Build output confirms `/` and `/demo` render dynamically. No lint script is configured. A non-failing Vite config warning remains.
 - Browser/keyless smoke not run in this session; UI testing needs approval.
 - Prior `d/experience` status reported a keyless smoke pass and a capture hydration warning. That result is not verification of this integrated revision.
 - UI check: open home at desktop and narrow widths; follow Work Maps/Capture/Practice/ERP links; tab to controls; open governor details; inspect a map's decision, literal reason, guardrail source and missing-frame state; verify the selected step is apparent; enable reduced motion.
@@ -42,7 +42,7 @@ None. No live-provider, deployed, voice or screen-sharing verification claimed.
 
 - No publication blocker: Roy explicitly authorized this design to take precedence over overlapping UI changes.
 - A/C: optional view-model fields from docs/03 §7 (`setCropTarget`, `tutorState`, `lastPatch`, `matrix`, etc.). Views tolerate absent fields.
-- B: health/demo-reset and frame-URL contracts; the existing health strip falls back to "Status unavailable" and the demo room retains its fallback resets.
+- Main's durable-workspace, media, health and sample-loading contracts are retained. Deployed storage and fresh-workspace behavior are not verified in this presentation pass.
 - Human: real voice/screen sharing, deployment QA, HackOS access, photo, three videos and submission remain outstanding.
 
 ## Next 3 things

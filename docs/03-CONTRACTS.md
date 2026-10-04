@@ -275,6 +275,8 @@ This pre-handler gate applies as soon as an answer tool is configured, before th
 
 The interviewer acknowledges a **new human answer**, not an internal correction retry. `log_answer` uses `pre_tool_speech=auto`, `execution_mode=post_tool_speech` and `expects_response=true`: allow that acknowledgment before persistence, but do not force speech before every retry. The prompt permits one silent correction from current literal evidence, never a closed/withdrawn question or unrelated speech; failed saving is not described as success.
 
+If a rejected answer produces a distinct provider response with exactly the previous listening acknowledgment's text, the client suppresses that duplicate's playback and visible message. It does not mute the original acknowledgment at rejection time. New human speech, a different response, or a new turn clears retry matching; no semantic/paraphrase suppression is attempted. Existing privacy/output gates remain authoritative.
+
 **Privacy precedence:** `mark_off_record` bypasses answer-tool matching while listening or closing. It supersedes pending typed/tool answers and timeouts with an empty `aborted` result carrying `command: "off_record"`; the clip is discarded and late answer events cannot restore evidence.
 
 Capture withdrawal also invalidates derived in-memory evidence: narration badges/quotes, affected candidates and dependent follow-ups, deferred questions, and curiosity context. Transcript/window overlap counts, not only start timestamps. Delayed screen/transcript callbacks within a struck interval must not repopulate those caches; genuinely later evidence remains eligible.

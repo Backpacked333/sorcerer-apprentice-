@@ -126,6 +126,32 @@ export function applyConversationGate(control: ConversationVolumeControl, open: 
   }
 }
 
+export function createAnswerRetryPlaybackGuard() {
+  let generation: number | undefined;
+  let recent: { text: string; responseId: string } | undefined;
+  let retry: typeof recent;
+  let blocked = false;
+  const reset = () => { generation = undefined; recent = undefined; retry = undefined; blocked = false; };
+  return {
+    reset,
+    onAgentMessage(turn: number, text: string, responseId: string | undefined, acceptingAnswer: boolean): boolean {
+      if (generation !== turn) { reset(); generation = turn; }
+      const normalized = text.trim();
+      blocked = Boolean(responseId && retry && responseId !== retry.responseId && normalized === retry.text);
+      if (!blocked && responseId && responseId !== retry?.responseId) retry = undefined;
+      if (!blocked && acceptingAnswer && responseId && normalized) recent = { text: normalized, responseId };
+      return !blocked;
+    },
+    onRejectedAnswer(turn: number) {
+      if (generation === turn && recent) retry = recent;
+    },
+    onHumanSpeech(turn: number) {
+      if (generation === turn) { recent = undefined; retry = undefined; }
+    },
+    isBlocked(turn: number) { return generation === turn && blocked; },
+  };
+}
+
 export interface RemoteStreamAudio {
   nodeName?: string;
   volume: number;
@@ -521,6 +547,8 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const turnConnectedRef = useRef(false);
   const nowTurnRef = useRef(() => Date.now() / 1_000);
   const turnAdapterRef = useRef<VoiceTurnAdapter | undefined>(undefined);
+  const retryPlaybackRef = useRef<ReturnType<typeof createAnswerRetryPlaybackGuard> | undefined>(undefined);
+  if (!retryPlaybackRef.current) retryPlaybackRef.current = createAnswerRetryPlaybackGuard();
   const turnCleanupRef = useRef<() => void>(() => {});
   const degradedAgentFallbackRef = useRef(false);
   const reconnectingRef = useRef(false);
@@ -595,6 +623,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     setGateHoldUntil(until);
   }, []);
   const authorizeSpeech = useCallback((text: string) => {
+    retryPlaybackRef.current!.reset();
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     const until = Date.now() + (2 + 0.45 * words) * 1000;
     expectedSpeechTextRef.current = text;
@@ -608,7 +637,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     now,
     gateHoldUntil: gateHoldUntilRef.current,
     micMuted: micMutedRef.current,
-    squelch: turnAdapterRef.current!.isSquelched() || authorization.current!.snapshot().timeoutSquelched,
+    squelch: turnAdapterRef.current!.isSquelched() || authorization.current!.snapshot().timeoutSquelched || retryPlaybackRef.current!.isBlocked(turnAdapterRef.current!.currentGeneration()),
   }), []);
   const reassertGate = useCallback((now = Date.now()) => {
     applyConversationGate(controls, gateIsOpenAt(now));
@@ -656,7 +685,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, [controls, conversationStatus.status, emit]);
   useEffect(() => {
     noteUserActivityRef.current = noteUserActivity;
-    humanActivityRef.current = noteUserActivity;
+    humanActivityRef.current = () => {
+      retryPlaybackRef.current!.onHumanSpeech(turnAdapterRef.current!.currentGeneration());
+      noteUserActivity();
+    };
     authorizationTimeoutRef.current = () => {
       emit("gate", "authorization_timeout", { watchdogMs: 8_000 });
       noteUserActivityRef.current();
@@ -732,12 +764,22 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     onModeChange: handleAgentMode,
     onMessage: (m) => {
       if (m.role === "agent") {
+        const adapter = turnAdapterRef.current!;
+        const state = adapter.snapshot();
+        const audible = retryPlaybackRef.current!.onAgentMessage(adapter.currentGeneration(), m.message, m.response_id, state.phase === "listening" && state.spokenBy === "agent");
+        setGateRevision((revision) => revision + 1);
+        reassertGate();
+        if (!audible) {
+          emit("gate", "answer_retry_duplicate_suppressed", { responseId: m.response_id });
+          return;
+        }
         expectedSpeechTextRef.current = m.message;
         speechTrackerRef.current!.refine(m.message);
       }
       if (m.role === "user" && !m.message.trimStart().startsWith("[")) {
         const routed = routeAgentAsrMessage({ text: m.message, atMs: Date.now(), timeline: timelineRef.current!, sessionStartMs: sessionStartRef.current });
         if (routed.human) {
+          retryPlaybackRef.current!.onHumanSpeech(turnAdapterRef.current!.currentGeneration());
           lastHumanSpeechAtRef.current = Math.max(lastHumanSpeechAtRef.current, routed.at);
           if (turnAdapterRef.current!.snapshot().phase !== "idle") turnDispatchRef.current({ type: "HUMAN_COMMIT", at: routed.at, text: routed.text, source: "agent_asr" });
         }
@@ -1032,9 +1074,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     const activeTurn = turnAdapterRef.current!.snapshot().phase !== "idle";
     const turnGeneration = turnAdapterRef.current!.currentGeneration();
     if (!fn && !activeTurn) return `no handler for ${name}`;
-    return dispatchClientTool(fn, params ?? {}, () => {
+    const result = await dispatchClientTool(fn, params ?? {}, () => {
       turnAdapterRef.current!.dispatchForGeneration(turnGeneration, { type: "TOOL", at: nowTurnRef.current(), name, params: params ?? {} });
     }, { state: turnAdapterRef.current!.snapshot(), name });
+    if (name === "log_answer" && result.startsWith("not_logged:") && turnGeneration === turnAdapterRef.current!.currentGeneration()) {
+      retryPlaybackRef.current!.onRejectedAnswer(turnGeneration);
+    }
+    return result;
   };
   useConversationClientTool("log_answer", handle("log_answer"));
   useConversationClientTool("mark_off_record", handle("mark_off_record"));
@@ -1117,6 +1163,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     }
   }, []);
   turnCleanupRef.current = () => {
+    retryPlaybackRef.current!.reset();
     turnAdapterRef.current!.disconnect();
     void stopClip(false);
     stopAndClearMediaStream(clipStreamRef);
@@ -1189,6 +1236,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, [nowTurn, turnState.phase]);
 
   const turn = useCallback<VoiceApi["turn"]>((opts) => {
+    retryPlaybackRef.current!.reset();
     return startTaggedTurn(authorization.current!, turnAdapterRef.current!, withAnswerConfirmation(withVoiceQualityWindow(opts)));
   }, []);
   const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
@@ -1408,7 +1456,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     now: Date.now(),
     gateHoldUntil,
     micMuted,
-    squelch: turnAdapterRef.current!.isSquelched() || authorization.current.snapshot().timeoutSquelched,
+    squelch: turnAdapterRef.current!.isSquelched() || authorization.current.snapshot().timeoutSquelched || retryPlaybackRef.current!.isBlocked(turnAdapterRef.current!.currentGeneration()),
   });
 
   useEffect(() => {

@@ -271,6 +271,15 @@ export function createSpeechAuthorizationLatch({
   };
 }
 
+export function startTaggedTurn(
+  legacyAuthorization: Pick<ReturnType<typeof createSpeechAuthorizationLatch>, "cancel">,
+  adapter: VoiceTurnAdapter,
+  options: TurnOptions,
+): Promise<TurnResult> {
+  legacyAuthorization.cancel();
+  return adapter.turn(options);
+}
+
 export function createConnectionLifecycle({
   onOutcome,
   endSession,
@@ -1061,7 +1070,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, [nowTurn, turnState.phase]);
 
   const turn = useCallback<VoiceApi["turn"]>((opts) => {
-    return turnAdapterRef.current!.turn(opts);
+    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, opts);
   }, []);
   const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
   const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => turnAdapterRef.current!.submitTyped(text), []);

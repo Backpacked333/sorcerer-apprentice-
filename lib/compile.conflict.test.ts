@@ -6,17 +6,18 @@ import { MapView } from "@/components/views/MapView";
 import type { MapVM } from "@/components/views/map.vm";
 import { emptySession } from "./events";
 
-const { getSession, saveMap } = vi.hoisted(() => ({ getSession: vi.fn(), saveMap: vi.fn() }));
-vi.mock("./store", () => ({ getSession, saveMap }));
+const { getSession, saveCompiledMap } = vi.hoisted(() => ({ getSession: vi.fn(), saveCompiledMap: vi.fn() }));
+vi.mock("./store", () => ({ getSession, saveCompiledMap }));
 vi.mock("@/components/ui/AppShell", () => ({ AppShell: ({ children }: { children: ReactNode }) => createElement("div", null, children) }));
 afterEach(() => { vi.resetAllMocks(); vi.unstubAllGlobals(); });
 
 it("rejects a concurrent session change without saving stale output", async () => {
   const session = emptySession("conflict", "capture", "Review shipments", "Expert");
-  getSession.mockResolvedValueOnce(session).mockResolvedValueOnce({ ...session, metrics: { framesSeen: 1 } });
+  getSession.mockResolvedValue(session);
+  saveCompiledMap.mockResolvedValue(false);
   const response = await POST(new Request("http://localhost/api/compile", { method: "POST", body: JSON.stringify({ sessionId: session.id, llm: false }) }));
   expect(response.status).toBe(409);
-  expect(saveMap).not.toHaveBeenCalled();
+  expect(saveCompiledMap).toHaveBeenCalledWith(expect.objectContaining({ sessionId: session.id }), session);
 });
 
 it("shows a recoverable compile error instead of only a loading screen", () => {

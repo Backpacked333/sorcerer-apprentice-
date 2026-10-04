@@ -1,5 +1,26 @@
 # Lane C status
 
+## Post-integration review fixes (C2/M2/N2)
+- Capture typed submissions now become explicit finalized expert evidence before clip upload,
+  with question identity, PII redaction and off-record checks. Typed/mixed answers keep their
+  question source but do not claim speech audio. Legacy unattributed answers and tool summaries
+  are not automatically upgraded to trusted evidence.
+- Compile's final comparison/publication shares `saveSession`'s per-session lock. Prior maps
+  survive 409; inference does not hold the lock. This targets the existing single-Node store,
+  not Supabase/distributed transactions or post-compile session-edit invalidation.
+- Focused typed-evidence, persistence-race and conflict-view tests pass. The race regression
+  fails when deliberately restoring a separate compile lock and passes with the shared lock.
+- Adversarial follow-up: typed evidence is no longer treated as nearby narration on unrelated
+  steps. Typed windows share deterministic/LLM provenance checks, including redaction and
+  withdrawal. Existing typed tests now exercise the full deterministic→refinement pipeline.
+- Capture closes are single-flight through Done, preserving an explicit strike; typed/mixed
+  recordings are discarded before upload. Callback regression tests run real extracted
+  callbacks against mocked recorder/fetch boundaries; no browser or live audio acceptance.
+- Typecheck, 512 tests, production build, keyless smoke and diff check pass. No lint
+  script exists. Build retains pre-existing tracing warnings. No human voice/timing/privacy validation, deployment, paid activation
+  or remote-agent mutation. Next: parent review/landing; public reasoning admission/spend
+  controls and held-out model evaluation remain separate gates.
+
 ## Background inference integration (Roy-authorized; C1/C3/M2)
 - Added proposed, evidence-linked role profiles compiled alongside rules and persisted in
   WorkMap. Read-time revalidation removes withdrawn/changed sources. Profiles are visible

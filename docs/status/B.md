@@ -1,5 +1,16 @@
 # Lane B status
 
+## Review follow-up (Roy-authorized A/B/C integration; C2/M2/N2)
+- `TranscriptSegment.typedFor?` marks explicit expert typing bound to its question window;
+  PII is redacted before recording. No provider/schema/package changes.
+- `saveCompiledMap` serializes its final source check and map write with `saveSession` for
+  the same session. Four focused file-store tests cover update-before-check, update-during-
+  publication, independent sessions, failed-write recovery and missing/mismatched sources.
+- Single-Node store only; carry the transaction into the separate durable-platform rollout.
+  Typecheck, 512 tests, production build, keyless smoke and diff check pass. Vitest now
+  includes colocated component callback tests alongside lib tests; workspace exclusions unchanged.
+  No deployment or human privacy/voice acceptance claimed.
+
 ## Roy-authorized memory integration (C1/N2)
 - Reused platform PR #44's request-scoped OIDC detection pattern and pinned its already
   installed `@vercel/oidc` 3.2.0 dependency; no provider-specific SDKs were added.

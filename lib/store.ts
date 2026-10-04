@@ -97,6 +97,16 @@ export async function saveMap(map: WorkMap): Promise<void> {
   await writeJson(path.join(dir("maps"), `${validId(map.sessionId)}.json`), map);
 }
 
+/** Compare and publish under the same lock as saveSession; inference stays outside the lock. */
+export async function saveCompiledMap(map: WorkMap, source: SessionLog): Promise<boolean> {
+  if (map.sessionId !== source.id) throw new Error("Compiled map session mismatch");
+  return serialized(path.join(dir("sessions"), `${validId(source.id)}.json`), async () => {
+    if (JSON.stringify(await getSession(source.id)) !== JSON.stringify(source)) return false;
+    await saveMap(map);
+    return true;
+  });
+}
+
 export async function saveClip(sessionId: string, audioId: string, bytes: Uint8Array): Promise<string> {
   return saveBytes(mediaPath("clips", sessionId, audioId), bytes);
 }

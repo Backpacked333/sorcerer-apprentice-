@@ -13,6 +13,19 @@ It excludes redacted/off-record evidence (including overlapping speech) and neve
 treats agent speech or `log_answer` summaries as expert quotations. The persisted
 session log remains authoritative; no provider conversation ID or hidden chat history is retained.
 
+Capture's explicit typed-answer control now records a finalized expert `TranscriptSegment`
+with optional `typedFor: QuestionWindow.id`, before any asynchronous window closing.
+Text is redacted before persistence; redacted/off-record spans remain ineligible model
+evidence. Spoken-plus-typed answers retain their question/source attribution, but windows
+containing typing do not claim an audio clip of those words. Agent tool summaries and
+legacy `answerText` without expert evidence are not promoted to transcript evidence.
+Typed spans stay bound to their answered question: both compiler passes use the same
+eligibility/reconstruction checks for typed windows, and typing is never nearby free narration.
+Legacy deterministic window handling is unchanged; unproven legacy text remains excluded
+from LLM evidence. Concurrent Capture closes share one completion; Done waits for it and
+an explicit strike can still withdraw the answer. Typed/mixed recordings are stopped and
+discarded before any upload instead of retaining unreferenced audio.
+
 `validateProposal(memory, output)` checks candidate identities, bounded questions and
 literal quote/source matches. Relationship claims always have `status: "proposed"`:
 quote membership proves provenance, **not entailment, policy or confirmation**.
@@ -40,7 +53,12 @@ report the last accepted analysis/cumulative activity; these are not live qualit
 with a literal finalized expert quote, transcript ID and timestamp. Compile generates it
 in parallel with rule refinement; `llm:false` bypasses both. `profileNote` distinguishes
 disabled, missing evidence and provider failure. A changed persisted session rejects
-the compile with 409. Map reads recheck profile provenance against the current session,
+the compile with 409. `saveCompiledMap(map, source)` performs its final source comparison
+and map publication under the same per-session lock as `saveSession`; model calls happen
+outside the lock. A conflict leaves the previous map intact. This is a single-Node file-store
+transaction, not a distributed lock or ongoing invalidation of older maps after later edits;
+the durable platform must retain equivalent transactional checks when replacing this store.
+Map reads recheck profile provenance against the current session,
 so withdrawn/changed sources are not served. Profile claims remain visibly proposed even
 after Work Map confirmation and are never exported as tutor instructions or executed.
 This is bounded single-session knowledge extraction, not cross-workspace retrieval,

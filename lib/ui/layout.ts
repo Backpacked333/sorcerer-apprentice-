@@ -3,6 +3,9 @@ export type LayoutMode = "workspace" | "companion";
 /** Below this viewport width the ERP cannot sit full width under a floating companion. */
 export const WORKSPACE_MIN_WIDTH = 1180;
 
+/** Delay after a session starts before the ERP iframe remounts under its live key. */
+export const ERP_RELOAD_MS = 1500;
+
 export interface LayoutInput {
   search: string;
   width: number;

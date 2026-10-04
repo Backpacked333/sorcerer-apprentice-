@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { MasterySheet } from "@/components/companion/teach/MasterySheet";
 import { TeachCompanion, useTeachCardState } from "@/components/companion/teach/TeachCompanion";
 import { TeachOverlay } from "@/components/companion/teach/TeachOverlay";
@@ -8,6 +7,7 @@ import { AppShell } from "@/components/ui/AppShell";
 import { LayoutReveal } from "@/components/ui/LayoutReveal";
 import { OpenErpButton } from "@/components/ui/OpenErpButton";
 import { useLayoutModeState } from "@/components/ui/useLayoutMode";
+import { useErpReloadKey } from "@/components/ui/useErpReloadKey";
 import { usePresenter } from "@/components/ui/usePresenter";
 import { Workspace } from "@/components/ui/Workspace";
 import { targetOfEvent } from "@/lib/ui/teachview";
@@ -17,12 +17,7 @@ export function TeachView({ vm }: { vm: TeachVM }) {
   const presenter = usePresenter();
   const canCrop = typeof vm.pipeline.setCropTarget === "function";
   const { mode, ready } = useLayoutModeState({ canCrop, source: vm.source, started: vm.started });
-  const [reloadKey, setReloadKey] = useState("idle");
-  useEffect(() => {
-    if (!vm.started) return;
-    const id = window.setTimeout(() => setReloadKey("live"), 1500);
-    return () => window.clearTimeout(id);
-  }, [vm.started]);
+  const reloadKey = useErpReloadKey(vm.started);
 
   const state = useTeachCardState(vm);
   const workspace = mode === "workspace";

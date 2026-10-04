@@ -414,6 +414,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const nowTurnRef = useRef(() => Date.now() / 1_000);
   const turnAdapterRef = useRef<VoiceTurnAdapter | undefined>(undefined);
   const turnCleanupRef = useRef<() => void>(() => {});
+  const degradedAgentFallbackRef = useRef(false);
   const clipRecorderRef = useRef<MediaRecorder | null>(null);
   const clipStreamRef = useRef<MediaStream | null>(null);
   const clipChunksRef = useRef<Blob[]>([]);
@@ -597,7 +598,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       gateHoldUntilRef.current = 0;
       setGateHoldUntil(0);
       applyConversationGate(controls, false);
-      turnAdapterRef.current!.disconnect();
+      if (!degradedAgentFallbackRef.current) turnAdapterRef.current!.disconnect();
       emit("agent", "disconnect", details);
     },
     onError: (message, context) => emit("agent", "error", { message, context }),
@@ -1012,8 +1013,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         try { controls.sendContextualUpdate(effect.text); } catch { /* disconnected */ }
       } else if (effect.type === "FALLBACK_SPEAK") {
         if (configuredMode === "agent") {
+          degradedAgentFallbackRef.current = true;
           setVoiceError("Agent stayed silent; browser speech fallback is active.");
           setFallbackConnected(true);
+          try { controls.endSession(); } catch { /* the SDK may already be disconnected */ }
         }
         void speakFallbackRef.current(effect.text, {
           isCancelled: () => generation !== turnAdapterRef.current!.currentGeneration() || turnAdapterRef.current!.snapshot().phase === "idle" || Boolean(turnAdapterRef.current!.snapshot().waitingForSquelch),
@@ -1060,6 +1063,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const connect = useCallback<VoiceApi["connect"]>(
     async (opts) => {
+      degradedAgentFallbackRef.current = false;
       hubRef.current!.setSessionStart(opts?.sessionStartMs);
       sessionStartRef.current = opts?.sessionStartMs;
       scribeKeytermsRef.current = opts?.keyterms;
@@ -1119,6 +1123,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
 
   const disconnect = useCallback(() => {
     turnAdapterRef.current!.disconnect();
+    degradedAgentFallbackRef.current = false;
     void stopClip(false);
     setSessionRequested(false);
     hubRef.current!.setSessionStart(undefined);

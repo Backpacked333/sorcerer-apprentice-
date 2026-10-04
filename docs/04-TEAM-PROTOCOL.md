@@ -32,6 +32,9 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | Path | Owner | Notes |
 |---|---|---|
 | `lib/memory.ts`, `lib/memory.test.ts` | **C** | bounded application-owned memory, evidence validation and cancellable reasoning handoffs; Roy authorized this cross-lane integration |
+| `lib/reasoning{,.test}.ts`, `lib/prepared-question.ts`, `lib/role-profile{,.test}.ts`, `lib/gateway-auth.ts`, `app/api/reason/`, `lib/compile.{gateway,operators,conflict}.test.ts`, `lib/capture-answer{,.test}.ts` | **C** | background reasoning, proposed profiles, typed provenance and compile regressions; Roy-authorized integration |
+| `components/CaptureClient.{close,reasoning,provenance}.test.ts`, `lib/capture-loop.prepared.test.ts`, `lib/voice-turn.{typed-evidence,finish-answer}.test.ts` | **A** | current Capture lifecycle, governor preference and typed/spoken provenance regressions; Roy-authorized port |
+| `lib/store.compile-{race,supabase}.test.ts`, `lib/vision.gateway.test.ts`, `scripts/test-compile-publication.mjs` | **B** | local/Supabase compile publication races, Gateway budgets; disposable PostgreSQL verification only |
 | `components/voice.tsx`, `lib/voice-turn.tool-evidence.test.ts`, `lib/voice-turn.tool-lifecycle.test.ts`, `lib/voice-turn.partial-speech.test.ts`, `lib/voice-retry-output.test.ts` | **A** | `VoiceApi` is a contract: additive only; client-tool evidence acknowledgment, lifecycle and retry playback regressions |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |

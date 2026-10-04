@@ -471,6 +471,7 @@ export interface VoiceApi {
   turn: (opts: TurnOptions) => Promise<TurnResult>;
   cancelTurn: (reason?: TurnResult["abortReason"]) => void;
   submitTyped: (text: string) => void;
+  finishAnswer: () => void;
   setSessionStart: (epochMs: number) => void;
   lastHumanSpeechAt: () => number;
   turnPhase: TurnPhase;
@@ -1241,6 +1242,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, []);
   const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
   const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => turnAdapterRef.current!.submitTyped(text), []);
+  const finishAnswer = useCallback<VoiceApi["finishAnswer"]>(() => turnAdapterRef.current!.finishAnswer(), []);
   const setSessionStart = useCallback((epochMs: number) => {
     sessionStartRef.current = epochMs;
     lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
@@ -1485,13 +1487,14 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       turn,
       cancelTurn,
       submitTyped,
+      finishAnswer,
       setSessionStart,
       lastHumanSpeechAt: () => lastHumanSpeechAtRef.current,
       turnPhase: turnState.phase,
       partial: turnState.partial,
       stt: { engine: transcriberState.engine, connected: transcriberState.connected },
     }),
-    [mode, fallbackConnected, agentReconnecting, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity, turn, cancelTurn, submitTyped, setSessionStart, turnState.phase, turnState.partial, transcriberState.engine, transcriberState.connected],
+    [mode, fallbackConnected, agentReconnecting, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity, turn, cancelTurn, submitTyped, finishAnswer, setSessionStart, turnState.phase, turnState.partial, transcriberState.engine, transcriberState.connected],
   );
   const transcriberHub = useMemo<TranscriberHubValue>(() => ({
     ...transcriberState,

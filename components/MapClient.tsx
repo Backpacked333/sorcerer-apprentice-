@@ -42,34 +42,36 @@ function MapInner({ sessionId, tools }: { sessionId: string; tools: React.Mutabl
   voiceRef.current = voice;
   const startedAt = useRef(Date.now());
 
-  const load = useCallback(async () => {
-    const res = await fetch(`/api/sessions/${sessionId}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    setSession(data.session);
-    setMap(data.map);
-    if (!data.map) {
-      setCompiling(true);
-      const c = await fetch("/api/compile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId }) });
+  const recompile = useCallback(async (llm: boolean) => {
+    setCompiling(true);
+    try {
+      const c = await fetch("/api/compile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId, llm }) });
+      if (!c.ok) throw new Error(c.status === 409 ? "Session changed during compilation. Retry with the latest evidence." : "Compilation failed. Please retry.");
       const cd = await c.json();
+      if (!cd.map) throw new Error("No map returned. Please retry.");
       setMap(cd.map);
       setNote(cd.llm ? `compiled with ${process.env.NEXT_PUBLIC_COMPILE_LABEL ?? "the LLM pass"}` : cd.note ?? "deterministic compile");
+    } catch (error) {
+      setNote(error instanceof Error ? error.message : "Compilation failed. Please retry.");
+    } finally {
       setCompiling(false);
     }
   }, [sessionId]);
 
+  const load = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/sessions/${sessionId}`);
+      if (!res.ok) throw new Error("Session could not be loaded. Please retry.");
+      const data = await res.json();
+      setSession(data.session);
+      setMap(data.map ?? null);
+      if (!data.map) await recompile(true);
+    } catch { setNote("Session could not be loaded. Please retry."); }
+  }, [sessionId, recompile]);
+
   useEffect(() => {
     void load();
   }, [load]);
-
-  const recompile = async (llm: boolean) => {
-    setCompiling(true);
-    const c = await fetch("/api/compile", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ sessionId, llm }) });
-    const cd = await c.json();
-    setMap(cd.map);
-    setNote(cd.llm ? "compiled with the LLM pass" : cd.note ?? "deterministic compile");
-    setCompiling(false);
-  };
 
   const transcriber = useTranscriber({
     enabled: debriefOn,

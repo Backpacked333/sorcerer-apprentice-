@@ -21,7 +21,8 @@ export async function POST(req: Request) {
   if (!image || image.length % 4 !== 0 || /[^A-Za-z0-9+/]/.test(image.replace(/={1,2}$/, "")))
     return NextResponse.json({ error: "invalid vision request" }, { status: 400 });
   const started = Date.now();
-  const model = process.env.VISION_MODEL ?? "anthropic/claude-haiku-4.5";
+  const model = process.env.VISION_MODEL ?? "google/gemini-3.8-flash";
+  const isGeminiFlash = model === "google/gemini-3.8-flash";
   try {
     const messages = [
       {
@@ -35,22 +36,24 @@ export async function POST(req: Request) {
     if (body.app === "claims") {
       const { output } = await generateText({
         model,
+        reasoning: isGeminiFlash ? "low" : "provider-default",
         instructions: CLAIMS_VISION_PROMPT,
         output: Output.object({ schema: ClaimsVisionWire }),
         timeout: { totalMs: 8000 },
         maxRetries: 0,
-        maxOutputTokens: 500,
+        maxOutputTokens: isGeminiFlash ? 2048 : 500,
         messages,
       });
       return NextResponse.json({ seq: body.seq, ...fromClaimsWire(output), model, latencyMs: Date.now() - started });
     }
     const { output } = await generateText({
       model,
+      reasoning: isGeminiFlash ? "low" : "provider-default",
       instructions: VISION_PROMPT,
       output: Output.object({ schema: VisionWire }),
       timeout: { totalMs: 8000 },
       maxRetries: 0,
-      maxOutputTokens: 500,
+      maxOutputTokens: isGeminiFlash ? 2048 : 500,
       messages: [
         {
           role: "user",
@@ -63,7 +66,10 @@ export async function POST(req: Request) {
     });
     return NextResponse.json({ seq: body.seq, ...fromWire(output), model, latencyMs: Date.now() - started });
   } catch (err) {
-    const timeout = err instanceof Error && err.name === "TimeoutError";
+    let timeout = false;
+    for (let cause: unknown = err, depth = 0; cause instanceof Error && depth < 5; cause = cause.cause, depth++) {
+      if (cause.name === "TimeoutError" || cause.name === "GatewayTimeoutError") timeout = true;
+    }
     return NextResponse.json({ error: timeout ? "vision timeout" : "vision unavailable", seq: body.seq }, { status: timeout ? 504 : 502 });
   }
 }

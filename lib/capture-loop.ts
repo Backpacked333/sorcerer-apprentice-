@@ -60,7 +60,7 @@ export function windowOutcome(result: TurnResult): MappedWindowOutcome {
   if ((result.via === "scribe" || result.via === "typed") && result.heard.trim() && answerClockIsValid) {
     return {
       outcome: "answered",
-      closedBy: result.via === "scribe" ? "scribe_fallback" : "user",
+      closedBy: result.via === "scribe" && !result.acceptedByUser ? "scribe_fallback" : "user",
       answerText: redactText(result.heard).text,
       ...(result.audioId ? { answerAudioId: result.audioId } : {}),
       candidateStatus: "filled",
@@ -175,7 +175,7 @@ export class CaptureLoop {
     this.maxChained = config.maxChained ?? governor.config.maxChained ?? 2;
   }
 
-  next(signals: LoopSignals): LoopAction {
+  next(signals: LoopSignals, preferredId?: string): LoopAction {
     this.queue.expire(signals.now, signals.currentInvoice);
     if (signals.paused) return { type: "wait", reasons: ["paused"] };
     if (!signals.sttHealthy || signals.transcriberHealthy === false) return { type: "wait", reasons: ["transcriber unavailable"] };
@@ -203,7 +203,8 @@ export class CaptureLoop {
     }
 
     const forced = this.queue.windowsAsked >= 2 && !this.queue.guardrailAsked;
-    const candidate = this.queue.pick(forced, signals.now);
+    const candidate = this.queue.pick(forced, signals.now, 3, preferredId, (candidate) =>
+      this.governor.canOpen(signals, candidate.value - (candidate.leftAt === undefined ? 0 : 0.1)));
     if (!candidate) return { type: "wait", reasons: ["no ready question"] };
     const value = candidate.value - (candidate.leftAt === undefined ? 0 : 0.1);
     if (!this.governor.canOpen(signals, value)) return { type: "wait", reasons: this.governor.evaluate(signals).reasons };

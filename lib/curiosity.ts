@@ -305,7 +305,7 @@ export class CandidateQueue {
    * Pick the best live question. forceGuardrail implements the brief's rule: by the third window, at least one
    * question must be about a limit, exception or stop condition.
    */
-  pick(forceGuardrail: boolean, now?: number, minAgeSecs = 3): Candidate | undefined {
+  pick(forceGuardrail: boolean, now?: number, minAgeSecs = 3, preferredId?: string, eligible: (c: Candidate) => boolean = () => true): Candidate | undefined {
     // a candidate needs a moment to age: the why about an edit usually arrives seconds after the invoice opened
     const queued = this.items.filter(
       (c) => c.status === "queued" && (now === undefined || now - c.createdAt >= minAgeSecs) && (now === undefined || c.retryAfter === undefined || c.retryAfter <= now),
@@ -314,7 +314,7 @@ export class CandidateQueue {
     const forced = forceGuardrail ? ready.filter((c) => c.guardrail) : [];
     const pool = forced.length ? forced : ready;
     const ranked = pool.sort((a, b) => b.value - (b.leftAt === undefined ? 0 : 0.1) - (a.value - (a.leftAt === undefined ? 0 : 0.1)) || b.createdAt - a.createdAt);
-    return ranked[0];
+    return ranked.find((c) => c.id === preferredId && eligible(c)) ?? ranked.find(eligible);
   }
 
   markAsked(id: string) {

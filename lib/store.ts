@@ -6,6 +6,7 @@ import type { Invoice } from "./erp-model";
 import type { SessionLog } from "./events";
 import { getWorkspaceId } from "./workspace";
 import { WorkMapSchema, type WorkMap } from "./workmap";
+import { currentProfile } from "./role-profile";
 
 export function dataDir(): string { return process.env.DATA_DIR ?? path.join(process.cwd(), ".data"); }
 const SAFE_ID = /^[\w-]{1,64}$/;
@@ -155,6 +156,7 @@ function evidenceWithdrawn(previous: SessionLog, next: SessionLog): boolean {
   const after = mediaRefs(next);
   return [...before.frames].some((id) => !after.frames.has(id))
     || [...before.clips].some((id) => !after.clips.has(id))
+    || previous.transcript.some((span) => !span.redacted && !next.transcript.some((s) => JSON.stringify(s) === JSON.stringify(span)))
     || JSON.stringify(previous.offRecord) !== JSON.stringify(next.offRecord);
 }
 
@@ -209,14 +211,21 @@ export async function getSession(id: string): Promise<SessionLog | undefined> {
 export async function saveSession(session: SessionLog): Promise<void> {
   assertId(session.id);
   const workspace = await owner();
-  const previous = await getSession(session.id);
-  if (previous && evidenceWithdrawn(previous, session)) await deleteDerivedMap(workspace, session.id);
-  await deleteRemovedMedia(workspace, previous, session);
   if (backend() === "supabase") {
+    const previous = await getSession(session.id);
+    if (previous && evidenceWithdrawn(previous, session)) await deleteDerivedMap(workspace, session.id);
+    await deleteRemovedMedia(workspace, previous, session);
+    // The database trigger invalidates withdrawn evidence under the same row lock as publication.
     const { error } = await db().from("sessions").upsert({ owner_id: workspace, id: session.id, data: session }, { onConflict: "owner_id,id" });
     if (error) throw error;
   } else {
-    await writeJson(localPath(workspace, "sessions", session.id), session);
+    const file = localPath(workspace, "sessions", session.id);
+    await serialized(file, async () => {
+      const previous = await readJson<SessionLog>(file);
+      if (previous && evidenceWithdrawn(previous, session)) await deleteDerivedMap(workspace, session.id);
+      await deleteRemovedMedia(workspace, previous, session);
+      await atomicWrite(file, JSON.stringify(session));
+    });
   }
 }
 
@@ -262,7 +271,35 @@ export async function getMap(sessionId: string): Promise<WorkMap | undefined> {
   }
   const parsed = WorkMapSchema.safeParse(raw);
   if (!parsed.success) throw new StorageDataError();
+  if (parsed.data.roleProfile) {
+    const session = await getSession(sessionId);
+    parsed.data.roleProfile = session ? currentProfile(session, parsed.data.roleProfile) : undefined;
+  }
   return parsed.data;
+}
+
+/** Publish only while the authoritative session still matches the compiler's snapshot. */
+export async function saveCompiledMap(map: WorkMap, source: SessionLog): Promise<boolean> {
+  assertId(map.sessionId);
+  if (map.sessionId !== source.id) throw new Error("session mismatch");
+  const workspace = await owner();
+  if (backend() === "supabase") {
+    const { data, error } = await db().rpc("tacit_publish_compiled_map", {
+      p_owner: workspace, p_session: map.sessionId, p_source: source, p_data: { ...map, revision: map.revision ?? 0 },
+    });
+    if (error) throw error;
+    if (data === null) return false;
+    const parsed = WorkMapSchema.safeParse(data);
+    if (!parsed.success) throw new StorageDataError();
+    Object.assign(map, parsed.data);
+    return true;
+  }
+  return serialized(localPath(workspace, "sessions", source.id), async () => {
+    const latest = await readJson<SessionLog>(localPath(workspace, "sessions", source.id));
+    if (JSON.stringify(latest) !== JSON.stringify(source)) return false;
+    await saveMap(map);
+    return true;
+  });
 }
 
 export async function saveMap(map: WorkMap): Promise<void> {

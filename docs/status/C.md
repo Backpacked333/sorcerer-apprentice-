@@ -1,5 +1,74 @@
 # Lane C status
 
+## PR #47 expanded integration repair (C1/C2/C3/M2/N2)
+- Roy authorized porting background reasoning/typed provenance onto the current CaptureLoop,
+  voice-turn and durable-storage lifecycle, plus migration code; no merge/deploy/remote migration.
+- Preserved current dependency/lock files, platform finite model schemas and V4 provisioning.
+  Prepared questions remain expiring, exact-memory-keyed and governor-gated. Done awaits the
+  accepted turn; typed results retain question identity, redaction and no audio upload.
+- Supabase compile publication compares the source under a session-row lock in one RPC.
+  An evidence-withdrawal trigger invalidates derived maps under that lock. Local publication
+  retains serialized session writes. Missing RPCs fail closed, never fall back to saveMap.
+- Adversarial fixes preserve counterfactual provenance for speech spanning listen-open.
+  Done explicitly accepts committed speech without treating it as typing or discarding its
+  eligible recording; typed/mixed answers stay clip-free. Late replacements are rejected,
+  off-record still wins, and persistence retains the original answer's redaction marker.
+  Reducer → actual Capture callbacks → deterministic/LLM compiler regressions cover both
+  findings; restoring the old implementation reproduces the failures.
+- Typecheck, 913 tests and production build pass. Disposable PostgreSQL 17 tests exercised
+  both concurrent orderings, conflict preservation, workspace isolation, evidence withdrawal
+  and service-role permissions. Keyless smoke and final review are recorded in the PR.
+- Before any later Supabase deployment, B must apply the new migration after the two existing
+  storage migrations. It was not applied remotely. No human microphone/timing/privacy or
+  live-provider acceptance was performed for this repair. Admission/spend and held-out
+  model-quality gates remain separate; shadow mode alone does not prevent provider charges.
+
+### Historical validation below (pre-platform port)
+
+## Post-integration review fixes (C2/M2/N2)
+- Capture typed submissions now become explicit finalized expert evidence before clip upload,
+  with question identity, PII redaction and off-record checks. Typed/mixed answers keep their
+  question source but do not claim speech audio. Legacy unattributed answers and tool summaries
+  are not automatically upgraded to trusted evidence.
+- Compile's final comparison/publication shares `saveSession`'s per-session lock. Prior maps
+  survive 409; inference does not hold the lock. This targets the existing single-Node store,
+  not Supabase/distributed transactions or post-compile session-edit invalidation.
+- Focused typed-evidence, persistence-race and conflict-view tests pass. The race regression
+  fails when deliberately restoring a separate compile lock and passes with the shared lock.
+- Adversarial follow-up: typed evidence is no longer treated as nearby narration on unrelated
+  steps. Typed windows share deterministic/LLM provenance checks, including redaction and
+  withdrawal. Existing typed tests now exercise the full deterministic→refinement pipeline.
+- Capture closes are single-flight through Done, preserving an explicit strike; typed/mixed
+  recordings are discarded before upload. Callback regression tests run real extracted
+  callbacks against mocked recorder/fetch boundaries; no browser or live audio acceptance.
+- Typecheck, 512 tests, production build, keyless smoke and diff check pass. No lint
+  script exists. Build retains pre-existing tracing warnings. No human voice/timing/privacy validation, deployment, paid activation
+  or remote-agent mutation. Next: parent review/landing; public reasoning admission/spend
+  controls and held-out model evaluation remain separate gates.
+
+## Background inference integration (Roy-authorized; C1/C3/M2)
+- Added proposed, evidence-linked role profiles compiled alongside rules and persisted in
+  WorkMap. Read-time revalidation removes withdrawn/changed sources. Profiles are visible
+  for review but do not become tutor rules upon map confirmation.
+- Migrated rule inference to AI SDK 7 structured output with flat wire schema, local JSON
+  condition validation, high reasoning, bounded timeout and finalized expert-only quotes.
+- Live synthetic Gateway checks on Oct 4: proposed relationships/questions in 4.4s and
+  grounded rule compilation in 4.9s after explicitly documenting equality as `==`.
+  Earlier calls emitted invalid `=` and their rules were safely rejected; no parser
+  relaxation or automatic policy repair was added. Gateway generation metadata verified
+  Sonnet 5.5/provider identity; high reasoning was requested, not independently measured.
+  Held-out semantic accuracy, multilingual coverage, live voice and human acceptance
+  remain unverified. These few samples establish integration, not general reliability.
+- Sonnet 5.5 high reasoning through Gateway; single-flight Capture analysis, shadow default,
+  opt-in live packets with exact-state/expiry validation at voice dispatch.
+- Keyless/failure paths preserve deterministic Capture. Mocked route and packet tests pass.
+- Adversarial fixes preserve multi-span answer/audio provenance and recover from compile
+  conflicts without replacing the displayed map with an absent result. Late finalization
+  during clip upload remains attributable; withdrawal is checked through the final span.
+- Automated after live-discovered fixes: typecheck, 483 tests, production build, keyless
+  production smoke and diff check pass. Next: platform admission/spend gates, ElevenLabs
+  saved-agent verification, human timing acceptance and held-out semantic evaluation.
+
 _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
 
 ## Done and merged (WP ids)

@@ -79,9 +79,10 @@ export function MapView({ vm }: { vm: MapVM }) {
       <AppShell step={2}>
         <main className="mx-auto max-w-xl px-6 py-24 text-center" style={{ background: "#fbfbfd" }}>
           <p className="text-[12px] font-semibold text-[#6e6e73]">2 · Map</p>
-          <p className="mt-4 text-[19px] font-semibold text-[#1d1d1f]" style={{ animation: RISE }}>
-            {vm.compiling ? "Compiling the Work Map from events, transcript and answers…" : "Loading session…"}
+          <p role={!vm.compiling && vm.note ? "alert" : undefined} className="mt-4 text-[19px] font-semibold text-[#1d1d1f]" style={{ animation: RISE }}>
+            {vm.compiling ? "Compiling the Work Map from events, transcript and answers…" : vm.note || "Loading session…"}
           </p>
+          {!vm.compiling && vm.note && <button type="button" className="mt-4 underline" onClick={() => void vm.recompile(true)}>Retry compilation</button>}
         </main>
       </AppShell>
     );

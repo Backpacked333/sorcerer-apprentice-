@@ -48,7 +48,7 @@ describe("platform configuration", () => {
     expect(vitestConfig.test?.exclude).toEqual(expect.arrayContaining([
       ...configDefaults.exclude, "**/.worktrees/**", "**/.claude/**",
     ]));
-    expect(vitestConfig.test?.include).toEqual(["lib/**/*.test.ts"]);
+    expect(vitestConfig.test?.include).toEqual(["lib/**/*.test.ts", "components/**/*.test.ts"]);
   });
 
   it("ignores env files, worktrees and recordings while retaining the env example and tests", () => {

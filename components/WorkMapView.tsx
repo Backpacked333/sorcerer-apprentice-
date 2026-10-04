@@ -131,6 +131,18 @@ export function WorkMapDetail({ map, frames, sessionId, step, matrix, onSelect }
 
   return (
     <div className="flex flex-col gap-5">
+      {!!map.roleProfile?.relationships.length && (
+        <details className="space-y-3 rounded-xl border p-4">
+          <summary>Proposed role profile · {map.roleProfile.relationships.length} evidence-linked relationships</summary>
+          <p className="text-sm text-muted">Draft interpretations, not company policy. These never execute as tutor rules, even after map confirmation.</p>
+          {map.roleProfile.relationships.map((r, i) => (
+            <blockquote key={`${r.evidenceId}-${i}`} className="text-sm">
+              <p>{r.subject} · {r.relation.replaceAll("_", " ")} · {r.object}</p>
+              <p className="text-muted">“{r.quote}” — {r.t.toFixed(1)}s · {r.evidenceId}</p>
+            </blockquote>
+          ))}
+        </details>
+      )}
       {step ? (
         <article key={step.id} id={`step-${step.id}`} className="flex flex-col gap-2.5" style={{ animation: RISE }}>
           <p className="text-[12px] font-semibold" style={{ color: step.judgment ? "#a35f00" : "#8e8e93" }}>{stepHeading(step, total)}</p>

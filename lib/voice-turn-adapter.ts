@@ -38,6 +38,7 @@ export class VoiceTurnAdapter {
 
   tick(at = this.ports.now()) { this.dispatch({ type: "TICK", at }); }
   submitTyped(text: string, at = this.ports.now()) { this.dispatch({ type: "TYPED", at, text }); }
+  finishAnswer(at = this.ports.now()) { this.dispatch({ type: "ACCEPT_SPEECH", at }); }
   cancel(reason: TurnResult["abortReason"] = "user", at = this.ports.now()) { this.dispatch({ type: "CANCEL", at, reason }); }
   disconnect(at = this.ports.now()) { this.cancel("disconnected", at); }
 

@@ -2,7 +2,8 @@ import type { QuestionWindow, ScreenEvent, SessionLog } from "../events";
 import { labelField } from "../events";
 import { narrationMatch, type Candidate } from "../curiosity";
 import { emptyMap, type Quote, type Step, type WorkMap, uid } from "../workmap";
-import { isQuotableTranscript, isQuotableWindow } from "./evidence";
+import { compileEvidence, isQuotableWindow } from "./evidence";
+import { visibleAt } from "../memory";
 import { COST_CENTER_LABEL, deriveRules } from "./rules-regex";
 import { buildSlots, seenCases } from "./slots";
 
@@ -86,7 +87,11 @@ export function compileDeterministic(log: SessionLog): WorkMap {
   const quoteOf = (w: QuestionWindow): Quote | undefined =>
     isQuotableWindow(w) ? { text: w.answerText!, t: w.answeredAt!, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" } : undefined;
 
-  const answered = log.windows.filter(isQuotableWindow);
+  const evidence = compileEvidence(log);
+  const typedWindows = new Set(log.transcript.map((s) => s.typedFor).filter(Boolean));
+  const answered = log.windows.filter((w) => isQuotableWindow(w)
+    && visibleAt(log, w.openedAt, w.closedAt ?? w.answeredAt)
+    && (!typedWindows.has(w.id) || evidence.windows.includes(w)));
   for (const w of answered) {
     const step = w.stepRef ? byRef.get(w.stepRef) : undefined;
     const q = quoteOf(w);
@@ -124,8 +129,8 @@ export function compileDeterministic(log: SessionLog): WorkMap {
     };
     return [{ step, candidate }];
   });
-  const narrationPairs = log.transcript
-    .filter((segment) => isQuotableTranscript(segment, log.windows))
+  const narrationPairs = evidence.transcript
+    .filter((segment) => !segment.typedFor)
     .flatMap((segment) => {
       const explicitlyNamedInvoices = new Set(narrationCandidates.flatMap(({ candidate }) => {
         if (!candidate.invoice) return [];

@@ -38,6 +38,7 @@ export interface TurnOptions {
 export interface TurnResult {
   spoke: boolean;
   heard: string;
+  acceptedByUser?: boolean;
   via: "tool" | "scribe" | "typed" | "timeout" | "aborted" | "spoken";
   tool?: { name: ToolName; params: Record<string, unknown> };
   audioId?: string;
@@ -73,6 +74,7 @@ export type TurnEvent =
   | { type: "HUMAN_COMMIT"; at: number; startedAt?: number; text: string; source?: "scribe" | "agent_asr" }
   | { type: "TOOL"; at: number; name: ToolName; params: Record<string, unknown> }
   | { type: "TYPED"; at: number; text: string }
+  | { type: "ACCEPT_SPEECH"; at: number }
   | { type: "COMMAND"; at: number; command: "off_record" | "not_now" }
   | { type: "CANCEL"; at: number; reason?: TurnResult["abortReason"] }
   | { type: "TICK"; at: number };
@@ -91,6 +93,7 @@ export type TurnEffect =
 
 export interface TurnClose {
   via: TurnResult["via"];
+  acceptedByUser?: boolean;
   heard: string;
   heardSource?: TurnResult["heardSource"];
   tool?: TurnResult["tool"];
@@ -207,7 +210,7 @@ function acceptedAnswer(state: TurnState, tool?: TurnResult["tool"]): Pick<TurnC
 export function answerToolEvidenceRejection(state: TurnState, tool: NonNullable<TurnResult["tool"]>): string | undefined {
   if (tool.name !== "log_answer" || !state.options?.answerTool || state.spokenBy === "fallback") return;
   if ((state.phase !== "listening" && state.phase !== "closing") ||
-      (state.close && ["typed", "aborted", "spoken"].includes(state.close.via))) {
+      (state.close && (state.close.acceptedByUser || ["typed", "aborted", "spoken"].includes(state.close.via)))) {
     return "not_logged: this question is not accepting answers. Do not retry or claim the answer was saved.";
   }
   if (state.close?.via === "tool" && state.close.heard) {
@@ -227,8 +230,9 @@ function resultFrom(state: TurnState, close: TurnClose, closedAt: number): TurnR
     spoke,
     heard: close.heard,
     via: close.via,
+    ...(close.acceptedByUser ? { acceptedByUser: true } : {}),
     ...(close.tool ? { tool: close.tool } : {}),
-    ...(state.audioId && close.heard && state.answerAudioEligible && state.answerStartedAt !== undefined && state.answerStartedAt >= askedAt
+    ...(close.via !== "typed" && state.audioId && close.heard && state.answerAudioEligible && state.answerStartedAt !== undefined && state.answerStartedAt >= askedAt
       ? { audioId: state.audioId }
       : {}),
     askedAt,
@@ -327,7 +331,7 @@ function resolveClosing(state: TurnState, at: number): TurnTransition {
   const upload = Boolean(
     state.options?.recordClip &&
       close.heard &&
-      (close.via === "tool" || close.via === "scribe" || close.via === "typed"),
+      (close.via === "tool" || close.via === "scribe"),
   );
   return {
     state: initialTurnState,
@@ -411,7 +415,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
     if (
       state.phase === "closing" &&
       state.close &&
-      (state.close.via === "typed" || state.close.via === "aborted" || state.close.via === "spoken")
+      (state.close.acceptedByUser || state.close.via === "typed" || state.close.via === "aborted" || state.close.via === "spoken")
     ) {
       return { state, effects: [] };
     }
@@ -463,7 +467,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
     return immediateAbort(state, event.at, reason);
   }
 
-  if (event.type === "COMMAND" && state.phase === "listening") {
+  if (event.type === "COMMAND" && (state.phase === "listening" || (state.phase === "closing" && event.command === "off_record"))) {
     return enterClosing(state, { via: "aborted", heard: "", command: event.command, startedAt: event.at });
   }
 
@@ -475,7 +479,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
     if (requiresAnswerTool(state)) {
       if (event.name !== state.options?.answerTool) return { state, effects: [] };
       if (state.phase === "closing" && state.close) {
-        if (state.close.via === "typed" || state.close.via === "aborted" || state.close.via === "spoken") return { state, effects: [] };
+        if (state.close.acceptedByUser || state.close.via === "typed" || state.close.via === "aborted" || state.close.via === "spoken") return { state, effects: [] };
         if (event.name === "log_answer" && state.close.via === "tool" && state.close.heard) return { state, effects: [] };
         const captured = acceptedAnswer(state, tool);
         const answeredAt = captured.heard && Number.isFinite(state.lastHumanSpeechAt) ? state.lastHumanSpeechAt : undefined;
@@ -487,6 +491,17 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
       return { state: { ...state, close: { ...state.close, tool } }, effects: [] };
     }
     return { state, effects: [] };
+  }
+
+  if (event.type === "ACCEPT_SPEECH" && state.phase === "listening") {
+    const captured = heard(state);
+    return enterClosing(state, {
+      via: captured.heard ? "scribe" : "aborted",
+      ...captured,
+      acceptedByUser: true,
+      ...(captured.heard ? { answeredAt: state.lastHumanSpeechAt } : { abortReason: "user" as const }),
+      startedAt: event.at,
+    });
   }
 
   if (event.type === "TYPED" && state.phase === "listening") {

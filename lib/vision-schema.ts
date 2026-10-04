@@ -45,7 +45,7 @@ invoice: digits only (INV-1234 -> 1234). supplier: company name as written. enti
 amount: EUR number, negative for credits. category: as written. invoiceMonth: 1-12 from the visible date; invoiceDate: ISO.
 costCenter: currently SELECTED code only, retaining leading zeros; never an unselected option.
 route: single or second_approval as selected. status: open, hold, approved or posted from the status badge or highlighted control.
-hasAssetNumber: true if the visible field contains text, false if visibly empty. knownSupplier: false only for a new/unknown supplier label.
+hasAssetNumber: true if the visible field contains text, false if visibly empty. knownSupplier: true only for an explicit known/existing supplier label, false only for a new/unknown label, otherwise null. A company name alone does not establish knownSupplier.
 hasPO: false only if the purchase order reads none. description: line-item text.
 banner: posted only for a visible successful saved/posted confirmation; blocked for a held-save/not-posted message; otherwise none.
 A save button or open confirmation dialog does not prove a save succeeded.

@@ -13,6 +13,19 @@ It excludes redacted/off-record evidence (including overlapping speech) and neve
 treats agent speech or `log_answer` summaries as expert quotations. The persisted
 session log remains authoritative; no provider conversation ID or hidden chat history is retained.
 
+Capture's accepted typed turn records a finalized expert `TranscriptSegment`
+with optional `typedFor: QuestionWindow.id`, before applying its closed-window outcome.
+Text is redacted before persistence; redacted/off-record spans remain ineligible model
+evidence. Spoken-plus-typed answers retain their question/source attribution, but windows
+containing typing do not claim an audio clip of those words. Agent tool summaries and
+legacy `answerText` without expert evidence are not promoted to transcript evidence.
+Typed spans stay bound to their answered question: both compiler passes use the same
+eligibility/reconstruction checks for typed windows, and typing is never nearby free narration.
+Legacy deterministic window handling is unchanged; unproven legacy text remains excluded
+from LLM evidence. Concurrent Capture closes share one completion; Done waits for it and
+an explicit strike can still withdraw the answer. Typed/mixed recordings are stopped and
+discarded before any upload instead of retaining unreferenced audio.
+
 `validateProposal(memory, output)` checks candidate identities, bounded questions and
 literal quote/source matches. Relationship claims always have `status: "proposed"`:
 quote membership proves provenance, **not entailment, policy or confirmation**.
@@ -20,6 +33,56 @@ quote membership proves provenance, **not entailment, policy or confirmation**.
 only if the complete bounded input is still identical. Callers must invalidate on
 consent/pause/end and recheck prepared questions at dispatch. No cross-session retrieval.
 This foundation alone does not invoke models, persist a profile or authorize speech.
+
+`POST /api/reason` accepts `MemorySchema` (128 KiB maximum), returns mode plus validated
+questions/profile/model/latency, and never writes a session or a map. Same-origin is
+required; it is **not authentication**. Keep the app behind its deployment access controls
+and configure Gateway spend limits before exposing paid inference to untrusted traffic.
+`REASONING_MODEL` defaults to `anthropic/claude-sonnet-5.5`, using high reasoning with
+a 25-second timeout and no retries. `REASONING_MODE=shadow` is the default; `live` opts
+into prepared questions and `off` disables inference. No key/OIDC also disables it.
+Capture runs at most one request at a time on a 5-second schedule when candidates exist;
+it does not wait for reasoning. Packets expire after 20 seconds and require unchanged
+memory at dispatch. Optional fourth `CandidateQueue.pick` argument `preferredId` chooses
+only inside the existing eligible pool (age, parent, retry and forced-guardrail constraints).
+The governor is still the sole speech gate. Off-record, pause, end and unmount abort work.
+
+`WorkMap.roleProfile?: RoleProfile` stores proposed subject/relation/object edges, each
+with a literal finalized expert quote, transcript ID and timestamp. Compile generates it
+in parallel with rule refinement; `llm:false` bypasses both. `profileNote` distinguishes
+disabled, missing evidence and provider failure. A changed persisted session rejects
+the compile with 409. `saveCompiledMap(map, source)` performs its final source comparison
+and map publication under the same per-session lock as `saveSession` locally. Supabase
+uses `tacit_publish_compiled_map`, locking `(owner_id, id)` and comparing the full source
+JSON before `tacit_save_map` in one transaction. Model calls happen outside the lock.
+A conflict leaves the previous map intact. Missing RPC/schema errors fail closed; there
+is no unguarded write fallback. The local store remains single-process, not distributed.
+Migration `202610040002_compile_publication.sql` also invalidates derived maps atomically
+when off-record ranges change, frames/audio references disappear, or transcript evidence
+is removed/changed/redacted. It follows the existing service-role-only/RLS boundaries.
+The platform owner must apply this migration after the two existing storage migrations
+before deploying this code on Supabase. It has only been tested in disposable local
+PostgreSQL (`node scripts/test-compile-publication.mjs`), never applied remotely here.
+Map reads recheck profile provenance against the current session,
+so withdrawn/changed sources are not served. Profile claims remain visibly proposed even
+after Work Map confirmation and are never exported as tutor instructions or executed.
+This is bounded single-session knowledge extraction, not cross-workspace retrieval,
+model fine-tuning, semantic entailment proof or a held-out accuracy benchmark.
+
+Default perception is `google/gemini-3.8-flash` (low reasoning); compile and profile
+reasoning default to `anthropic/claude-sonnet-5.5` (high). Gateway API-key and Vercel OIDC
+authentication are supported. The current platform's finite condition/action model
+schema is preserved and locally validated; no recursive or JSON-string wire schema.
+Voice provisioning defaults to
+native `gemini-3.7-flash`, then requires a saved `eleven_v4_turbo` via the SDK wire override
+because the installed TTS enum omits V4. `agents:create --check` fails on a wrong model.
+This reuses the implementation already merged into the platform branch in PR #44,
+never silently selects V3. No provisioning/deployment runs are part of these code changes.
+
+Gemini perception reserves 2,048 output tokens for reasoning plus structured JSON while
+retaining the 8-second deadline and zero retries. Wrapped Gateway deadline errors return
+sanitized HTTP 504. Other vision overrides retain their existing 500-token budget.
+Supplier familiarity requires an explicit visible label; a company name alone is not evidence.
 
 ---
 
@@ -208,6 +271,7 @@ interface VoiceApi {
   turn(opts: TurnOptions): Promise<TurnResult>;             // never rejects; one tagged utterance plus optional listening window
   cancelTurn(reason?: TurnResult["abortReason"]): void;
   submitTyped(text: string): void;
+  finishAnswer(): void;                                    // Done accepts committed speech; never relabels it as typed
   setSessionStart(epochMs: number): void;
   lastHumanSpeechAt(): number;
   turnPhase: TurnPhase; partial: string;
@@ -230,6 +294,7 @@ interface TurnOptions {
   silenceCloseSecs?: number; ackMaxSecs?: number; answerTool?: ToolName; onPhase?: (phase: TurnPhase, at: number) => void;
 }
 interface TurnResult {
+  acceptedByUser?: boolean;                                // explicit Done, not an automatic Scribe/tool close
   spoke: boolean; heard: string; via: "tool"|"scribe"|"typed"|"timeout"|"aborted"|"spoken";
   tool?: { name: ToolName; params: Record<string, unknown> }; audioId?: string;
   sentAt: number; spokeAt?: number; askedAt: number; answerStartedAt?: number; answeredAt?: number; closedAt: number;
@@ -284,6 +349,8 @@ Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `t
 **Answer acceptance:** `VoiceApi.turn()` defaults listening `ASK`/`DEBRIEF` turns to `answerTool: "log_answer"`. When the agent speaks, raw Scribe/agent-ASR text alone cannot fill the slot: wait for the matching tool or resolve as an empty timeout within the existing bounds. A logged reason becomes `heard` only when it literally occurs in Scribe or agent ASR, excluding unrelated text accumulated in the same window; unmatched model text is never a quote. Late raw commits cannot promote an unconfirmed timeout. Typed answers and browser/keyless speech retain their existing completion paths. Other tags are unchanged.
 
 **Evidence timing:** recognition committed before `askedAt` (question finished / listening opened) is provisional interruption evidence only and cannot enter `heard`, `QuestionWindow.answerText`, or the quotable expert transcript. A later human-attributed commit after listen-open may become authoritative. `TurnResult.answerStartedAt` records when the accepted recognition segment began; `audioId` is returned only when that interval begins at or after `askedAt`, so a clip is never paired with text that predates recording.
+
+`finishAnswer()` accepts only already committed speech in a listening turn, preserving its source and eligible clip. It does not promote partial or pre-listening speech. The accepted snapshot cannot be replaced by late transcript/tool events; off-record still wins. True typed/mixed submissions remain clip-free. Compile reconstruction uses the committed end boundary (`tEnd ?? t`), preserving question provenance for an accepted span that began before listen-open while still rejecting withdrawn, partial and redacted evidence. Capture redacts the original accepted text once when persisting it, so the redaction marker cannot be lost by re-redacting an already masked string.
 
 Guarded `log_answer` calls are checked against that same verbatim evidence **before** invoking the page handler or dispatching TOOL. Missing/mismatched evidence returns `not_logged`, preserves the current listening/deadline state, and supplies committed transcript data for an exact-text retry; number spelling is not normalized into an invented quote. Struck/typed/aborted closes reject without exposing their transcript. A page's current-window reference check still applies to otherwise eligible calls. Legacy callers without a guarded turn are unchanged.
 

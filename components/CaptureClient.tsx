@@ -9,6 +9,9 @@ import { aboutFor, captureApp, changeText, evidenceFor, eyebrowFor, type Capture
 import { COST_CENTERS } from "@/lib/erp-model";
 import { Governor, type Decision, type GovernorConfig } from "@/lib/governor";
 import { computeMetrics } from "@/lib/metrics";
+import { buildMemory, MemoryFlight, ReasoningWire, validateProposal } from "@/lib/memory";
+import { PreparedQuestions } from "@/lib/prepared-question";
+import { recordTypedAnswer } from "@/lib/capture-answer";
 import { redactText } from "@/lib/redact";
 import { createSessionSync } from "@/lib/session-sync";
 import { buildAsk, keytermsFrom } from "@/lib/voice-protocol";
@@ -81,6 +84,9 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   const deferredSignature = useRef("");
   const syncPromise = useRef<Promise<void> | null>(null);
   const ending = useRef(false);
+  const reasoning = useRef(new MemoryFlight());
+  const prepared = useRef(new PreparedQuestions());
+  const reasoningOff = useRef(false);
   const expertSpeech = useRef<Array<{ at: number; words: number }>>([]);
   const quietSamples = useRef<Array<{ at: number; quiet: boolean }>>([]);
   const pipelineRef = useRef<ReturnType<typeof useScreenPipeline> | null>(null);
@@ -91,6 +97,11 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
 
   const rerender = useCallback(() => setTick((value) => value + 1), []);
   const nowSecs = useCallback(() => Math.max(0, (Date.now() - log.current.startedAt) / 1000), []);
+  const invalidateReasoning = useCallback(() => {
+    reasoning.current.invalidate();
+    prepared.current.clear();
+  }, []);
+  const readMemory = useCallback(() => buildMemory(log.current, queue.current.items), []);
 
   const onEvent = useCallback((event: ScreenEvent, frame?: Frame) => {
     const session = log.current;
@@ -126,6 +137,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
       text: clean.text,
       speaker,
       final: true,
+      redacted: clean.entities.length > 0,
     });
   }, [nowSecs]);
 
@@ -147,7 +159,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
       const clean = redactText(text).text;
       if (activeWindow) {
         // The turn reducer remains authoritative; persist only the answer it ultimately accepts.
-        activeHeard.current = [activeHeard.current, clean].filter(Boolean).join(" ");
+        activeHeard.current = [activeHeard.current, text].filter(Boolean).join(" ");
         return;
       }
       pushTranscript(text, "expert", at, end);
@@ -190,6 +202,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   }, [nowSecs]);
 
   const redactRange = useCallback((fromSecs?: number, toSecs?: number) => {
+    invalidateReasoning();
     recordingConsentEpoch.current += 1;
     const session = log.current;
     const now = nowSecs();
@@ -203,7 +216,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     setLastStrike({ at: Date.now(), from, to });
     dirty.current = true;
     rerender();
-  }, [nowSecs, rerender]);
+  }, [invalidateReasoning, nowSecs, rerender]);
 
   const strike = useCallback((fromSecs?: number, toSecs?: number) => {
     const id = activeWindowId.current;
@@ -228,12 +241,20 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     const wasStruck = struckWindowIds.current.delete(windowId);
     const effectiveResult = wasStruck ? { ...result, via: "aborted" as const, command: "off_record" as const } : result;
     const mapped = windowOutcome(effectiveResult);
+    if (questionWindow) questionWindow.askedAt ??= result.askedAt;
 
     if (result.spokenText && shouldPersistAgentSpokenText(mapped)) pushTranscript(result.spokenText, "agent", result.spokeAt ?? result.sentAt, result.askedAt);
     if (mapped.outcome === "answered" && mapped.answerText?.trim()) {
       const answerAt = result.answeredAt ?? result.closedAt;
       const answerStart = result.answerStartedAt ?? answerAt;
-      pushTranscript(mapped.answerText, "expert", answerStart, answerAt);
+      if (result.via === "typed") {
+        const redacted = recordTypedAnswer(session, windowId, result.heard, answerAt);
+        entitiesRedacted.current += redacted ?? 0;
+        mapped.answerText = questionWindow?.answerText ?? "";
+        mapped.answerAudioId = undefined;
+      } else {
+        pushTranscript(result.heard, "expert", answerStart, answerAt);
+      }
       expertSpeech.current.push({ at: answerAt, words: mapped.answerText.split(/\s+/u).filter(Boolean).length });
       for (const threshold of extractThresholds(mapped.answerText)) if (!ctx.current.knownThresholds.includes(threshold)) ctx.current.knownThresholds.push(threshold);
     }
@@ -260,10 +281,11 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   }, [pushTranscript, redactRange, rerender, updateDeferred]);
 
   const runWindow = useCallback(async (action: OpenAction) => {
-    if (!loop.current.isFresh(action, readSignals())) return;
+    if (ending.current || !loop.current.isFresh(action, readSignals())) return;
+    const ready = prepared.current.get(readMemory(), action.candidate.id);
     const openedAt = nowSecs();
     const openWindow = loop.current.opened(action.candidate, openedAt);
-    const question = action.retro ? action.candidate.questionRetro : action.candidate.question;
+    const question = ready ?? (action.retro ? action.candidate.questionRetro : action.candidate.question);
     const session = log.current;
     session.windows.push({ id: openWindow.id, candidateId: action.candidate.id, kind: action.candidate.kind, question, stepRef: action.candidate.stepRef, openedAt });
     const openSignals = readSignals();
@@ -279,13 +301,13 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     rerender();
 
     const lastExpertSentence = [...session.transcript].reverse().find((segment) => segment.speaker === "expert" && !segment.redacted)?.text;
-    const payload = buildAsk({ ...action.candidate, stepRef: captureToolStepRef(action.candidate.stepRef, openWindow.id) }, {
+    const payload = buildAsk({ ...action.candidate, question, questionRetro: question, stepRef: captureToolStepRef(action.candidate.stepRef, openWindow.id) }, {
       events: session.events.filter((event) => !event.redacted && event.kind !== "typing").slice(-3),
       labels: COST_CENTERS,
       lastExpertSentence,
       retro: action.retro,
       followup: action.followup,
-      phrase: "natural",
+      phrase: ready ? "exact" : "natural",
     });
     const turnPromise = voiceRef.current.turn({
       tag: "ASK",
@@ -335,15 +357,16 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
       }
       rerender();
     }
-  }, [applyTurnResult, nowSecs, readSignals, rerender]);
+  }, [applyTurnResult, nowSecs, readMemory, readSignals, rerender]);
 
   const endTask = useCallback(async () => {
     if (ending.current) return;
     ending.current = true;
+    invalidateReasoning();
     setEndingUi(true);
     const session = log.current;
     if (activeTurn.current) {
-      if (activeHeard.current.trim()) voiceRef.current.submitTyped(activeHeard.current);
+      if (activeHeard.current.trim()) voiceRef.current.finishAnswer();
       else voiceRef.current.cancelTurn("user");
       await activeTurn.current.catch(() => undefined);
       const lastWindow = session.windows.at(-1);
@@ -378,7 +401,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     voiceRef.current.disconnect();
     currentPipeline?.stop();
     router.push(`/map/${session.id}`);
-  }, [router, updateDeferred]);
+  }, [invalidateReasoning, router, updateDeferred]);
   endTaskRef.current = endTask;
 
   tools.current = {
@@ -400,6 +423,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   useEffect(() => {
     if (!started) return;
     const interval = window.setInterval(() => {
+      if (ending.current) return;
       const signals = readSignals();
       const currentDecision = governor.current.evaluate(signals);
       setDecision(currentDecision);
@@ -419,7 +443,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
         rerender();
         return;
       }
-      const action = loop.current.next(signals);
+      const action = loop.current.next(signals, prepared.current.preferred(readMemory()));
       updateDeferred();
       if (action.type === "open") void runWindow(action);
     }, 500);
@@ -430,6 +454,28 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     // The loop reads live refs; restarting it on render would make cadence nondeterministic.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
+
+  useEffect(() => {
+    if (!started) return;
+    const interval = window.setInterval(() => {
+      if (holdingRef.current || ending.current || reasoningOff.current || governor.current.window) return;
+      if (!readMemory().questions.length) return;
+      void reasoning.current.run(readMemory, async (memory, signal) => {
+        const response = await fetch("/api/reason", {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(memory), signal,
+        });
+        if (!response.ok) throw new Error("reasoning unavailable");
+        const result = await response.json();
+        if (result.mode === "off") return { mode: "off", questions: [] };
+        const proposal = ReasoningWire.parse({ questions: result.questions, relationships: [] });
+        return { mode: result.mode, questions: validateProposal(memory, proposal).questions };
+      }, (result) => {
+        if (result.mode === "off") reasoningOff.current = true;
+        if (result.mode === "live") prepared.current.set(readMemory(), result.questions);
+      }).catch(() => {});
+    }, 5000);
+    return () => { window.clearInterval(interval); invalidateReasoning(); };
+  }, [invalidateReasoning, readMemory, started]);
 
   useEffect(() => {
     if (!started) return;
@@ -514,11 +560,12 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
   }, []);
 
   const setCaptureHolding = useCallback((paused: boolean) => {
+    if (paused) invalidateReasoning();
     holdingRef.current = paused;
     setHolding(paused);
     pipelineRef.current?.setPaused(paused);
     if (paused && activeTurn.current) voiceRef.current.cancelTurn("paused");
-  }, []);
+  }, [invalidateReasoning]);
 
   const session = log.current;
   const governorWindow = governor.current.window;

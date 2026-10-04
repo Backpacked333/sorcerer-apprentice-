@@ -248,12 +248,12 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
       const answerAt = result.answeredAt ?? result.closedAt;
       const answerStart = result.answerStartedAt ?? answerAt;
       if (result.via === "typed") {
-        const redacted = recordTypedAnswer(session, windowId, mapped.answerText, answerAt);
+        const redacted = recordTypedAnswer(session, windowId, result.heard, answerAt);
         entitiesRedacted.current += redacted ?? 0;
         mapped.answerText = questionWindow?.answerText ?? "";
         mapped.answerAudioId = undefined;
       } else {
-        pushTranscript(mapped.answerText, "expert", answerStart, answerAt);
+        pushTranscript(result.heard, "expert", answerStart, answerAt);
       }
       expertSpeech.current.push({ at: answerAt, words: mapped.answerText.split(/\s+/u).filter(Boolean).length });
       for (const threshold of extractThresholds(mapped.answerText)) if (!ctx.current.knownThresholds.includes(threshold)) ctx.current.knownThresholds.push(threshold);
@@ -366,7 +366,7 @@ function Capture({ source: envSource, governor: govConfig, tools, app: appId, sh
     setEndingUi(true);
     const session = log.current;
     if (activeTurn.current) {
-      if (activeHeard.current.trim()) voiceRef.current.submitTyped(activeHeard.current);
+      if (activeHeard.current.trim()) voiceRef.current.finishAnswer();
       else voiceRef.current.cancelTurn("user");
       await activeTurn.current.catch(() => undefined);
       const lastWindow = session.windows.at(-1);

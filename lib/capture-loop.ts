@@ -60,7 +60,7 @@ export function windowOutcome(result: TurnResult): MappedWindowOutcome {
   if ((result.via === "scribe" || result.via === "typed") && result.heard.trim() && answerClockIsValid) {
     return {
       outcome: "answered",
-      closedBy: result.via === "scribe" ? "scribe_fallback" : "user",
+      closedBy: result.via === "scribe" && !result.acceptedByUser ? "scribe_fallback" : "user",
       answerText: redactText(result.heard).text,
       ...(result.audioId ? { answerAudioId: result.audioId } : {}),
       candidateStatus: "filled",

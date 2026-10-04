@@ -271,6 +271,7 @@ interface VoiceApi {
   turn(opts: TurnOptions): Promise<TurnResult>;             // never rejects; one tagged utterance plus optional listening window
   cancelTurn(reason?: TurnResult["abortReason"]): void;
   submitTyped(text: string): void;
+  finishAnswer(): void;                                    // Done accepts committed speech; never relabels it as typed
   setSessionStart(epochMs: number): void;
   lastHumanSpeechAt(): number;
   turnPhase: TurnPhase; partial: string;
@@ -293,6 +294,7 @@ interface TurnOptions {
   silenceCloseSecs?: number; ackMaxSecs?: number; answerTool?: ToolName; onPhase?: (phase: TurnPhase, at: number) => void;
 }
 interface TurnResult {
+  acceptedByUser?: boolean;                                // explicit Done, not an automatic Scribe/tool close
   spoke: boolean; heard: string; via: "tool"|"scribe"|"typed"|"timeout"|"aborted"|"spoken";
   tool?: { name: ToolName; params: Record<string, unknown> }; audioId?: string;
   sentAt: number; spokeAt?: number; askedAt: number; answerStartedAt?: number; answeredAt?: number; closedAt: number;
@@ -348,11 +350,17 @@ Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `t
 
 **Evidence timing:** recognition committed before `askedAt` (question finished / listening opened) is provisional interruption evidence only and cannot enter `heard`, `QuestionWindow.answerText`, or the quotable expert transcript. A later human-attributed commit after listen-open may become authoritative. `TurnResult.answerStartedAt` records when the accepted recognition segment began; `audioId` is returned only when that interval begins at or after `askedAt`, so a clip is never paired with text that predates recording.
 
+`finishAnswer()` accepts only already committed speech in a listening turn, preserving its source and eligible clip. It does not promote partial or pre-listening speech. The accepted snapshot cannot be replaced by late transcript/tool events; off-record still wins. True typed/mixed submissions remain clip-free. Compile reconstruction uses the committed end boundary (`tEnd ?? t`), preserving question provenance for an accepted span that began before listen-open while still rejecting withdrawn, partial and redacted evidence. Capture redacts the original accepted text once when persisting it, so the redaction marker cannot be lost by re-redacting an already masked string.
+
 Guarded `log_answer` calls are checked against that same verbatim evidence **before** invoking the page handler or dispatching TOOL. Missing/mismatched evidence returns `not_logged`, preserves the current listening/deadline state, and supplies committed transcript data for an exact-text retry; number spelling is not normalized into an invented quote. Struck/typed/aborted closes reject without exposing their transcript. A page's current-window reference check still applies to otherwise eligible calls. Legacy callers without a guarded turn are unchanged.
 
 This pre-handler gate applies as soon as an answer tool is configured, before the agent's speech source is known; only intentional browser-fallback turns bypass it. Calls before listening return `not_logged` without reaching the handler. Once a tool-confirmed answer is accepted, further `log_answer` calls cannot replace it, including direct reducer events during closing. A first valid answer may still arrive during timeout closing, and `mark_off_record` still overrides accepted evidence.
 
 The interviewer acknowledges a **new human answer**, not an internal correction retry. `log_answer` uses `pre_tool_speech=auto`, `execution_mode=post_tool_speech` and `expects_response=true`: allow that acknowledgment before persistence, but do not force speech before every retry. The prompt permits one silent correction from current literal evidence, never a closed/withdrawn question or unrelated speech; failed saving is not described as success.
+
+If a rejected answer produces a distinct provider response with exactly the previous listening acknowledgment's text, the client suppresses that duplicate's playback and visible message. It does not mute the original acknowledgment at rejection time. New human speech, a different response, or a new turn clears retry matching; no semantic/paraphrase suppression is attempted. Existing privacy/output gates remain authoritative.
+
+`TurnResult.spokenText` is omitted if question speech was interrupted before its completed-speech boundary (`askedAt`). The window still records `spokeAt`, `closedAt` and its abort outcome, but Capture must not persist the complete requested sentence as though a partial utterance finished, or use the uncompleted-question `askedAt` fallback as its transcript end.
 
 **Privacy precedence:** `mark_off_record` bypasses answer-tool matching while listening or closing. It supersedes pending typed/tool answers and timeouts with an empty `aborted` result carrying `command: "off_record"`; the clip is discarded and late answer events cannot restore evidence.
 

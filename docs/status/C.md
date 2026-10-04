@@ -9,7 +9,13 @@
 - Supabase compile publication compares the source under a session-row lock in one RPC.
   An evidence-withdrawal trigger invalidates derived maps under that lock. Local publication
   retains serialized session writes. Missing RPCs fail closed, never fall back to saveMap.
-- Typecheck, 888 tests and production build pass. Disposable PostgreSQL 17 tests exercised
+- Adversarial fixes preserve counterfactual provenance for speech spanning listen-open.
+  Done explicitly accepts committed speech without treating it as typing or discarding its
+  eligible recording; typed/mixed answers stay clip-free. Late replacements are rejected,
+  off-record still wins, and persistence retains the original answer's redaction marker.
+  Reducer → actual Capture callbacks → deterministic/LLM compiler regressions cover both
+  findings; restoring the old implementation reproduces the failures.
+- Typecheck, 913 tests and production build pass. Disposable PostgreSQL 17 tests exercised
   both concurrent orderings, conflict preservation, workspace isolation, evidence withdrawal
   and service-role permissions. Keyless smoke and final review are recorded in the PR.
 - Before any later Supabase deployment, B must apply the new migration after the two existing
@@ -96,6 +102,9 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 - Added bounded session projections, exact evidence checks, proposed role relationships
   and cancellable single-flight handoffs; no provider/model-owned memory or new storage.
+- Current foundation validation: 826 tests and typecheck pass after incorporating main's
+  voice retry/partial-speech fixes; ownership entries preserve both additions. No live
+  provider or human voice acceptance, merge, production promotion or remote-agent changes.
 - Focused memory tests and typecheck pass. Human/live-provider acceptance: not performed.
 - Next: wire background reasoning to Capture and profile compilation to Map without
   bypassing the governor or turning proposed relationships into executable rules.

@@ -29,7 +29,7 @@ export function compileEvidence(log: SessionLog) {
   const windows = log.windows.filter((w) => {
     if (!isQuotableWindow(w) || !visibleAt(log, w.openedAt, w.closedAt ?? w.answeredAt)) return false;
     const next = Math.min(...log.windows.filter((other) => other.openedAt > w.openedAt).map((other) => other.openedAt));
-    const spans = eligible.filter((s) => (!s.typedFor || s.typedFor === w.id) && s.t >= w.askedAt! && s.t < next);
+    const spans = eligible.filter((s) => (!s.typedFor || s.typedFor === w.id) && (s.tEnd ?? s.t) >= w.askedAt! && (s.tEnd ?? s.t) < next);
     let answer = "";
     for (const s of spans) {
       answer = answer ? `${answer} ${s.text}` : s.text;

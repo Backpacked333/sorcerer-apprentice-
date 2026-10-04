@@ -1,6 +1,6 @@
 # Lane D status
 
-Updated 2026-10-04 on `d/human-knowledge-ui`, with main `658a061` integrated. This remains a focused presentation pass, not a claim of full Lane D acceptance.
+Updated 2026-10-04 on `d/human-knowledge-ui`, with main `38b3ccd` integrated. This remains a focused presentation pass, not a claim of full Lane D acceptance.
 
 ## Done and merged (WP ids)
 
@@ -25,7 +25,7 @@ None. No live-provider, deployed, voice or screen-sharing verification claimed.
 
 ## Not verified yet (and the script to verify)
 
-- Automated with main `658a061` integrated: typecheck, all 283 tests (28 files, including 28 D presentation/selection cases), production build and diff whitespace check passed. Build output confirms `/` and `/demo` render dynamically. No lint script is configured.
+- Automated with main `38b3ccd` integrated: typecheck, all 284 tests (29 files, including 28 D presentation/selection cases), production build and diff whitespace check passed. Build output confirms `/` and `/demo` render dynamically. No lint script is configured.
 - Browser/keyless smoke not run in this session; UI testing needs approval.
 - Prior `d/experience` status reported a keyless smoke pass and a capture hydration warning. That result is not verification of this integrated revision.
 - UI check: open home at desktop and narrow widths; follow Work Maps/Capture/Practice/ERP links; tab to controls; open governor details; inspect a map's decision, literal reason, guardrail source and missing-frame state; verify the selected step is apparent; enable reduced motion.

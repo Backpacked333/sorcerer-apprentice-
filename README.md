@@ -10,6 +10,9 @@ Built for the **Hack-Nation × ElevenLabs AI Apprentice challenge**. This reposi
 
 [Live demo](https://tacit-ai-apprentice.vercel.app) · [Quick start](#quick-start-no-api-keys) · [Try the workflow](#try-the-workflow) · [Configuration](#environment-configuration) · [Dependencies](#dependencies) · [Testing](#testing-and-verification) · [Deployment](#storage-and-deployment) · [Contributing](#contributing)
 
+Description PDF: [pdf 1 page report.pdf](https://github.com/user-attachments/files/33025050/pdf.1.page.report.pdf)
+
+
 ## How it works
 
 | Stage | What you do | What Simon produces |

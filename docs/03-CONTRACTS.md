@@ -277,6 +277,8 @@ The interviewer acknowledges a **new human answer**, not an internal correction 
 
 If a rejected answer produces a distinct provider response with exactly the previous listening acknowledgment's text, the client suppresses that duplicate's playback and visible message. It does not mute the original acknowledgment at rejection time. New human speech, a different response, or a new turn clears retry matching; no semantic/paraphrase suppression is attempted. Existing privacy/output gates remain authoritative.
 
+`TurnResult.spokenText` is omitted if question speech was interrupted before its completed-speech boundary (`askedAt`). The window still records `spokeAt`, `closedAt` and its abort outcome, but Capture must not persist the complete requested sentence as though a partial utterance finished, or use the uncompleted-question `askedAt` fallback as its transcript end.
+
 **Privacy precedence:** `mark_off_record` bypasses answer-tool matching while listening or closing. It supersedes pending typed/tool answers and timeouts with an empty `aborted` result carrying `command: "off_record"`; the clip is discarded and late answer events cannot restore evidence.
 
 Capture withdrawal also invalidates derived in-memory evidence: narration badges/quotes, affected candidates and dependent follow-ups, deferred questions, and curiosity context. Transcript/window overlap counts, not only start timestamps. Delayed screen/transcript callbacks within a struck interval must not repopulate those caches; genuinely later evidence remains eligible.

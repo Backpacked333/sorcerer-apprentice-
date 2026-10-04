@@ -1,0 +1,367 @@
+/*
+ * Tacit design tokens — "Liquid Glass" language.
+ * Source: Tacit Desktop Redesign mockups (v1–v3, Landing, Company Map, Role Memory, Ontology).
+ *
+ * Three layers, strictly one-directional:
+ *   1. REFERENCE  --tc-ref-*   raw palette + scales. Never used by components.
+ *   2. SEMANTIC   --tc-*       meaning (surface, text, accent, ok/warn/risk…). Re-pointed per THEME.
+ *   3. COMPONENT  --tc-<name>-* optional per-component overrides (see components.css).
+ *
+ * Three independent axes, set as attributes on any ancestor (usually <html> or a section):
+ *   data-theme="light | dark | contrast"      → how it looks   (default: light)
+ *   data-mode="capture | debrief | teach | map | neutral"
+ *                                              → what task this surface serves; swaps --tc-accent*
+ *   data-state="quiet | listening | asking | understood | offrecord | stepsin"
+ *                                              → what the companion is doing (on .tc-companion / .tc-orb)
+ *
+ * Namespaced `--tc-` so it can coexist with the existing `--color-*` tokens in app/globals.css.
+ */
+
+/* ───────────── 1. REFERENCE ───────────── */
+:root {
+  /* neutrals — cool-warm gray ramp used for text, lines and fills */
+  --tc-ref-ink-900: #1d1d1f;
+  --tc-ref-ink-800: #3a3a3c;
+  --tc-ref-ink-600: #6e6e73; /* AA on white (5.07) — lightest allowed TEXT gray */
+  --tc-ref-ink-500: #8e8e93; /* 3.26 on white — decoration/icons/placeholders ONLY */
+  --tc-ref-ink-400: #aeaeb2;
+  --tc-ref-ink-300: #c7c7cc;
+  --tc-ref-ink-200: #e3e7eb;
+  --tc-ref-ink-100: #f4f4f7;
+  --tc-ref-white: #ffffff;
+
+  /* hues: [glow/fill] [soft tint] [ink = text-safe on white] */
+  --tc-ref-amber-glow: #f5a623;  --tc-ref-amber-mid: #ffd27a;  --tc-ref-amber-soft: #fff6e4;  --tc-ref-amber-ink: #a35f00;  --tc-ref-amber-deep: #6b3f00;
+  --tc-ref-green-glow: #22b45e;  --tc-ref-green-mid: #9be7c4;  --tc-ref-green-soft: #e4f8ed;  --tc-ref-green-ink: #17703d;
+  --tc-ref-violet-glow: #8f7bff; --tc-ref-violet-mid: #b7a6ff; --tc-ref-violet-soft: #f0ecff;  --tc-ref-violet-ink: #5a46c9;
+  --tc-ref-ember-glow: #f0642f;  --tc-ref-ember-mid: #ffbf9b;  --tc-ref-ember-soft: #ffeee4;   --tc-ref-ember-ink: #b4501f;
+  --tc-ref-red-glow: #e5484d;    --tc-ref-red-soft: #ffe9e9;                                   --tc-ref-red-ink: #c9342f;
+  --tc-ref-blue-glow: #0a5fb4;   --tc-ref-blue-mid: #8fd3ff;   --tc-ref-blue-soft: #eaf4ff;    --tc-ref-blue-ink: #2b5fc4;
+
+  /* the pastel "rim" ramp — the iridescent hairline that signals "this is Tacit" */
+  --tc-ref-rim-pink: #ffb8d9;
+  --tc-ref-rim-cream: #ffe2a8;
+  --tc-ref-rim-mint: #b9f0d3;
+  --tc-ref-rim-sky: #b5dcff;
+  --tc-ref-rim-lilac: #d4c6ff;
+
+  /* scales */
+  --tc-ref-radius-xs: 4px;  --tc-ref-radius-sm: 8px;  --tc-ref-radius-md: 12px;
+  --tc-ref-radius-lg: 18px; --tc-ref-radius-xl: 22px; --tc-ref-radius-pill: 999px;
+
+  --tc-ref-space-1: 4px;  --tc-ref-space-2: 8px;  --tc-ref-space-3: 12px; --tc-ref-space-4: 16px;
+  --tc-ref-space-5: 20px; --tc-ref-space-6: 24px; --tc-ref-space-8: 32px; --tc-ref-space-10: 40px; --tc-ref-space-12: 48px;
+
+  --tc-ref-font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "IBM Plex Sans", system-ui, sans-serif;
+  --tc-ref-font-mono: ui-monospace, Menlo, "JetBrains Mono", SFMono-Regular, monospace;
+
+  --tc-ref-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --tc-ref-ease-io: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* ───────────── 2. SEMANTIC — LIGHT (default) ───────────── */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+
+  /* canvas: a soft ambient wash behind everything, never flat white */
+  --tc-bg: #f4f4f7;
+  --tc-bg-wash:
+    radial-gradient(70% 55% at 12% 0%, rgba(255, 184, 217, 0.22), transparent 70%),
+    radial-gradient(60% 50% at 100% 12%, rgba(181, 220, 255, 0.28), transparent 70%),
+    radial-gradient(60% 50% at 70% 100%, rgba(255, 226, 168, 0.22), transparent 70%);
+
+  /* surfaces: glass floats, solid grounds */
+  --tc-surface-solid: #ffffff;
+  --tc-surface-sunken: #f4f6f8;
+  --tc-surface: rgba(255, 255, 255, 0.72);
+  --tc-surface-strong: rgba(255, 255, 255, 0.9);
+  --tc-surface-hover: rgba(255, 255, 255, 0.95);
+  --tc-glass-blur: 24px;
+  --tc-glass-saturate: 1.8;
+
+  /* text */
+  --tc-text: var(--tc-ref-ink-900);
+  --tc-text-2: var(--tc-ref-ink-800);
+  --tc-text-3: var(--tc-ref-ink-600);
+  --tc-text-disabled: var(--tc-ref-ink-500);
+  --tc-text-placeholder: var(--tc-ref-ink-500);
+
+  /* lines: always hairline (.5px) on glass, 1px on solid */
+  --tc-line: rgba(0, 0, 0, 0.08);
+  --tc-line-strong: rgba(0, 0, 0, 0.16);
+  --tc-line-solid: var(--tc-ref-ink-200);
+  --tc-highlight: #ffffff; /* the 1px inner top edge that makes glass read as glass */
+
+  /* elevation = hairline + highlight + ambient shadow */
+  --tc-shadow-0: 0 0 0 0.5px rgba(0, 0, 0, 0.07);
+  --tc-shadow-1: inset 0 1px 0 var(--tc-highlight), 0 0 0 0.5px rgba(0, 0, 0, 0.07), 0 4px 12px rgba(15, 23, 42, 0.06);
+  --tc-shadow-2: inset 0 1px 0 var(--tc-highlight), 0 0 0 0.5px rgba(0, 0, 0, 0.07), 0 10px 28px rgba(15, 23, 42, 0.08);
+  --tc-shadow-3: inset 0 1px 0 var(--tc-highlight), 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 20px 48px rgba(15, 23, 42, 0.14);
+
+  /* status (independent of mode): fg = text-safe ink, fill = glow/dot, soft = tinted bg */
+  --tc-ok-ink: var(--tc-ref-green-ink);   --tc-ok-fill: var(--tc-ref-green-glow);   --tc-ok-soft: var(--tc-ref-green-soft);
+  --tc-warn-ink: var(--tc-ref-amber-ink); --tc-warn-fill: var(--tc-ref-amber-glow); --tc-warn-soft: var(--tc-ref-amber-soft);
+  --tc-risk-ink: var(--tc-ref-ember-ink); --tc-risk-fill: var(--tc-ref-ember-glow); --tc-risk-soft: var(--tc-ref-ember-soft);
+  --tc-danger-ink: var(--tc-ref-red-ink); --tc-danger-fill: var(--tc-ref-red-glow); --tc-danger-soft: var(--tc-ref-red-soft);
+  --tc-info-ink: var(--tc-ref-blue-ink);  --tc-info-fill: var(--tc-ref-blue-mid);   --tc-info-soft: var(--tc-ref-blue-soft);
+  --tc-neutral-ink: var(--tc-ref-ink-600); --tc-neutral-fill: var(--tc-ref-ink-500); --tc-neutral-soft: rgba(0, 0, 0, 0.05);
+
+  /* provenance — "two sources, never disguised as one" (AGENTS.md §4.5). Use on every claim/step/relationship. */
+  --tc-src-said: var(--tc-ref-amber-glow);     /* said by the expert (voice)           */
+  --tc-src-seen: var(--tc-ref-ink-500);        /* seen on screen (vision / dom)        */
+  --tc-src-inferred: var(--tc-ref-violet-glow);/* inferred by Tacit — never a quote    */
+
+  /* focus */
+  --tc-focus: var(--tc-ref-blue-glow);
+  /* NOTE: no composite "focus-ring" token. var() aliases resolve where they are DECLARED, so a ring
+     built here would stay light inside a dark subtree. Components compose it at the use site. */
+
+  /* the rim ramp as a ready gradient stop list */
+  --tc-rim-stops: var(--tc-ref-rim-pink), var(--tc-ref-rim-cream), var(--tc-ref-rim-mint), var(--tc-ref-rim-sky), var(--tc-ref-rim-lilac), var(--tc-ref-rim-pink);
+  --tc-rim-opacity: 1;
+
+  /* orb */
+  --tc-orb-quiet: radial-gradient(circle at 35% 30%, #ffffff, #eef1f6 48%, #d2d9e3);
+  --tc-orb-quiet-glow: 0 0 0 0.5px rgba(0, 0, 0, 0.08), 0 3px 10px rgba(80, 90, 110, 0.16);
+
+  /* typography */
+  --tc-font-ui: var(--tc-ref-font-ui);
+  --tc-font-mono: var(--tc-ref-font-mono);
+  --tc-text-xs: 11px;   --tc-text-sm: 12px;  --tc-text-base: 14px; --tc-text-md: 15px;
+  --tc-text-lg: 18px;   --tc-text-xl: 22px;  --tc-text-2xl: 32px;  --tc-text-display: clamp(40px, 6vw, 72px);
+  --tc-leading-tight: 1.1; --tc-leading-snug: 1.3; --tc-leading-body: 1.5;
+  --tc-tracking-display: -0.035em; --tc-tracking-label: 0.1em;
+
+  /* shape + size */
+  --tc-radius-field: var(--tc-ref-radius-sm);
+  --tc-radius-card: var(--tc-ref-radius-lg);
+  --tc-radius-float: var(--tc-ref-radius-xl);
+  --tc-radius-pill: var(--tc-ref-radius-pill);
+  --tc-control-sm: 28px; --tc-control-md: 34px; --tc-control-lg: 44px; /* lg = touch / primary side-controls */
+
+  /* motion */
+  --tc-dur-fast: 120ms; --tc-dur-base: 200ms; --tc-dur-slow: 420ms;
+  --tc-ease: var(--tc-ref-ease-out);
+}
+
+/* ───────────── THEME — DARK ─────────────
+ * Same structure, glass re-tuned for a dark canvas. Hue glows stay; inks lift for contrast. */
+[data-theme="dark"] {
+  color-scheme: dark;
+
+  --tc-bg: #0b0e11;
+  --tc-bg-wash:
+    radial-gradient(70% 55% at 12% 0%, rgba(143, 123, 255, 0.14), transparent 70%),
+    radial-gradient(60% 50% at 100% 12%, rgba(90, 169, 255, 0.12), transparent 70%),
+    radial-gradient(60% 50% at 70% 100%, rgba(245, 166, 35, 0.1), transparent 70%);
+
+  --tc-surface-solid: #12171c;
+  --tc-surface-sunken: #0e1216;
+  --tc-surface: rgba(28, 34, 41, 0.66);
+  --tc-surface-strong: rgba(28, 34, 41, 0.88);
+  --tc-surface-hover: rgba(40, 48, 58, 0.92);
+  --tc-glass-saturate: 1.4;
+
+  --tc-text: #e8edf2;
+  --tc-text-2: #b4bec8;
+  --tc-text-3: #8995a1;
+  --tc-text-disabled: #5d6975;
+  --tc-text-placeholder: #5d6975;
+
+  --tc-line: rgba(255, 255, 255, 0.09);
+  --tc-line-strong: rgba(255, 255, 255, 0.2);
+  --tc-line-solid: #26323d;
+  --tc-highlight: rgba(255, 255, 255, 0.1);
+
+  --tc-shadow-0: 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+  --tc-shadow-1: inset 0 1px 0 var(--tc-highlight), 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 4px 12px rgba(0, 0, 0, 0.3);
+  --tc-shadow-2: inset 0 1px 0 var(--tc-highlight), 0 0 0 0.5px rgba(255, 255, 255, 0.1), 0 10px 28px rgba(0, 0, 0, 0.4);
+  --tc-shadow-3: inset 0 1px 0 var(--tc-highlight), 0 0 0 0.5px rgba(255, 255, 255, 0.12), 0 20px 48px rgba(0, 0, 0, 0.55);
+
+  --tc-ok-ink: #3ddc84;     --tc-ok-soft: rgba(34, 180, 94, 0.16);
+  --tc-warn-ink: #f5a623;   --tc-warn-soft: rgba(245, 166, 35, 0.16);
+  --tc-risk-ink: #ff8a5c;   --tc-risk-soft: rgba(240, 100, 47, 0.18);
+  --tc-danger-ink: #ff6b6b; --tc-danger-soft: rgba(229, 72, 77, 0.18);
+  --tc-info-ink: #7ab8ff;   --tc-info-fill: #5aa9ff; --tc-info-soft: rgba(90, 169, 255, 0.16);
+  --tc-neutral-ink: #8995a1; --tc-neutral-soft: rgba(255, 255, 255, 0.06);
+
+  --tc-src-seen: #8995a1;
+
+  --tc-focus: #7ab8ff;
+  --tc-rim-opacity: 0.85;
+
+  --tc-orb-quiet: radial-gradient(circle at 35% 30%, #ffffff, #cfd6df 48%, #8995a1);
+  --tc-orb-quiet-glow: 0 0 0 0.5px rgba(255, 255, 255, 0.2), 0 0 14px rgba(180, 190, 200, 0.25);
+}
+
+/* ───────────── THEME — HIGH CONTRAST ─────────────
+ * Accessibility theme: no translucency, no blur, 2px solid borders, pure black/white. */
+[data-theme="contrast"] {
+  color-scheme: light;
+
+  --tc-bg: #ffffff;
+  --tc-bg-wash: none;
+  --tc-surface-solid: #ffffff;
+  --tc-surface-sunken: #f2f2f2;
+  --tc-surface: #ffffff;
+  --tc-surface-strong: #ffffff;
+  --tc-surface-hover: #f2f2f2;
+  --tc-glass-blur: 0px;
+  --tc-glass-saturate: 1;
+
+  --tc-text: #000000; --tc-text-2: #000000; --tc-text-3: #3a3a3c; --tc-text-disabled: #6e6e73; --tc-text-placeholder: #5a5a5e;
+  --tc-line: #000000; --tc-line-strong: #000000; --tc-line-solid: #000000; --tc-highlight: transparent;
+
+  --tc-shadow-0: 0 0 0 2px #000;
+  --tc-shadow-1: 0 0 0 2px #000;
+  --tc-shadow-2: 0 0 0 2px #000;
+  --tc-shadow-3: 0 0 0 2px #000, 6px 6px 0 #000;
+
+  --tc-ok-ink: #0b5a2a; --tc-warn-ink: #6b3f00; --tc-risk-ink: #8a3200; --tc-danger-ink: #a00000; --tc-info-ink: #0a3d8f;
+  --tc-ok-soft: #ffffff; --tc-warn-soft: #ffffff; --tc-risk-soft: #ffffff; --tc-danger-soft: #ffffff; --tc-info-soft: #ffffff; --tc-neutral-soft: #f2f2f2;
+  --tc-src-seen: #3a3a3c;
+  /* fills that carry meaning (dots, meters) must also pass 3:1 — use the dark inks, not the pastel glows */
+  --tc-ok-fill: #0b5a2a; --tc-warn-fill: #6b3f00; --tc-risk-fill: #8a3200; --tc-danger-fill: #a00000; --tc-info-fill: #0a3d8f;
+  --tc-neutral-fill: #3a3a3c; --tc-src-said: #6b3f00; --tc-src-inferred: #5a46c9;
+
+  --tc-focus: #0000ee;
+  --tc-rim-opacity: 0; /* decorative gradient rim off; borders carry the structure */
+}
+
+/* ───────────── MODE (task) — swaps the accent only ─────────────
+ * Each mode defines five values; components read ONLY these. Add a new task = add one block.
+ *   --tc-accent        fill / glow (decorative, large)
+ *   --tc-accent-ink    text-safe on --tc-surface-solid in the current theme
+ *   --tc-accent-soft   tinted background
+ *   --tc-accent-grad   primary-button / highlight gradient
+ *   --tc-on-accent     text on top of --tc-accent-grad
+ * Mode ↔ product phase: capture = amber, debrief = violet, teach = green, map = blue/neutral.
+ * (Matches the SESSION colors in tacit-data.js: capture #f5a623 · debrief #8f7bff · teach #22b45e.)
+ */
+:root,
+[data-mode="capture"] {
+  --tc-accent: var(--tc-ref-amber-glow);
+  --tc-accent-ink: var(--tc-ref-amber-ink);
+  --tc-accent-soft: var(--tc-ref-amber-soft);
+  --tc-accent-grad: linear-gradient(160deg, #ffe2a8, #ffd27a 55%, #f5c15a);
+  --tc-on-accent: var(--tc-ref-amber-deep);
+}
+[data-mode="debrief"] {
+  --tc-accent: var(--tc-ref-violet-glow);
+  --tc-accent-ink: var(--tc-ref-violet-ink);
+  --tc-accent-soft: var(--tc-ref-violet-soft);
+  --tc-accent-grad: linear-gradient(160deg, #e4dcff, #c9bcff 55%, #b7a6ff);
+  --tc-on-accent: #2e1f8a;
+}
+[data-mode="teach"] {
+  --tc-accent: var(--tc-ref-green-glow);
+  --tc-accent-ink: var(--tc-ref-green-ink);
+  --tc-accent-soft: var(--tc-ref-green-soft);
+  --tc-accent-grad: linear-gradient(160deg, #cdf5de, #9be7c4 55%, #6ee7a0);
+  --tc-on-accent: #0b4a26;
+}
+[data-mode="map"] {
+  --tc-accent: #4a90e2;
+  --tc-accent-ink: var(--tc-ref-blue-ink);
+  --tc-accent-soft: var(--tc-ref-blue-soft);
+  --tc-accent-grad: linear-gradient(160deg, #d3ecff, #b5dcff 55%, #8fd3ff);
+  --tc-on-accent: #0a3466;
+}
+[data-mode="neutral"] {
+  --tc-accent: var(--tc-ref-ink-800);
+  --tc-accent-ink: var(--tc-ref-ink-900);
+  --tc-accent-soft: rgba(0, 0, 0, 0.05);
+  --tc-accent-grad: linear-gradient(160deg, #ffffff, #eef1f6);
+  --tc-on-accent: var(--tc-ref-ink-900);
+}
+
+/* Dark inks for modes (glows stay; inks lift for contrast on dark glass). */
+[data-theme="dark"] [data-mode="capture"], [data-theme="dark"][data-mode="capture"], [data-theme="dark"] {
+  --tc-accent-ink: #f5a623; --tc-accent-soft: rgba(245, 166, 35, 0.16); --tc-on-accent: #1a1204;
+  --tc-accent-grad: linear-gradient(160deg, #ffd27a, #f5a623);
+}
+[data-theme="dark"] [data-mode="debrief"], [data-theme="dark"][data-mode="debrief"] {
+  --tc-accent-ink: #b7a6ff; --tc-accent-soft: rgba(143, 123, 255, 0.18); --tc-on-accent: #120a3a;
+  --tc-accent-grad: linear-gradient(160deg, #c9bcff, #8f7bff);
+}
+[data-theme="dark"] [data-mode="teach"], [data-theme="dark"][data-mode="teach"] {
+  --tc-accent-ink: #3ddc84; --tc-accent-soft: rgba(34, 180, 94, 0.18); --tc-on-accent: #04200f;
+  --tc-accent-grad: linear-gradient(160deg, #6ee7a0, #22b45e);
+}
+[data-theme="dark"] [data-mode="map"], [data-theme="dark"][data-mode="map"] {
+  --tc-accent-ink: #7ab8ff; --tc-accent-soft: rgba(90, 169, 255, 0.18); --tc-on-accent: #03152e;
+  --tc-accent-grad: linear-gradient(160deg, #8fd3ff, #4a90e2);
+}
+[data-theme="dark"] [data-mode="neutral"], [data-theme="dark"][data-mode="neutral"] {
+  --tc-accent-ink: #e8edf2; --tc-accent-soft: rgba(255, 255, 255, 0.07); --tc-on-accent: #0b0e11;
+  --tc-accent-grad: linear-gradient(160deg, #e8edf2, #b4bec8);
+}
+
+[data-theme="contrast"] [data-mode], [data-theme="contrast"][data-mode], [data-theme="contrast"] {
+  --tc-accent: #000; --tc-accent-ink: #000; --tc-accent-soft: #fff; --tc-accent-grad: linear-gradient(#000, #000); --tc-on-accent: #fff;
+}
+
+/* ───────────── COMPANION STATE — the glow language ─────────────
+ * The companion tells its state by LIGHT, not labels (v2 redesign §1a).
+ *   quiet      pearl   — watching, saying nothing while you type, read or talk
+ *   listening  green   — mic open; your words become the reason on the map
+ *   asking     amber   — a pause was found; one question about something on screen
+ *   understood violet  — zero open slots + the expert's explicit yes
+ *   offrecord  red-striped — struck; nothing is sent; last exchange and its frames are gone
+ *   stepsin    ember   — Teach only: a guardrail is about to be broken
+ * Components read --tc-state-* only; state is orthogonal to mode and theme.
+ * "quiet" is the implicit default, supplied as var() FALLBACKS in components.css (not declared at :root,
+ * for the same resolve-where-declared reason as the focus ring). Declared here for explicit data-state="quiet". */
+[data-state="quiet"] {
+  --tc-state-orb: var(--tc-orb-quiet);
+  --tc-state-glow: var(--tc-orb-quiet-glow);
+  --tc-state-halo: transparent;
+  --tc-state-rim: var(--tc-rim-stops);
+  --tc-state-cadence: 4.4s;
+  --tc-state-ink: var(--tc-text-3);
+}
+[data-state="listening"] {
+  --tc-state-orb: radial-gradient(circle at 35% 30%, #f6fff9, #aeeecb 52%, #38c477);
+  --tc-state-glow: 0 0 16px rgba(56, 196, 119, 0.5);
+  --tc-state-halo: rgba(56, 196, 119, 0.28);
+  --tc-state-rim: #b9f0d3, #6ee7a0, #38c477, #b9f0d3;
+  --tc-state-cadence: 1s;
+  --tc-state-ink: var(--tc-ok-ink);
+}
+[data-state="asking"] {
+  --tc-state-orb: radial-gradient(circle at 35% 30%, #fffaf0, #ffd98f 52%, #f2a531);
+  --tc-state-glow: 0 0 18px rgba(245, 166, 35, 0.45);
+  --tc-state-halo: rgba(245, 166, 35, 0.3);
+  --tc-state-rim: #ffe2a8, #ffd27a, #f5a623, #ffe2a8;
+  --tc-state-cadence: 1.8s;
+  --tc-state-ink: var(--tc-warn-ink);
+}
+[data-state="understood"] {
+  --tc-state-orb: var(--tc-orb-quiet);
+  --tc-state-glow: 0 0 20px rgba(170, 150, 255, 0.55);
+  --tc-state-halo: rgba(170, 150, 255, 0.28);
+  --tc-state-rim: var(--tc-rim-stops);
+  --tc-state-cadence: 2s;
+  --tc-state-ink: var(--tc-ref-violet-ink);
+}
+[data-state="offrecord"] {
+  --tc-state-orb: repeating-linear-gradient(135deg, rgba(229, 72, 77, 0.75) 0 6px, rgba(229, 72, 77, 0.22) 6px 12px);
+  --tc-state-glow: 0 0 14px rgba(229, 72, 77, 0.35);
+  --tc-state-halo: rgba(229, 72, 77, 0.2);
+  --tc-state-rim: #ffb8b8, #ff8a8a, #e5484d, #ffb8b8;
+  --tc-state-cadence: 0s; /* a struck state does not breathe — stillness is the signal */
+  --tc-state-ink: var(--tc-danger-ink);
+}
+[data-state="stepsin"] {
+  --tc-state-orb: radial-gradient(circle at 35% 30%, #fff6f0, #ffbf9b 52%, #f0703f);
+  --tc-state-glow: 0 0 18px rgba(240, 100, 47, 0.45);
+  --tc-state-halo: rgba(240, 100, 47, 0.28);
+  --tc-state-rim: #ffd0b8, #ffa57a, #f0642f, #ffd0b8;
+  --tc-state-cadence: 1.6s;
+  --tc-state-ink: var(--tc-risk-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --tc-dur-fast: 1ms; --tc-dur-base: 1ms; --tc-dur-slow: 1ms; }
+}

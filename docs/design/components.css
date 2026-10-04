@@ -1,0 +1,238 @@
+/*
+ * Tacit components — "Liquid Glass".
+ * Reads ONLY semantic tokens from tokens.css (--tc-*). No raw hex below this line except in @keyframes-free
+ * decorative gradients that have no token yet (flagged "TODO-token"). A new theme/task/state never
+ * touches this file.
+ *
+ * Class prefix `tc-`. Variants are attributes, not extra classes:
+ *   data-tone="ok|warn|risk|danger|info|neutral"   status colour (badges, banners, meters)
+ *   data-src="said|seen|inferred"                  provenance dot
+ *   data-variant="primary|ghost|danger"            buttons
+ *   data-size="sm|md|lg"                           controls
+ *   data-state="…"                                 companion / orb (see tokens.css)
+ */
+
+@property --tca { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+@keyframes tc-hue     { to { --tca: 360deg; } }
+@keyframes tc-breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
+@keyframes tc-ripple  { from { transform: scale(1); opacity: 0.7; } to { transform: scale(2.4); opacity: 0; } }
+@keyframes tc-glow    { 0%, 100% { opacity: 0.5; transform: scale(0.96); } 50% { opacity: 0.9; transform: scale(1.04); } }
+@keyframes tc-pulse   { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.6); opacity: 0.45; } }
+@keyframes tc-rise    { from { opacity: 0; transform: translateY(6px); filter: blur(3px); } to { opacity: 1; transform: none; filter: none; } }
+
+/* ───────── canvas ───────── */
+.tc-root {
+  background: var(--tc-bg-wash), var(--tc-bg);
+  color: var(--tc-text);
+  font-family: var(--tc-font-ui);
+  font-size: var(--tc-text-base);
+  line-height: var(--tc-leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+.tc-root *, .tc-root *::before, .tc-root *::after { box-sizing: border-box; }
+
+/* ───────── type roles ───────── */
+.tc-display { font-size: var(--tc-text-display); line-height: var(--tc-leading-tight); letter-spacing: var(--tc-tracking-display); font-weight: 700; margin: 0; }
+.tc-title   { font-size: var(--tc-text-2xl); line-height: var(--tc-leading-tight); letter-spacing: -0.02em; font-weight: 650; margin: 0; }
+.tc-heading { font-size: var(--tc-text-lg); line-height: var(--tc-leading-snug); font-weight: 650; margin: 0; }
+.tc-body    { font-size: var(--tc-text-md); line-height: var(--tc-leading-body); color: var(--tc-text-2); }
+.tc-small   { font-size: var(--tc-text-base); line-height: var(--tc-leading-snug); color: var(--tc-text-2); }
+.tc-meta    { font-size: var(--tc-text-sm); line-height: var(--tc-leading-snug); color: var(--tc-text-3); }
+/* eyebrow: uppercase micro-label. Uses accent-ink so it re-colours per task (capture amber, teach green …). */
+.tc-eyebrow { font-size: var(--tc-text-sm); font-weight: 600; letter-spacing: var(--tc-tracking-label); text-transform: uppercase; color: var(--tc-accent-ink); }
+.tc-label   { font-size: var(--tc-text-sm); font-weight: 500; color: var(--tc-text-3); }
+.tc-mono    { font-family: var(--tc-font-mono); font-variant-numeric: tabular-nums; }
+.tc-muted-ink { color: var(--tc-text-3); }
+
+/* ───────── glass surfaces ─────────
+ * Depth rule:  ground (solid, e.g. the ERP underlay)  <  card (glass, tc-shadow-1/2)  <  float (glass, shadow-3, e.g. companion).
+ * Only things that float ABOVE the work get blur; the work itself stays solid and legible. */
+.tc-card, .tc-float, .tc-glass {
+  position: relative;
+  background: var(--tc-surface);
+  -webkit-backdrop-filter: blur(var(--tc-glass-blur)) saturate(var(--tc-glass-saturate));
+  backdrop-filter: blur(var(--tc-glass-blur)) saturate(var(--tc-glass-saturate));
+  box-shadow: var(--tc-shadow-2);
+  border-radius: var(--tc-radius-card);
+}
+.tc-card  { padding: var(--tc-ref-space-5); }
+.tc-float { box-shadow: var(--tc-shadow-3); border-radius: var(--tc-radius-float); padding: var(--tc-ref-space-4); }
+.tc-card[data-flat], .tc-flat { box-shadow: var(--tc-shadow-1); }
+.tc-solid { background: var(--tc-surface-solid); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.tc-sunken { background: var(--tc-surface-sunken); box-shadow: inset 0 0 0 0.5px var(--tc-line); border-radius: var(--tc-radius-field); }
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .tc-card, .tc-float, .tc-glass { background: var(--tc-surface-strong); }
+}
+[data-theme="contrast"] .tc-card, [data-theme="contrast"] .tc-float, [data-theme="contrast"] .tc-glass { -webkit-backdrop-filter: none; backdrop-filter: none; }
+
+/* ───────── rim: the iridescent hairline ─────────
+ * Add `.tc-rim` to any glass surface. It is the single "this is Tacit" signature and is state-aware:
+ * the companion's rim recolours with data-state. Off in the contrast theme (opacity token = 0). */
+.tc-rim::before {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  padding: 1.25px;
+  background: conic-gradient(from var(--tca), var(--tc-state-rim, var(--tc-rim-stops)));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: var(--tc-rim-opacity);
+  animation: tc-hue 10s linear infinite;
+  pointer-events: none;
+}
+
+/* ───────── buttons ───────── */
+.tc-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--tc-ref-space-2);
+  min-height: var(--tc-control-md); padding: 0 var(--tc-ref-space-4);
+  border: 0; border-radius: var(--tc-radius-pill);
+  background: var(--tc-surface-strong); color: var(--tc-text);
+  box-shadow: var(--tc-shadow-1);
+  font: inherit; font-size: var(--tc-text-base); font-weight: 500; line-height: 1; white-space: nowrap;
+  cursor: pointer;
+  transition: transform var(--tc-dur-fast) var(--tc-ease), background var(--tc-dur-base), box-shadow var(--tc-dur-base);
+}
+.tc-btn:hover { background: var(--tc-surface-hover); }
+.tc-btn:active { transform: scale(0.97); }
+.tc-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--tc-surface-solid), 0 0 0 4px var(--tc-focus); }
+.tc-btn:disabled, .tc-btn[aria-disabled="true"] { color: var(--tc-text-disabled); cursor: not-allowed; transform: none; }
+.tc-btn[data-size="sm"] { min-height: var(--tc-control-sm); padding: 0 var(--tc-ref-space-3); font-size: var(--tc-text-sm); }
+.tc-btn[data-size="lg"] { min-height: var(--tc-control-lg); padding: 0 var(--tc-ref-space-5); font-size: var(--tc-text-md); }
+/* primary = the current task's accent gradient. One per surface. */
+.tc-btn[data-variant="primary"] { background: var(--tc-accent-grad); color: var(--tc-on-accent); font-weight: 650; }
+.tc-btn[data-variant="ghost"]   { background: transparent; box-shadow: none; color: var(--tc-text-2); }
+.tc-btn[data-variant="ghost"]:hover { background: var(--tc-neutral-soft); }
+/* danger = "scratch that" / destructive. Soft until hovered — never the loudest thing on screen. */
+.tc-btn[data-variant="danger"]  { color: var(--tc-danger-ink); }
+.tc-btn[data-variant="danger"]:hover { background: var(--tc-danger-soft); }
+
+/* ───────── chips / badges ───────── */
+.tc-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 10px; border-radius: var(--tc-radius-pill);
+  background: var(--tone-soft, var(--tc-neutral-soft)); color: var(--tone-ink, var(--tc-neutral-ink));
+  font-size: var(--tc-text-sm); font-weight: 600; line-height: 1.5; white-space: nowrap;
+}
+.tc-badge[data-tone="ok"]      { --tone-soft: var(--tc-ok-soft);     --tone-ink: var(--tc-ok-ink);     --tone-fill: var(--tc-ok-fill); }
+.tc-badge[data-tone="warn"]    { --tone-soft: var(--tc-warn-soft);   --tone-ink: var(--tc-warn-ink);   --tone-fill: var(--tc-warn-fill); }
+.tc-badge[data-tone="risk"]    { --tone-soft: var(--tc-risk-soft);   --tone-ink: var(--tc-risk-ink);   --tone-fill: var(--tc-risk-fill); }
+.tc-badge[data-tone="danger"]  { --tone-soft: var(--tc-danger-soft); --tone-ink: var(--tc-danger-ink); --tone-fill: var(--tc-danger-fill); }
+.tc-badge[data-tone="info"]    { --tone-soft: var(--tc-info-soft);   --tone-ink: var(--tc-info-ink);   --tone-fill: var(--tc-info-fill); }
+.tc-badge[data-tone="accent"]  { --tone-soft: var(--tc-accent-soft); --tone-ink: var(--tc-accent-ink); --tone-fill: var(--tc-accent); }
+.tc-badge[data-dot]::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--tone-fill, var(--tc-neutral-fill)); }
+.tc-badge[data-live]::before { animation: tc-pulse 1.4s ease-in-out infinite; }
+
+/* provenance — the honest-badges rule. A dot + words; the words are never optional (colour alone is not a signal). */
+.tc-src { display: inline-flex; align-items: center; gap: 6px; font-size: var(--tc-text-sm); color: var(--tc-text-2); white-space: nowrap; }
+.tc-src::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--tc-neutral-fill); }
+.tc-src[data-src="said"]::before     { background: var(--tc-src-said); }
+.tc-src[data-src="seen"]::before     { background: var(--tc-src-seen); }
+.tc-src[data-src="inferred"]::before { background: var(--tc-src-inferred); }
+
+/* ───────── fields ───────── */
+.tc-field { display: grid; gap: 4px; min-width: 0; }
+.tc-field > .tc-label { padding-left: 2px; }
+.tc-input {
+  width: 100%; min-height: var(--tc-control-md); padding: 0 var(--tc-ref-space-3);
+  border: 0; border-radius: var(--tc-radius-field);
+  background: var(--tc-surface-solid); color: var(--tc-text);
+  box-shadow: inset 0 0 0 0.5px var(--tc-line-strong);
+  font: inherit; font-size: var(--tc-text-base);
+  transition: box-shadow var(--tc-dur-base);
+}
+.tc-input::placeholder { color: var(--tc-text-placeholder); }
+.tc-input:focus-visible { outline: none; box-shadow: inset 0 0 0 1.5px var(--tc-focus), 0 0 0 3px var(--tc-accent-soft); }
+.tc-input[aria-invalid="true"] { box-shadow: inset 0 0 0 1.5px var(--tc-danger-fill); }
+.tc-input[readonly] { background: var(--tc-surface-sunken); }
+
+/* segmented control */
+.tc-seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: var(--tc-radius-pill); background: var(--tc-neutral-soft); box-shadow: inset 0 0 0 0.5px var(--tc-line); }
+.tc-seg > button { border: 0; background: transparent; color: var(--tc-text-2); font: inherit; font-size: var(--tc-text-base); padding: 5px 14px; border-radius: var(--tc-radius-pill); cursor: pointer; }
+.tc-seg > button[aria-pressed="true"], .tc-seg > button[aria-selected="true"] { background: var(--tc-surface-solid); color: var(--tc-text); font-weight: 600; box-shadow: var(--tc-shadow-1); }
+.tc-seg > button:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--tc-surface-solid), 0 0 0 4px var(--tc-focus); }
+
+/* ───────── list rows & dividers ───────── */
+.tc-divider { height: 0; border: 0; border-top: 0.5px solid var(--tc-line); margin: var(--tc-ref-space-3) 0; }
+.tc-row { display: flex; align-items: center; gap: var(--tc-ref-space-3); padding: var(--tc-ref-space-3) var(--tc-ref-space-2); border-radius: var(--tc-ref-radius-md); }
+.tc-row + .tc-row { border-top: 0.5px solid var(--tc-line); border-radius: 0; }
+.tc-row[role="button"], .tc-row[data-interactive] { cursor: pointer; }
+.tc-row[data-interactive]:hover { background: var(--tc-neutral-soft); border-radius: var(--tc-ref-radius-md); }
+.tc-row[aria-current="true"] { background: var(--tc-accent-soft); border-radius: var(--tc-ref-radius-md); box-shadow: inset 3px 0 0 var(--tc-accent); }
+
+/* verbatim quote — the expert's literal words. Quote.text must be a substring of what she said (AGENTS.md §4.2). */
+.tc-quote { margin: 0; padding: 2px 0 2px var(--tc-ref-space-3); border-left: 2px solid var(--tc-accent); color: var(--tc-text); font-size: var(--tc-text-md); }
+.tc-quote > cite { display: block; margin-top: 4px; font-style: normal; font-size: var(--tc-text-sm); color: var(--tc-text-3); }
+
+/* ───────── banners (degraded / fallback must be labelled — AGENTS.md §4.5) ───────── */
+.tc-banner {
+  display: flex; gap: var(--tc-ref-space-3); align-items: flex-start;
+  padding: var(--tc-ref-space-3) var(--tc-ref-space-4); border-radius: var(--tc-ref-radius-md);
+  background: var(--tone-soft, var(--tc-info-soft)); color: var(--tc-text);
+  box-shadow: inset 3px 0 0 var(--tone-fill, var(--tc-info-fill)), inset 0 0 0 0.5px var(--tc-line);
+  font-size: var(--tc-text-base);
+}
+.tc-banner > strong { color: var(--tone-ink, var(--tc-info-ink)); }
+.tc-banner[data-tone="warn"]   { --tone-soft: var(--tc-warn-soft);   --tone-ink: var(--tc-warn-ink);   --tone-fill: var(--tc-warn-fill); }
+.tc-banner[data-tone="danger"] { --tone-soft: var(--tc-danger-soft); --tone-ink: var(--tc-danger-ink); --tone-fill: var(--tc-danger-fill); }
+.tc-banner[data-tone="ok"]     { --tone-soft: var(--tc-ok-soft);     --tone-ink: var(--tc-ok-ink);     --tone-fill: var(--tc-ok-fill); }
+
+/* ───────── meters ───────── */
+.tc-meter { height: 6px; border-radius: var(--tc-radius-pill); background: var(--tc-neutral-soft); box-shadow: inset 0 0 0 0.5px var(--tc-line); overflow: hidden; }
+.tc-meter > i { display: block; height: 100%; width: calc(var(--value, 0) * 1%); border-radius: inherit; background: linear-gradient(90deg, #ffb8d9, #ffd27a, #9be7c4, #8fd3ff, #b7a6ff); /* TODO-token: pastel progress ramp */ transition: width var(--tc-dur-slow) var(--tc-ease); }
+[data-theme="contrast"] .tc-meter > i { background: #000; }
+.tc-meter[data-tone="ok"] > i { background: var(--tc-ok-fill); }
+.tc-meter[data-tone="risk"] > i { background: var(--tc-risk-fill); }
+
+/* progress ring — "72% explained". Set --value (0–100). Content goes inside, centred. */
+.tc-ring { --size: 96px; --stroke: 8px; position: relative; width: var(--size); height: var(--size); border-radius: 50%; display: grid; place-items: center; text-align: center;
+  background: conic-gradient(from -90deg, #ffb8d9, #ffd27a, #9be7c4, #8fd3ff, #b7a6ff calc(var(--value, 0) * 1%), var(--tc-neutral-soft) 0); /* TODO-token */ }
+.tc-ring::before { content: ""; position: absolute; inset: var(--stroke); border-radius: 50%; background: var(--tc-surface-solid); }
+.tc-ring > * { position: relative; }
+[data-theme="contrast"] .tc-ring { background: conic-gradient(from -90deg, #000 calc(var(--value, 0) * 1%), #e5e5e5 0); }
+
+/* ───────── the companion ─────────
+ * .tc-orb       the living sphere. Colour/cadence from data-state.
+ * .tc-companion the floating glass capsule: orb + title + subtitle + actions. Rim recolours with state.
+ * The companion never "pops up" — it is always present and changes light (see state docs in tokens.css).
+ * Always pair the glow with a text label (aria-live="polite" on the title): light is the signal, not the only one. */
+.tc-orb {
+  --orb-size: 36px;
+  position: relative; flex: none; width: var(--orb-size); height: var(--orb-size); border-radius: 50%;
+  background: var(--tc-state-orb, var(--tc-orb-quiet));
+  box-shadow: var(--tc-state-glow, var(--tc-orb-quiet-glow)), inset 0 1px 1px rgba(255, 255, 255, 0.7);
+  animation: tc-breathe var(--tc-state-cadence, 4.4s) ease-in-out infinite;
+}
+.tc-orb::after { /* halo ripple, only when a state defines one */
+  content: ""; position: absolute; inset: 0; border-radius: 50%;
+  background: var(--tc-state-halo, transparent);
+  animation: tc-ripple 2.2s ease-out infinite; pointer-events: none;
+}
+.tc-orb[data-size="sm"] { --orb-size: 24px; }
+.tc-orb[data-size="lg"] { --orb-size: 56px; }
+
+.tc-companion {
+  display: flex; align-items: center; gap: var(--tc-ref-space-3);
+  padding: 10px var(--tc-ref-space-4) 10px 10px;
+  min-width: 0; max-width: 360px;
+}
+.tc-companion[data-expanded] { flex-wrap: wrap; border-radius: var(--tc-radius-float); padding: var(--tc-ref-space-3); }
+.tc-companion .tc-companion-text { min-width: 0; flex: 1; }
+.tc-companion .tc-companion-title { margin: 0; font-size: var(--tc-text-base); font-weight: 650; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tc-companion .tc-companion-sub { margin: 0; font-size: var(--tc-text-sm); color: var(--tc-state-ink, var(--tc-text-3)); }
+.tc-companion .tc-companion-actions { flex-basis: 100%; display: flex; gap: var(--tc-ref-space-2); }
+.tc-companion .tc-companion-actions > .tc-btn { flex: 1; }
+.tc-companion[data-state="offrecord"] { background-image: repeating-linear-gradient(135deg, rgba(229, 72, 77, 0.1) 0 8px, transparent 8px 16px); }
+
+/* ───────── focus fallback for anything interactive without its own style ───────── */
+.tc-root :where(a, button, [tabindex]):focus-visible { outline: 2px solid var(--tc-focus); outline-offset: 2px; }
+.tc-root a { color: var(--tc-accent-ink); }
+
+/* ───────── motion safety ─────────
+ * Reduced motion removes ambient loops (rim hue, breathing, ripple). State changes still show via colour + label. */
+@media (prefers-reduced-motion: reduce) {
+  .tc-rim::before, .tc-orb, .tc-orb::after, .tc-badge[data-live]::before { animation: none; }
+  .tc-btn, .tc-input, .tc-meter > i { transition: none; }
+}

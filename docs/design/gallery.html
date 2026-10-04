@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="light" data-mode="capture">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tacit design language · gallery</title>
+<link rel="stylesheet" href="./tokens.css">
+<link rel="stylesheet" href="./components.css">
+<style>
+  /* gallery chrome only — everything inside .demo uses the system */
+  html, body { margin: 0; min-height: 100%; }
+  body { padding: 24px; }
+  .wrap { max-width: 1120px; margin: 0 auto; display: grid; gap: 28px; }
+  .bar { position: sticky; top: 12px; z-index: 5; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 10px 14px; }
+  .bar .grp { display: flex; align-items: center; gap: 8px; }
+  section { display: grid; gap: 14px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .row { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .sw { display: grid; gap: 6px; font-size: 12px; }
+  .sw i { display: block; height: 44px; border-radius: 10px; box-shadow: var(--tc-shadow-0); }
+  .sw code { font-family: var(--tc-font-mono); color: var(--tc-text-3); font-size: 11px; }
+  .erp { background: var(--tc-surface-solid); border-radius: var(--tc-radius-card); box-shadow: var(--tc-shadow-2); overflow: hidden; display: grid; grid-template-columns: 150px 1fr; min-height: 300px; position: relative; }
+  .erp nav { background: #16324f; color: #fff; padding: 14px; display: grid; gap: 8px; align-content: start; font-size: 13px; }
+  .erp nav b { font-size: 14px; margin-bottom: 6px; }
+  .erp .pane { padding: 18px; display: grid; gap: 14px; align-content: start; }
+  .erp .pane .cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .erp .companion-slot { position: absolute; right: 18px; bottom: 18px; }
+  [data-theme="dark"] .erp nav { background: #0b1623; }
+</style>
+</head>
+<body class="tc-root">
+<div class="wrap">
+
+  <div class="bar tc-glass tc-rim" role="toolbar" aria-label="Gallery controls">
+    <strong>Tacit design language</strong>
+    <div class="grp"><span class="tc-label">Theme</span>
+      <div class="tc-seg" data-axis="theme">
+        <button aria-pressed="true" data-v="light">Light</button><button aria-pressed="false" data-v="dark">Dark</button><button aria-pressed="false" data-v="contrast">Contrast</button>
+      </div></div>
+    <div class="grp"><span class="tc-label">Task mode</span>
+      <div class="tc-seg" data-axis="mode">
+        <button aria-pressed="true" data-v="capture">Capture</button><button aria-pressed="false" data-v="debrief">Debrief</button><button aria-pressed="false" data-v="teach">Teach</button><button aria-pressed="false" data-v="map">Map</button><button aria-pressed="false" data-v="neutral">Neutral</button>
+      </div></div>
+  </div>
+
+  <section id="states">
+    <div><div class="tc-eyebrow">Glow language</div><h2 class="tc-title">One companion, six states</h2>
+      <p class="tc-body" style="max-width:62ch">State is told by light and always backed by a text label. Mode (task) and theme (look) are independent — switch them above and the companions recolour only where the language says they should.</p></div>
+    <div class="grid" id="companions"></div>
+  </section>
+
+  <section id="compose">
+    <div><div class="tc-eyebrow">Composition</div><h2 class="tc-title">Glass floats over a solid, familiar tool</h2></div>
+    <div class="erp">
+      <nav><b>MB-ERP</b><span>Dashboard</span><span style="background:rgba(255,255,255,.14);border-radius:6px;padding:4px 6px">Expenses &amp; Bills</span><span>Reports</span></nav>
+      <div class="pane">
+        <div class="row" style="justify-content:space-between"><div class="row"><h3 class="tc-heading" style="font-size:22px">Bill INV-4471</h3><span class="tc-badge" data-tone="neutral">OPEN</span></div><span class="tc-heading">€7,850.00</span></div>
+        <div class="cols">
+          <label class="tc-field"><span class="tc-label">Vendor</span><input class="tc-input" value="Müller Werkzeugbau GmbH" readonly></label>
+          <label class="tc-field"><span class="tc-label">Cost center</span><input class="tc-input" value="0400 · Capex"></label>
+          <label class="tc-field"><span class="tc-label">Asset number</span><input class="tc-input" placeholder="A-2026-000"></label>
+        </div>
+        <div class="tc-banner" data-tone="warn"><strong>Fallback:</strong> vision is offline — events come from ERP telemetry (<span class="tc-src" data-src="seen">dom</span>).</div>
+      </div>
+      <div class="companion-slot">
+        <div class="tc-companion tc-float tc-rim" data-state="asking" data-expanded>
+          <div class="tc-orb"></div>
+          <div class="tc-companion-text"><p class="tc-companion-title" aria-live="polite">Why 0400 and not 4711?</p><p class="tc-companion-sub">Asking · about the cost-center field</p></div>
+          <div class="tc-companion-actions"><button class="tc-btn" data-size="sm">Pause</button><button class="tc-btn" data-size="sm" data-variant="danger">Scratch that</button><button class="tc-btn" data-size="sm" data-variant="primary">Done</button></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div><div class="tc-eyebrow">Foundations</div><h2 class="tc-title">Color roles</h2></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))" id="swatches"></div>
+  </section>
+
+  <section>
+    <div><div class="tc-eyebrow">Components</div><h2 class="tc-title">Controls, status &amp; provenance</h2></div>
+    <div class="grid">
+      <div class="tc-card tc-rim"><h3 class="tc-heading">Buttons</h3><div class="tc-divider"></div>
+        <div class="row"><button class="tc-btn" data-variant="primary">Save and post</button><button class="tc-btn">Save draft</button><button class="tc-btn" data-variant="ghost">Cancel</button><button class="tc-btn" data-variant="danger">Scratch that</button><button class="tc-btn" disabled>Disabled</button></div>
+        <div class="row" style="margin-top:10px"><button class="tc-btn" data-size="sm">Small</button><button class="tc-btn" data-size="md">Medium</button><button class="tc-btn" data-size="lg" data-variant="primary">Large</button></div></div>
+      <div class="tc-card"><h3 class="tc-heading">Badges · status</h3><div class="tc-divider"></div>
+        <div class="row"><span class="tc-badge" data-tone="ok" data-dot>Captured</span><span class="tc-badge" data-tone="warn" data-dot data-live>Being captured</span><span class="tc-badge" data-tone="risk" data-dot>Retires in 9 mo</span><span class="tc-badge" data-tone="danger" data-dot>Struck</span><span class="tc-badge" data-tone="info" data-dot>Info</span><span class="tc-badge" data-tone="accent" data-dot>Task accent</span></div></div>
+      <div class="tc-card"><h3 class="tc-heading">Provenance</h3><div class="tc-divider"></div>
+        <div class="row" style="flex-direction:column;align-items:flex-start;gap:8px"><span class="tc-src" data-src="said">Said by the expert</span><span class="tc-src" data-src="seen">Seen on screen</span><span class="tc-src" data-src="inferred">Inferred</span></div>
+        <blockquote class="tc-quote" style="margin-top:12px">“Anything over five thousand is capex — and it only goes in with an asset number.”<cite>Sabine · said · 04:15</cite></blockquote></div>
+      <div class="tc-card"><h3 class="tc-heading">Progress</h3><div class="tc-divider"></div>
+        <div class="row" style="gap:16px"><div class="tc-ring" style="--value:72"><div><b style="font-size:22px">72%</b><div class="tc-meta">explained</div></div></div>
+          <div style="flex:1;min-width:120px;display:grid;gap:10px"><div><div class="tc-meta">Tasks seen · 2 of 3</div><div class="tc-meter" style="--value:66"><i></i></div></div><div><div class="tc-meta">Guardrails · 3 of 3</div><div class="tc-meter" data-tone="ok" style="--value:100"><i></i></div></div><div><div class="tc-meta">Open slots</div><div class="tc-meter" data-tone="risk" style="--value:30"><i></i></div></div></div></div></div>
+      <div class="tc-card"><h3 class="tc-heading">Fields</h3><div class="tc-divider"></div>
+        <div style="display:grid;gap:10px"><label class="tc-field"><span class="tc-label">Purchase order</span><input class="tc-input" value="PO-88213"></label><label class="tc-field"><span class="tc-label">Asset number (invalid)</span><input class="tc-input" aria-invalid="true" value="A-2026-"></label></div></div>
+      <div class="tc-card"><h3 class="tc-heading">List rows</h3><div class="tc-divider" style="margin-top:6px"></div>
+        <div class="tc-row" data-interactive><span class="tc-src" data-src="said">Said</span><span style="flex:1">Equipment &gt; €5,000 → capex</span></div>
+        <div class="tc-row" data-interactive aria-current="true"><span class="tc-src" data-src="seen">Seen</span><span style="flex:1">Posted to 0400 · Capex</span></div>
+        <div class="tc-row" data-interactive><span class="tc-src" data-src="inferred">Inferred</span><span style="flex:1">Needs asset number?</span></div></div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  const root = document.documentElement;
+  const STATES = [
+    ['quiet', 'Quiet', 'Pearl · watching, saying nothing while you type, read or talk.'],
+    ['listening', 'Listening', 'Green · mic open; your words become the reason on the map.'],
+    ['asking', 'Asking', 'Amber · a pause was found; one question about something on screen.'],
+    ['understood', 'Understood', 'Violet · zero open slots and the expert said yes.'],
+    ['offrecord', 'Off the record', 'Red-striped · struck; nothing is sent, still by design.'],
+    ['stepsin', 'Steps in', 'Ember · Teach only: a guardrail is about to be broken.'],
+  ];
+  document.getElementById('companions').innerHTML = STATES.map(([s, t, d]) =>
+    `<div class="tc-card"><div class="tc-companion tc-glass tc-rim" data-state="${s}" style="margin-bottom:12px"><div class="tc-orb" data-state="${s}"></div><div class="tc-companion-text"><p class="tc-companion-title">${t}</p><p class="tc-companion-sub">${s}</p></div></div><p class="tc-small" style="margin:0">${d}</p></div>`).join('');
+  const SW = ['--tc-text','--tc-text-2','--tc-text-3','--tc-accent','--tc-accent-ink','--tc-accent-soft','--tc-ok-ink','--tc-warn-ink','--tc-risk-ink','--tc-danger-ink','--tc-info-ink','--tc-src-said','--tc-src-seen','--tc-src-inferred'];
+  function paintSw() { document.getElementById('swatches').innerHTML = SW.map(v => `<div class="sw"><i style="background:var(${v})"></i><b>${v.replace('--tc-','')}</b><code>${getComputedStyle(root).getPropertyValue(v).trim().slice(0,22)}</code></div>`).join(''); }
+  document.querySelectorAll('.tc-seg[data-axis]').forEach(seg => seg.addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    root.setAttribute('data-' + seg.dataset.axis, b.dataset.v); paintSw();
+  }));
+  const q = new URLSearchParams(location.search);
+  ['theme','mode'].forEach(k => { if (q.get(k)) { root.setAttribute('data-' + k, q.get(k)); document.querySelectorAll(`.tc-seg[data-axis=${k}] button`).forEach(x => x.setAttribute('aria-pressed', x.dataset.v === q.get(k))); } });
+  paintSw();
+</script>
+</body>
+</html>

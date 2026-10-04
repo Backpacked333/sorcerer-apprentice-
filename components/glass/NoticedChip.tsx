@@ -97,7 +97,7 @@ export function NoticedChip({ rect, text, flyTo, id, onDone }: NoticedChipProps)
       }}
     >
       <span aria-hidden style={{ width: 7, height: 7, borderRadius: "50%", flex: "none", background: SWIRL, animation: "tc-spin 2s linear infinite" }} />
-      <span style={{ color: "#8e8e93" }}>Noticed</span>
+      <span style={{ color: "#6e6e73" }}>Noticed</span>
       <span>{text}</span>
     </div>
   );

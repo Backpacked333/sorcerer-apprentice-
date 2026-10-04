@@ -80,7 +80,7 @@ export function MasterySheet({ vm, learner, expert, floating }: { vm: TeachVM; l
 
       {vm.missed.length > 0 || untested.length > 0 ? (
         <div style={{ marginTop: 14, ...rise(vm.card.length + 1) }}>
-          <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".11em", textTransform: "uppercase", color: "#8e8e93", margin: "0 2px" }}>Practice next</p>
+          <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: ".11em", textTransform: "uppercase", color: "#6e6e73", margin: "0 2px" }}>Practice next</p>
           <ul style={{ margin: "6px 0 0", padding: "0 2px", listStyle: "none", fontSize: 13, color: "#6e6e73", display: "flex", flexDirection: "column", gap: 4 }}>
             {vm.missed.map((c) => (
               <li key={c.ruleId}>{c.title}: another case of this kind, with {expert}&apos;s words at hand</li>

@@ -37,7 +37,7 @@ export function KindHeader({ mood, eyebrow, sub, badge, rippleKey }: { mood: Orb
       <div style={{ flex: 1, minWidth: 0 }}>
         <div key={`${eyebrow}|${sub}`} style={{ animation: "tc-rise .55s var(--ease-rise) both" }}>
           <Eyebrow text={eyebrow} mood={mood} />
-          <div style={{ fontSize: 12, color: "#8e8e93", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>
+          <div style={{ fontSize: 12, color: "#6e6e73", marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>
         </div>
       </div>
       {badge ? (
@@ -58,12 +58,12 @@ export function Question({ text }: { text: string }) {
 export function MetaRow({ label, children }: { label: string; children?: ReactNode }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, minHeight: 24, padding: "0 2px" }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: "#8e8e93" }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: "#6e6e73" }}>{label}</span>
       {children}
     </div>
   );
 }
 
 export function Muted({ children }: { children: ReactNode }) {
-  return <span style={{ fontSize: 11.5, color: "#aeaeb2" }}>{children}</span>;
+  return <span style={{ fontSize: 11.5, color: "#6e6e73" }}>{children}</span>;
 }

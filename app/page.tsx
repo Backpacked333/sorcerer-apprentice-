@@ -49,7 +49,7 @@ const glassLink: CSSProperties = {
 const LIFT = "transition-transform duration-200 hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a35f00]";
 
 function Eyebrow({ children }: { children: ReactNode }) {
-  return <p style={{ margin: 0, fontSize: 13, fontWeight: 600, letterSpacing: ".08em", color: "#8e8e93", textTransform: "uppercase" }}>{children}</p>;
+  return <p style={{ margin: 0, fontSize: 13, fontWeight: 600, letterSpacing: ".08em", color: "#6e6e73", textTransform: "uppercase" }}>{children}</p>;
 }
 function H2({ children }: { children: ReactNode }) {
   return <h2 style={{ margin: "10px 0 0", fontSize: "clamp(32px,4.4vw,52px)", lineHeight: 1.05, fontWeight: 700, letterSpacing: "-.035em", textWrap: "balance" }}>{children}</h2>;
@@ -142,7 +142,7 @@ export default async function Home() {
       <section className="relative mx-auto max-w-[1120px] px-6 pt-10 pb-5">
         <p style={{ margin: 0, maxWidth: 820, fontSize: "clamp(20px,2.3vw,28px)", lineHeight: 1.4, fontWeight: 500, letterSpacing: "-.015em", textWrap: "pretty" }}>
           An expert has run accounts payable for twenty-four years. Which invoice to question, which to hold, who to call: none of it is written down, it lives in judgment calls made without a word.{" "}
-          <span style={{ color: "#8e8e93" }}>The expert retires in eighteen months. A new hire started on Monday.</span>
+          <span style={{ color: "#6e6e73" }}>The expert retires in eighteen months. A new hire started on Monday.</span>
         </p>
       </section>
 
@@ -159,7 +159,7 @@ export default async function Home() {
               </div>
               <h3 style={{ margin: 0, fontSize: 19, fontWeight: 600, letterSpacing: "-.015em" }}>{s.title}</h3>
               <p style={{ margin: 0, fontSize: 15, lineHeight: 1.55, color: "#3a3a3c" }}>{s.body}</p>
-              <p style={{ margin: "auto 0 0", fontSize: 13, color: "#8e8e93" }}>{s.foot}</p>
+              <p style={{ margin: "auto 0 0", fontSize: 13, color: "#6e6e73" }}>{s.foot}</p>
             </article>
           ))}
         </div>
@@ -180,7 +180,7 @@ export default async function Home() {
                 <h3 style={{ margin: 0, fontSize: 20, fontWeight: 600, letterSpacing: "-.015em" }}>{t.q}</h3>
                 <p style={{ margin: "4px 0 0", fontSize: 15.5, lineHeight: 1.5, color: "#3a3a3c" }}>{t.line}</p>
               </div>
-              <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: "#8e8e93", alignSelf: "center" }}>Look at: {t.where}.</p>
+              <p style={{ margin: 0, fontSize: 13.5, lineHeight: 1.45, color: "#6e6e73", alignSelf: "center" }}>Look at: {t.where}.</p>
             </li>
           ))}
         </ol>
@@ -238,7 +238,7 @@ export default async function Home() {
         </div>
       </section>
 
-      <footer className="relative mx-auto flex max-w-[1120px] flex-wrap items-center gap-x-6 gap-y-2 px-6 pt-7 pb-10" style={{ borderTop: ".5px solid rgba(0,0,0,.08)", fontSize: 13, color: "#8e8e93" }}>
+      <footer className="relative mx-auto flex max-w-[1120px] flex-wrap items-center gap-x-6 gap-y-2 px-6 pt-7 pb-10" style={{ borderTop: ".5px solid rgba(0,0,0,.08)", fontSize: 13, color: "#6e6e73" }}>
         <span className="flex items-center gap-2" style={{ fontWeight: 600, color: "#1d1d1f" }}><span aria-hidden style={{ width: 10, height: 10, borderRadius: 2.5, background: "#f5a623" }} />Tacit</span>
         <span>Built for the AI Apprentice challenge · Hack-Nation × ElevenLabs</span>
         <a className="ml-auto hover:text-[#a35f00]" style={{ color: "#6e6e73" }} href={REPO}>Repository ↗</a>

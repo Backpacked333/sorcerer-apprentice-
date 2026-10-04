@@ -43,7 +43,7 @@ const PRESSED: Record<GlassButtonVariant, string> = {
 const BASE =
   "relative inline-flex items-center justify-center gap-1.5 whitespace-nowrap select-none cursor-pointer " +
   "active:scale-95 disabled:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed " +
-  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgba(245,166,35,.75)]";
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a35f00]";
 
 const TRANSITION =
   "scale .25s var(--ease-press, cubic-bezier(.3,1.6,.5,1)), translate .25s var(--ease-press, cubic-bezier(.3,1.6,.5,1)), background-color .2s, box-shadow .2s, opacity .2s";

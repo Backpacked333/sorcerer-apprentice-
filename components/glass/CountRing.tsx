@@ -65,7 +65,7 @@ export function CountRing({ value, total, size = 64, label }: CountRingProps) {
       >
         <span style={{ fontSize: Math.round(size * 0.3), fontWeight: 700, letterSpacing: "-.02em", color: "#1d1d1f" }}>{v}</span>
         {" "}
-        <span style={{ fontSize: Math.max(9, Math.round(size * 0.15)), fontWeight: 500, color: "#8e8e93", marginTop: 2 }}>of {safeTotal}</span>
+        <span style={{ fontSize: Math.max(9, Math.round(size * 0.15)), fontWeight: 500, color: "#6e6e73", marginTop: 2 }}>of {safeTotal}</span>
       </div>
     </div>
   );

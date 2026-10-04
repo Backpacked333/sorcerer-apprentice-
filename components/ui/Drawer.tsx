@@ -15,7 +15,7 @@ export function Drawer({ open, onToggle, title, testId, children }: { open: bool
         data-testid={testId}
         aria-expanded={open}
         onClick={onToggle}
-        className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-[20px] px-4 text-left text-[13.5px] font-medium text-[#1d1d1f] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgba(245,166,35,.75)] hover:bg-[rgba(255,255,255,.85)]"
+        className="flex w-full cursor-pointer items-center justify-between gap-3 rounded-[20px] px-4 text-left text-[13.5px] font-medium text-[#1d1d1f] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a35f00] hover:bg-[rgba(255,255,255,.85)]"
         style={{
           minHeight: 40,
           background: open ? "rgba(255,255,255,.8)" : "rgba(255,255,255,.5)",

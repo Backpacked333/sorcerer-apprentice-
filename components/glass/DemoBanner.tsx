@@ -51,7 +51,7 @@ export function DemoBanner({ text = "Demo data — fictional. Nothing here was l
         DEMO MODE
       </span>
       <span>{text}</span>
-      <Link href={href} className="hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgba(245,166,35,.75)]" style={{ color: "#6a55d8", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 4 }}>
+      <Link href={href} className="hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a35f00]" style={{ color: "#6a55d8", fontWeight: 600, whiteSpace: "nowrap", borderRadius: 4 }}>
         Back to the real product →
       </Link>
     </div>

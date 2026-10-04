@@ -22,7 +22,7 @@ export function ReplayRow({ replay, expert, onClose }: { replay: TeachReplay; ex
         animation: "tc-rise .5s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) .1s both",
       }}
     >
-      <p data-testid="teach-replay" style={{ fontSize: 11.5, fontWeight: 600, color: "#8e8e93", margin: "0 2px 8px" }}>
+      <p data-testid="teach-replay" style={{ fontSize: 11.5, fontWeight: 600, color: "#6e6e73", margin: "0 2px 8px" }}>
         {replayCaption(expert, step?.screenMoment.t)}
       </p>
       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
@@ -50,7 +50,7 @@ export function ReplayRow({ replay, expert, onClose }: { replay: TeachReplay; ex
             // eslint-disable-next-line @next/next/no-img-element
             <img src={src} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
           ) : (
-            <span style={{ fontSize: 10.5, color: "#8e8e93" }}>No still</span>
+            <span style={{ fontSize: 10.5, color: "#6e6e73" }}>No still</span>
           )}
         </button>
         <div style={{ minWidth: 0 }}>
@@ -59,7 +59,7 @@ export function ReplayRow({ replay, expert, onClose }: { replay: TeachReplay; ex
           ) : (
             <p style={{ fontSize: 13, color: "#6e6e73", margin: 0 }}>No words recorded for this moment.</p>
           )}
-          <p style={{ fontSize: 11.5, color: "#8e8e93", margin: "3px 0 0" }}>
+          <p style={{ fontSize: 11.5, color: "#6e6e73", margin: "3px 0 0" }}>
             {step ? `What ${expert} did: ${step.title}${change ? ` · ${change}` : ""}` : `${expert}, in their own words`}
           </p>
         </div>
@@ -76,7 +76,7 @@ export function ReplayRow({ replay, expert, onClose }: { replay: TeachReplay; ex
         {replay.audioUrl ? (
           <audio controls autoPlay src={replay.audioUrl} style={{ height: 30, flex: 1, minWidth: 0 }} />
         ) : (
-          <span style={{ fontSize: 11.5, color: "#8e8e93" }}>No recording of this moment — the tutor reads the quote</span>
+          <span style={{ fontSize: 11.5, color: "#6e6e73" }}>No recording of this moment — the tutor reads the quote</span>
         )}
         <GlassButton size={30} onClick={onClose}>Close</GlassButton>
       </div>

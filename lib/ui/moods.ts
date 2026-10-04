@@ -81,7 +81,7 @@ interface Def {
 const DEFS: Record<OrbMood, Def> = {
   quiet: {
     label: "Quiet", base: PEARL, shadow: "0 0 0 .5px rgba(0,0,0,.08),0 4px 12px rgba(80,90,110,.16)", anim: breathe(4.4), swirl: 0.34,
-    ring: "rgba(160,170,200,.7)", colors: PASTEL, rim: 0.5, glow: 0.16, tint: ["rgba(255,190,225,.16)", "rgba(170,215,255,.18)"], inten: 0.6, kindColor: "#8e8e93",
+    ring: "rgba(160,170,200,.7)", colors: PASTEL, rim: 0.5, glow: 0.16, tint: ["rgba(255,190,225,.16)", "rgba(170,215,255,.18)"], inten: 0.6, kindColor: "#6e6e73",
   },
   notice: {
     label: "Noticed", base: PEARL, shadow: "0 0 0 .5px rgba(0,0,0,.06),0 0 16px rgba(170,150,255,.4)", anim: breathe(2.2), swirl: 0.72,
@@ -89,11 +89,11 @@ const DEFS: Record<OrbMood, Def> = {
   },
   typing: {
     label: "Typing", base: DIM, shadow: "0 0 0 .5px rgba(0,0,0,.08),0 2px 8px rgba(80,90,110,.12)", anim: breathe(7), swirl: 0.12,
-    ring: "rgba(160,170,190,.5)", colors: PASTEL, rim: 0.22, glow: 0.05, tint: ["rgba(220,225,235,.1)", "rgba(220,225,235,.1)"], inten: 0.32, kindColor: "#8e8e93", speed: 20,
+    ring: "rgba(160,170,190,.5)", colors: PASTEL, rim: 0.22, glow: 0.05, tint: ["rgba(220,225,235,.1)", "rgba(220,225,235,.1)"], inten: 0.32, kindColor: "#6e6e73", speed: 20,
   },
   reading: {
     label: "Reading", base: DIM, shadow: "0 0 0 .5px rgba(0,0,0,.08),0 2px 8px rgba(80,90,110,.12)", anim: breathe(6), swirl: 0.14,
-    ring: "rgba(160,170,190,.5)", colors: PASTEL, rim: 0.2, glow: 0.05, tint: ["rgba(220,225,235,.1)", "rgba(220,225,235,.1)"], inten: 0.3, kindColor: "#8e8e93", speed: 20,
+    ring: "rgba(160,170,190,.5)", colors: PASTEL, rim: 0.2, glow: 0.05, tint: ["rgba(220,225,235,.1)", "rgba(220,225,235,.1)"], inten: 0.3, kindColor: "#6e6e73", speed: 20,
   },
   holding: {
     label: "Holding", base: PEARL, shadow: "0 0 0 .5px rgba(0,0,0,.08),0 2px 8px rgba(80,90,110,.12)", anim: breathe(5.5), swirl: 0.18,
@@ -107,7 +107,7 @@ const DEFS: Record<OrbMood, Def> = {
   },
   pausing: {
     label: "Pause found", base: PEARL, shadow: "0 0 0 .5px rgba(0,0,0,.06),0 4px 14px rgba(120,130,170,.2)", anim: breathe(3), swirl: 0.5,
-    ring: "rgba(160,170,200,.7)", colors: PASTEL, rim: 0.65, glow: 0.2, tint: ["rgba(200,200,255,.18)", "rgba(255,220,190,.14)"], inten: 0.7, kindColor: "#8e8e93",
+    ring: "rgba(160,170,200,.7)", colors: PASTEL, rim: 0.65, glow: 0.2, tint: ["rgba(200,200,255,.18)", "rgba(255,220,190,.14)"], inten: 0.7, kindColor: "#6e6e73",
   },
   asking: {
     label: "Asking", base: "radial-gradient(circle at 35% 30%,#fffaf0,#ffd98f 52%,#f2a531)", shadow: "0 0 0 .5px rgba(160,100,0,.14),0 0 18px rgba(245,166,35,.42)",

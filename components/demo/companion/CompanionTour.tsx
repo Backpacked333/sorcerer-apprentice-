@@ -131,7 +131,7 @@ export function CompanionTour() {
               className="focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a35f00]"
               style={{
                 height: 28, padding: "0 11px", borderRadius: 14, fontSize: 12.5, fontWeight: i === idx ? 600 : 500, cursor: "pointer",
-                color: i === idx ? "#1d1d1f" : i < idx ? "#3a3a3c" : "#8e8e93",
+                color: i === idx ? "#1d1d1f" : i < idx ? "#3a3a3c" : "#6e6e73",
                 background: i === idx ? "#fff" : "rgba(0,0,0,.04)",
                 boxShadow: i === idx ? `0 1px 3px rgba(0,0,0,.12),0 0 0 1px ${M.ring}` : "none",
                 transition: "background-color .3s, box-shadow .3s, color .3s",

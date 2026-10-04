@@ -40,12 +40,12 @@ export function UnderstoodCard({ kind, text, isQuote, meta }: UnderstoodCardProp
         />
       </svg>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 10.5, fontWeight: 600, color: "#8e8e93" }}>Understood · {kind}</div>
+        <div style={{ fontSize: 10.5, fontWeight: 600, color: "#6e6e73" }}>Understood · {kind}</div>
         <div style={{ fontSize: 13.5, fontWeight: 600, marginTop: 1, color: "#1d1d1f", textWrap: "pretty", overflowWrap: "anywhere" }}>
           {isQuote ? `“${text}”` : text}
         </div>
       </div>
-      {meta ? <span style={{ fontSize: 11, color: "#8e8e93", whiteSpace: "nowrap", flex: "none" }}>{meta}</span> : null}
+      {meta ? <span style={{ fontSize: 11, color: "#6e6e73", whiteSpace: "nowrap", flex: "none" }}>{meta}</span> : null}
     </div>
   );
 }

@@ -11,7 +11,7 @@ import type { CaptureVM } from "@/components/views/capture.vm";
 
 const H3: CSSProperties = { fontSize: 13, fontWeight: 600, color: "#1d1d1f" };
 const SMALL: CSSProperties = { fontSize: 12.5, lineHeight: 1.45, color: "#6e6e73" };
-const MONO: CSSProperties = { font: "11.5px ui-monospace,Menlo,monospace", color: "#8e8e93", fontVariantNumeric: "tabular-nums" };
+const MONO: CSSProperties = { font: "11.5px ui-monospace,Menlo,monospace", color: "#6e6e73", fontVariantNumeric: "tabular-nums" };
 const BLOCK: CSSProperties = { padding: "12px 14px", borderRadius: 18, background: "rgba(255,255,255,.62)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.07), inset 0 1px 0 #fff" };
 
 const RISE = "tc-rise .45s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both";
@@ -78,7 +78,7 @@ export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: bo
               <ul style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 5, fontSize: 12.5 }}>
                 {vm.queued.slice(0, 5).map((c) => (
                   <li key={c.id} style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                    <span style={{ ...MONO, color: c.value >= 0.8 ? "#a35f00" : "#8e8e93" }}>{c.value.toFixed(2)}</span>
+                    <span style={{ ...MONO, color: c.value >= 0.8 ? "#a35f00" : "#6e6e73" }}>{c.value.toFixed(2)}</span>
                     <span style={{ fontSize: 11, fontWeight: 600, color: "#52606d" }}>{c.kind}</span>
                     <span style={{ flex: 1, color: "#3a3a3c" }}>{c.question}</span>
                   </li>
@@ -100,7 +100,7 @@ export function MechanismSheet({ vm, open, floating }: { vm: CaptureVM; open: bo
                       <SourceBadge source={e.source} alsoSeenBy={e.alsoSeenBy} />
                       <span style={{ flex: 1, minWidth: 0, overflowWrap: "anywhere" }}>{e.redacted ? "off the record" : describeEvent(e)}</span>
                       {e.latencyMs != null && <span style={MONO}>{e.latencyMs} ms</span>}
-                      {cand && !e.redacted && <span style={{ ...MONO, color: cand.value >= 0.8 ? "#a35f00" : "#8e8e93" }}>{cand.value.toFixed(2)}</span>}
+                      {cand && !e.redacted && <span style={{ ...MONO, color: cand.value >= 0.8 ? "#a35f00" : "#6e6e73" }}>{cand.value.toFixed(2)}</span>}
                     </li>
                   );
                 })}
@@ -182,7 +182,7 @@ function Preview({ vm, open, masking }: { vm: CaptureVM; open: boolean; masking:
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {open && (
-        <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#8e8e93" }}>
+        <p style={{ fontSize: 11, fontWeight: 600, letterSpacing: ".06em", textTransform: "uppercase", color: "#6e6e73" }}>
           {masking ? "What I see · drag to mask" : showSent ? "What I see · last frame sent, after paint-out" : "What I see"}
         </p>
       )}

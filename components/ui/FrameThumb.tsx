@@ -1,5 +1,5 @@
 export function FrameThumb({ src, t, blurred, region, size = "sm" }: { src?: string; t?: number; blurred?: number; region?: { x: number; y: number; w: number; h: number }; size?: "sm" | "lg" }) {
-  if (!src) return <p className="text-[13px] text-[#8e8e93]">No still kept for this step</p>;
+  if (!src) return <p className="text-[13px] text-[#6e6e73]">No still kept for this step</p>;
   const lg = size === "lg";
   return (
     <figure className={lg ? "frame-lg" : "frame-sm"} style={{ margin: 0, maxWidth: lg ? undefined : 120 }}>
@@ -25,7 +25,7 @@ export function FrameThumb({ src, t, blurred, region, size = "sm" }: { src?: str
           />
         )}
       </div>
-      <figcaption className="mt-1 text-[12px] text-[#8e8e93]">captured still{t != null ? ` · ${t.toFixed(0)} s` : ""}{blurred != null ? ` · ${blurred} regions blurred` : ""}</figcaption>
+      <figcaption className="mt-1 text-[12px] text-[#6e6e73]">captured still{t != null ? ` · ${t.toFixed(0)} s` : ""}{blurred != null ? ` · ${blurred} regions blurred` : ""}</figcaption>
     </figure>
   );
 }

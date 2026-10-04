@@ -47,7 +47,7 @@ export function CompanionHeader(p: {
             <div
               style={{
                 fontSize: eyebrow ? 12 : 12.5,
-                color: eyebrow ? "#8e8e93" : "#6e6e73",
+                color: "#6e6e73",
                 marginTop: 1,
                 lineHeight: 1.35,
                 whiteSpace: "nowrap",

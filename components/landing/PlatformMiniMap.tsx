@@ -55,7 +55,7 @@ export function PlatformMiniMap({ data }: { data: MiniMapData }) {
           );
         })}
       </div>
-      <span style={{ position: "absolute", left: 14, bottom: 12, fontSize: 11.5, color: "#8e8e93" }}>From the confirmed sample session · roles the expert said to ask</span>
+      <span style={{ position: "absolute", left: 14, bottom: 12, fontSize: 11.5, color: "#6e6e73" }}>From the confirmed sample session · roles the expert said to ask</span>
     </div>
   );
 }

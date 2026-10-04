@@ -31,8 +31,8 @@ import {
 } from "@/lib/ui/capture-copy";
 import { ripplesOnEnter, type OrbMood } from "@/lib/ui/moods";
 
-const META: CSSProperties = { fontSize: 11, fontWeight: 600, color: "#8e8e93" };
-const MUTED: CSSProperties = { fontSize: 11.5, color: "#aeaeb2" };
+const META: CSSProperties = { fontSize: 11, fontWeight: 600, color: "#6e6e73" };
+const MUTED: CSSProperties = { fontSize: 11.5, color: "#6e6e73" };
 const NOTE: CSSProperties = { fontSize: 12.5, lineHeight: 1.45, color: "#6e6e73" };
 
 function useRipple(mood: OrbMood): number {
@@ -162,6 +162,7 @@ function PrestartFooter({ vm, layout }: { vm: CaptureVM; layout: "workspace" | "
 function Chips({ vm }: { vm: CaptureVM }) {
   const app = vm.app ?? captureApp("erp");
   const items = healthItems({
+    source: vm.source,
     started: vm.started,
     app,
     voice: vm.voice,
@@ -229,7 +230,7 @@ function AskHeader({ vm, card, ripple }: { vm: CaptureVM; card: CardState; rippl
         <div key={`e|${eyebrow}`} style={{ animation: "tc-rise .55s var(--ease-rise, cubic-bezier(.2,.9,.3,1)) both" }}>
           <Eyebrow text={eyebrow} mood={card.mood} />
         </div>
-        {sub && <div style={{ fontSize: 12, color: "#8e8e93", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
+        {sub && <div style={{ fontSize: 12, color: "#6e6e73", marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
       </div>
       <SessionClock startedAt={vm.startedAt ?? null} frozen={vm.holding} />
     </div>
@@ -243,7 +244,8 @@ function AskBody({ vm, card }: { vm: CaptureVM; card: CardState }) {
   const question = w?.question ?? last?.question ?? "";
   const answering = w?.phase === "answering";
   const answer = w ? w.answerText ?? "" : last?.answerText ?? "";
-  const listening = answering && !vm.holding;
+  // Bars move only while something is actually transcribing into an open mic window.
+  const listening = answering && !vm.holding && vm.sttEngine !== "none";
   // After the answer: the understood card carries the literal answer itself, so the bubble is not repeated.
   const showBubble = w ? answering || !!answer : card.understoodLinger && !!last?.answerText && !last.isQuote;
   const highlight = card.understoodLinger && last && !last.isQuote && last.text && answer.includes(last.text) ? last.text : undefined;
@@ -272,9 +274,19 @@ function AskBody({ vm, card }: { vm: CaptureVM; card: CardState }) {
   );
 }
 
+const SR_ONLY: CSSProperties = { position: "absolute", width: 1, height: 1, margin: -1, padding: 0, overflow: "hidden", clip: "rect(0 0 0 0)", whiteSpace: "nowrap", border: 0 };
+
 function RunningFooter({ vm, card, mechOpen, onToggleMech }: { vm: CaptureVM; card: CardState; mechOpen: boolean; onToggleMech(): void }) {
   const ask = card.mode === "ask";
   const w = vm.openWindow;
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Announced politely; sits after every smoke-selected control in DOM order, so it can never steal a text match.
+  const announce = w ? w.question : card.struck ? card.title : card.understoodLinger ? "Understood. Saved with your own words." : "";
+  const pause = (
+    <GlassButton size={34} style={{ flex: 1 }} data-testid="capture-pause" pressed={vm.holding} onClick={() => vm.setHolding(!vm.holding)}>
+      {vm.holding ? "Resume" : "Pause"}
+    </GlassButton>
+  );
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {ask && (
@@ -283,18 +295,27 @@ function RunningFooter({ vm, card, mechOpen, onToggleMech }: { vm: CaptureVM; ca
         </p>
       )}
       <div style={{ display: "flex", gap: 6 }}>
-        {ask ? (
+        {ask && (
           <GlassButton size={34} style={{ flex: 1 }} data-testid="capture-not-now" onClick={vm.notNow} disabled={!w}>Not now</GlassButton>
-        ) : (
-          <GlassButton size={34} style={{ flex: 1 }} data-testid="capture-pause" pressed={vm.holding} onClick={() => vm.setHolding(!vm.holding)}>
-            {vm.holding ? "Resume" : "Pause"}
-          </GlassButton>
         )}
+        {pause}
         <GlassButton variant="danger" size={34} style={{ flex: 1.25 }} data-testid="capture-strike" onClick={() => vm.strike()}>Scratch that</GlassButton>
       </div>
-      <GlassButton variant="amber" size={40} style={{ width: "100%" }} data-testid="capture-done" disabled={!!vm.ending} loading={!!vm.ending} onClick={() => void vm.endTask()}>
+      <GlassButton
+        variant="amber"
+        size={40}
+        style={{ width: "100%" }}
+        data-testid="capture-done"
+        disabled={!!vm.ending}
+        loading={!!vm.ending}
+        onClick={() => {
+          setSaveError(null);
+          vm.endTask().catch(() => setSaveError("Could not save; try again"));
+        }}
+      >
         Done · start the debrief
       </GlassButton>
+      {saveError && <p role="alert" style={{ fontSize: 12, color: "#8a5200", textAlign: "center", padding: "0 2px" }}>{saveError}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px" }}>
         <button
           type="button"
@@ -309,6 +330,7 @@ function RunningFooter({ vm, card, mechOpen, onToggleMech }: { vm: CaptureVM; ca
           seen {vm.ledger.framesSeen} · kept {vm.ledger.framesKept} · struck {Number(vm.ledger.secondsStruck).toFixed(0)} s
         </span>
       </div>
+      <div aria-live="polite" style={SR_ONLY}>{announce}</div>
     </div>
   );
 }

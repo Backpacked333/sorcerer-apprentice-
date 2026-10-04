@@ -29,7 +29,7 @@ export function Stepper({ current, sessionId, confirmed }: { current: 1 | 2 | 3;
                 lineHeight: 1,
                 borderRadius: 9,
                 background: isCurrent ? "linear-gradient(180deg,#ffc552,#f5a623)" : state === "done" ? "rgba(34,180,94,.16)" : "rgba(0,0,0,.06)",
-                color: isCurrent ? "#1d1300" : state === "done" ? "#1b8a4b" : "#8e8e93",
+                color: isCurrent ? "#1d1300" : state === "done" ? "#1b8a4b" : "#6e6e73",
               }}
             >
               {s.n}

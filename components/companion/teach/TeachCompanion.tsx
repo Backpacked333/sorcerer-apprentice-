@@ -41,7 +41,7 @@ export function useTeachCardState(vm: TeachVM): TeachCardState {
   return { mood, active };
 }
 
-const small = { fontSize: 12, color: "#8e8e93", margin: 0 } as const;
+const small = { fontSize: 12, color: "#6e6e73", margin: 0 } as const;
 
 /**
  * The replay belongs to the moment it was opened for. Once the new hire moves to another invoice, or a newer
@@ -61,6 +61,7 @@ function useReplayVisible(vm: TeachVM): { visible: boolean; restore: () => void 
 export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm: TeachVM; presenter: boolean; panel: boolean; workspace: boolean; state: TeachCardState }) {
   const [mech, setMech] = useState(false);
   const replay = useReplayVisible(vm);
+  const [endError, setEndError] = useState<string | null>(null);
   useEffect(() => {
     if (presenter) setMech(true);
   }, [presenter]);
@@ -158,24 +159,28 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
       header={head}
       footer={
         vm.ended ? null : (
-          <div style={{ display: "flex", gap: 6 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             {vm.reopenReplay || (vm.replay && !replay.visible) ? (
-              <GlassButton size={34} style={{ flex: 1 }} onClick={vm.replay ? replay.restore : vm.reopenReplay}>
+              <GlassButton size={30} variant="ghost" style={{ alignSelf: "flex-start" }} onClick={vm.replay ? replay.restore : vm.reopenReplay}>
                 Show the moment again
               </GlassButton>
             ) : null}
-            <GlassButton variant="amber" size={34} style={{ flex: 1.6 }} data-testid="teach-end" onClick={() => void vm.endSession()}>
+            <GlassButton variant="amber" size={34} style={{ width: "100%" }} data-testid="teach-end" onClick={() => { setEndError(null); vm.endSession().catch(() => setEndError("Could not save; try again")); }}>
               End session · show the mastery card
             </GlassButton>
+            {endError ? <p role="alert" style={{ fontSize: 12, color: "#8a5200", textAlign: "center", margin: 0 }}>{endError}</p> : null}
           </div>
         )
       }
     >
+      {/* Stable polite live region (display:contents, no extra gap): the tutor's line, an intervention or
+          "Not posted" is announced as it replaces the previous one. */}
+      <div aria-live="polite" style={{ display: "contents" }}>
       {shown && line ? (
         <div key={`d${vm.decisions.length}`} style={{ display: "flex", flexDirection: "column", gap: 8, padding: "0 2px" }}>
           {context ? <p style={{ ...small, animation: "tc-rise .5s var(--ease-rise) both" }}>{context}</p> : null}
           <p style={{ fontSize: 18, lineHeight: 1.32, fontWeight: 600, letterSpacing: "-.012em", margin: 0, textWrap: "pretty", animation: "tc-rise .6s var(--ease-rise) .1s both" }}>{line.message}</p>
-          {line.quote && !replay.visible ? (
+          {line.quote && !replay.visible && !line.message.includes(line.quote) ? (
             <div style={{ padding: "10px 12px", borderRadius: 16, background: "rgba(255,255,255,.55)", boxShadow: "inset 0 0 0 .5px rgba(0,0,0,.06)", animation: "tc-rise .55s var(--ease-rise) .2s both" }}>
               <p style={{ fontSize: 14, lineHeight: 1.4, fontWeight: 500, margin: 0 }}>“{line.quote}”</p>
               <p style={{ ...small, fontSize: 11.5, marginTop: 3 }}>{expert}, in their own words</p>
@@ -186,6 +191,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
           {kind === "predict" ? <p style={{ fontSize: 12.5, color: "#6e6e73", margin: 0 }}>Say what {expert} would do, and why.</p> : null}
         </div>
       ) : null}
+      </div>
 
       {replay.visible && vm.replay ? <ReplayRow replay={vm.replay} expert={expert} onClose={vm.closeReplay} /> : null}
 
@@ -197,8 +203,8 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
         <Pill tone={vm.phase === "independent" ? "blue" : "amber"} dot>
           {phaseLabel(vm.phase)}
         </Pill>
-        <span style={{ fontSize: 11, fontWeight: 600, color: "#8e8e93", marginLeft: 2 }}>{learner}</span>
-        {chips.length ? chips.map((c) => <LearnedChip key={`${c.id}|${c.text}`} kind={c.kind} text={c.text} />) : <span style={{ fontSize: 11.5, color: "#aeaeb2" }}>{expert}&apos;s {map.rules.length} rules loaded</span>}
+        <span style={{ fontSize: 11, fontWeight: 600, color: "#6e6e73", marginLeft: 2 }}>{learner}</span>
+        {chips.length ? chips.map((c) => <LearnedChip key={`${c.id}|${c.text}`} kind={c.kind} text={c.text} />) : <span style={{ fontSize: 11.5, color: "#6e6e73" }}>{expert}&apos;s {map.rules.length} rules loaded</span>}
       </div>
 
       {earlier.length > 0 ? (
@@ -210,7 +216,7 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
               .reverse()
               .map((d, i) => (
                 <li key={`${d.t}-${i}`} style={{ fontSize: 12.5, lineHeight: 1.4, color: "#3a3a3c" }}>
-                  <span style={{ fontWeight: 600, color: "#8e8e93" }}>{tutorLine(d).word} · </span>
+                  <span style={{ fontWeight: 600, color: "#6e6e73" }}>{tutorLine(d).word} · </span>
                   {d.message}
                 </li>
               ))}
@@ -239,10 +245,10 @@ export function TeachCompanion({ vm, presenter, panel, workspace, state }: { vm:
         </Drawer>
       ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "0 2px" }}>
-          <button type="button" onClick={() => setMech(true)} style={{ fontSize: 11.5, color: "#8e8e93", padding: 0, background: "none", border: 0, cursor: "pointer" }}>
+          <button type="button" onClick={() => setMech(true)} style={{ fontSize: 11.5, color: "#6e6e73", padding: 0, background: "none", border: 0, cursor: "pointer" }}>
             Show the mechanism
           </button>
-          <span style={{ marginLeft: "auto", fontSize: 10.5, color: "#aeaeb2" }}>speaks only when {expert} would</span>
+          <span style={{ marginLeft: "auto", fontSize: 10.5, color: "#6e6e73" }}>speaks only when {expert} would</span>
         </div>
       )}
     </CompanionCard>
@@ -266,7 +272,7 @@ function Head({ mood, eyebrow, title, sub, right, testId, rippleKey }: { mood: O
             </div>
           ) : null}
           {sub ? (
-            <div title={sub} style={{ fontSize: 12, color: title ? "#6e6e73" : "#8e8e93", marginTop: 1, lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+            <div title={sub} style={{ fontSize: 12, color: title ? "#6e6e73" : "#6e6e73", marginTop: 1, lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {sub}
             </div>
           ) : null}

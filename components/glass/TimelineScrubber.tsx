@@ -150,7 +150,7 @@ export function TimelineScrubber({ range, t, onT, beads, ticks, today, playing, 
           disabled={!canPlay}
           aria-pressed={playing}
           title={canPlay ? undefined : "Needs at least two sessions at different times"}
-          className="flex-none select-none cursor-pointer active:scale-[.94] disabled:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[rgba(245,166,35,.75)]"
+          className="flex-none select-none cursor-pointer active:scale-[.94] disabled:active:scale-100 disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#a35f00]"
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -186,7 +186,7 @@ export function TimelineScrubber({ range, t, onT, beads, ticks, today, playing, 
           </span>
         ) : null}
         {counts ? (
-          <span style={{ marginLeft: "auto", fontSize: 12, color: "#8e8e93", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", paddingLeft: 8 }}>{counts}</span>
+          <span style={{ marginLeft: "auto", fontSize: 12, color: "#6e6e73", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", paddingLeft: 8 }}>{counts}</span>
         ) : null}
       </div>
 
@@ -265,7 +265,7 @@ export function TimelineScrubber({ range, t, onT, beads, ticks, today, playing, 
           );
         })}
         {ticks.map((k) => (
-          <span key={`${k.at}-${k.label}`} aria-hidden style={{ position: "absolute", left: pos(k.at), top: 28, fontSize: 11, color: "#8e8e93", whiteSpace: "nowrap", pointerEvents: "none" }}>
+          <span key={`${k.at}-${k.label}`} aria-hidden style={{ position: "absolute", left: pos(k.at), top: 28, fontSize: 11, color: "#6e6e73", whiteSpace: "nowrap", pointerEvents: "none" }}>
             {k.label}
           </span>
         ))}

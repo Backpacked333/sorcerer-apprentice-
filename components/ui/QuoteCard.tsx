@@ -9,12 +9,12 @@ export function QuoteCard({ text, speaker, source, t, audioSrc, translation, evi
     >
       <span aria-hidden style={{ position: "absolute", left: 0, top: 10, bottom: 10, width: 2.5, borderRadius: 2, background: "linear-gradient(180deg,#ffd27a,#f5a623)" }} />
       <p className="text-[15px] font-medium leading-[1.45] text-[#1d1d1f]">“{text}”</p>
-      <p className="mt-1 text-[12px] text-[#8e8e93]">
+      <p className="mt-1 text-[12px] text-[#6e6e73]">
         {speaker}
         {source ? ` · ${source}` : ""}
         {t != null ? ` · ${t.toFixed(0)} s` : ""}
       </p>
-      {translation && <p className="mt-0.5 text-[12px] text-[#8e8e93]">{translation}</p>}
+      {translation && <p className="mt-0.5 text-[12px] text-[#6e6e73]">{translation}</p>}
       {evidence && <span className="mt-1.5 inline-block"><Tag>{evidence}</Tag></span>}
       {audioSrc && <audio className="mt-2 w-full" controls src={audioSrc} />}
     </blockquote>

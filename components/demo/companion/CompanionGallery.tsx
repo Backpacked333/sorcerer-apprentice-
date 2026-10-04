@@ -35,7 +35,7 @@ export function CompanionGallery() {
           {MOOD_GALLERY.map((g) => (
             <li key={g.mood} className="flex flex-col gap-3">
               <div>
-                <div style={{ fontSize: 14, fontWeight: 600 }}>{g.name} <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "#8e8e93" }}>· {g.mood}</span></div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{g.name} <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, fontWeight: 500, color: "#6e6e73" }}>· {g.mood}</span></div>
                 <div style={{ fontSize: 13, color: "#6e6e73", marginTop: 2 }}>{g.when}</div>
               </div>
               <CompanionCard
@@ -135,7 +135,7 @@ export function CompanionGallery() {
               <div style={{ fontSize: 15, lineHeight: 1.55 }}>
                 {LAYOUTS.teachback.sentences.map((s) => <span key={s}>{s} </span>)}
               </div>
-              <div style={{ fontSize: 11.5, color: "#8e8e93" }}>{LAYOUTS.teachback.meta}</div>
+              <div style={{ fontSize: 11.5, color: "#6e6e73" }}>{LAYOUTS.teachback.meta}</div>
             </CompanionCard>
           </Labeled>
 

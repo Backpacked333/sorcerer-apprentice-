@@ -11,7 +11,7 @@ export function SessionList({ sessions }: { sessions: { id: string; expertName: 
     <ul className="overflow-hidden p-1.5" style={CARD}>
       {sessions.map((s, i) => (
         <li key={s.id} className="flex flex-wrap items-center gap-3 px-3 py-3 text-[14px]" style={{ borderTop: i === 0 ? "none" : ".5px solid rgba(0,0,0,.08)" }}>
-          <time className="font-mono text-[12.5px] tabular-nums text-[#8e8e93]">{new Date(s.startedAt).toLocaleString()}</time>
+          <time className="font-mono text-[12.5px] tabular-nums text-[#6e6e73]">{new Date(s.startedAt).toLocaleString()}</time>
           <span className="min-w-0 flex-1 text-[#1d1d1f]">{s.expertName} · {s.task}</span>
           {s.id.startsWith("demo_") && <Tag>sample</Tag>}
           <Link

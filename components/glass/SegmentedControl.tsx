@@ -95,7 +95,7 @@ export function SegmentedControl({ options, value, onChange, ariaLabel }: Segmen
             aria-checked={active}
             tabIndex={active ? 0 : -1}
             onClick={() => onChange(o.value)}
-            className="focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[rgba(245,166,35,.75)]"
+            className="focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-[#a35f00]"
             style={{
               position: "relative",
               zIndex: 1,

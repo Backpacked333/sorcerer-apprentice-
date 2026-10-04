@@ -21,7 +21,7 @@ export function SessionClock(p: { startedAt: number | null; frozen?: boolean }) 
       aria-label={startedAt == null ? "Session not started" : `Session time ${text}`}
       style={{
         font: "11.5px ui-monospace,Menlo,monospace",
-        color: "#8e8e93",
+        color: "#6e6e73",
         fontVariantNumeric: "tabular-nums",
         flex: "none",
         whiteSpace: "nowrap",

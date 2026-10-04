@@ -37,7 +37,7 @@ const LIFT = "transition-transform duration-200 hover:-translate-y-px focus-visi
 function Panel({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="glass-panel flex flex-col gap-3 p-5" style={{ borderRadius: 24 }}>
-      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "#8e8e93" }}>{title}</p>
+      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: ".1em", textTransform: "uppercase", color: "#6e6e73" }}>{title}</p>
       {children}
     </section>
   );

@@ -11,7 +11,7 @@ import { RoleInspector } from "./RoleInspector";
 import { SidebarToggle, useShell } from "./PlatformShell";
 import { SuggestCard } from "./SuggestCard";
 import { fitBox, useCamera, type Box } from "./useCamera";
-import { AVATAR, EDGE_GRAD, hexA, initials, PROV, stepIndex } from "./meta";
+import { AVATAR, EDGE_GRAD, edgeStroke, hexA, initials, PROV, stepIndex } from "./meta";
 import { CANVAS_CSS } from "./meta";
 
 type Lens = "knowledge" | "risk" | "handoffs";
@@ -287,7 +287,7 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
         <linearGradient id={`covg${uid}`} x1="0" y1="0" x2="1" y2="1">
           {["#ffb8d9", "#ffd27a", "#9be7c4", "#8fd3ff", "#b7a6ff"].map((c, j) => <stop key={c} offset={j / 4} stopColor={c} />)}
         </linearGradient>
-        {geo.map((g) => g.e.prov === "said" || g.e.prov === "teachback" ? (
+        {geo.map((g) => edgeStroke(g.e.prov).gradient ? (
           <linearGradient key={g.e.id} id={`lg${uid}${g.i}`} gradientUnits="userSpaceOnUse" x1={g.p0.x} y1={g.p0.y} x2={g.p1.x} y2={g.p1.y}>
             {EDGE_GRAD.map((c, j) => <stop key={c} offset={j / 4} stopColor={c} />)}
           </linearGradient>
@@ -297,9 +297,10 @@ export function CompanyMapCanvas({ data, initialRoleId }: { data: PlatformData; 
         const vis = g.e.at <= tk;
         if (!vis) return null;
         const on = !sel || g.e.from === sel || g.e.to === sel;
-        const grad = g.e.prov === "said" || g.e.prov === "teachback";
-        const col = grad ? `url(#lg${uid}${g.i})` : PROV[g.e.prov].color;
-        const dash = g.e.prov === "inferred" ? "6 7" : g.e.prov === "mapped" ? "2 6" : g.e.prov === "described" ? "5 5" : null;
+        const s = edgeStroke(g.e.prov);
+        const grad = s.gradient;
+        const col = grad ? `url(#lg${uid}${g.i})` : s.color;
+        const dash = s.dash;
         const w = ((grad ? 2 : 1.5) + g.e.ruleIds.length * 0.9 + (lens === "handoffs" ? 1 : 0)) * ss;
         return (
           <g key={g.e.id} style={{ opacity: on ? 1 : 0.18, transition: "opacity .5s" }}>

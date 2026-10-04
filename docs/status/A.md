@@ -7,6 +7,7 @@
 
 ### Done and merged (WP ids)
 
+- WA-9 tone polish (pending this PR): grounded status, approval-route, and cost-center candidates now use short coworker language while retaining the exact invoice and material values; hold-to-active follows the existing status-candidate path, unknown fields are humanized, and retro questions name the invoice once. Existing candidate scores/order and governor timing are unchanged. Automated evidence: `lib/curiosity.tone.test.ts`; post-rebase typecheck and 465 passed / 1 skipped tests; isolated keyless production smoke passed Capture, Map, confirmation, tutor, independent guard, and page-error checks at 11:03 PM ET.
 - WA-1 recovery hardening: restored a fully local dependency tree after macOS offloaded 23,677 package files, then added bounded ElevenAgents WebRTC auto-reconnect with a 10-second stability reset, suppressed stale tagged speech during recovery, no duplicate greeting, preserved app-clock/session metadata, and browser fallback only after recovery is exhausted (this PR).
 - WA-1: generic prompts/tools, idempotent provisioning/check script, awaited connection/fallback contract, debug tap, and keyed/keyless `/voice-check` diagnostics (PRs #2, #3, #7).
 - WA-2: client-side ElevenLabs output gate, idle heartbeat, persistent late-speech squelch, and soak counters (PR #22).
@@ -22,6 +23,7 @@
 
 ### Not verified yet (and the script to verify)
 
+- HT-5 WA-9 tone follow-up — 2 minutes: open `http://localhost:3000/capture?share=0` beside the expert ERP; start Capture, open INV-4474, take it from hold to active, then stop typing and pause. Require one grounded question about INV-4474 that says “took … off hold” or an equally natural coworker phrase; it must not say “changed status from hold to active.” Repeat once by sending an invoice for second approval or changing its cost center; require the exact invoice and any material code/number to remain audible. Report the exact sentence heard; this remains NEEDS-HUMAN because phrasing quality is auditory.
 - HT-1 male ElevenLabs recovery — 2 minutes: hard-refresh `http://localhost:3000/voice-check?role=interviewer`; click **Request / refresh microphone**, allow access, then click **Connect**. Require `Mode: agent`, `Status: connected`, and a `conv_…` conversation id. Click **Send [ASK] sample** once; require the male ElevenLabs interviewer to say the sample exactly once and the mode to remain `agent` (never `fallback: browser speech`). If `reconnect_scheduled` appears in Raw events, require `reconnect_attempt` followed by a new `connect` and then repeat **Send [ASK] sample** once. Report the first row or audible result that differs.
 - HT-1 real round trip — 2 minutes: open `http://localhost:3000/voice-check?role=interviewer`; confirm agent id and Scribe token rows are green; allow the mic; click **Connect** and require connected/id/no sound; click **Send [ASK] sample** and require one sentence with 9001, 1000, 2000; click **Open mic**, say “Because that item belongs to the other department, testing one two three,” then require live partials, one exact Scribe commit, `tool log_answer stepRef=9001:code`, and a four-word-or-shorter acknowledgement. Report the first missing line.
 - HT-2 structural silence — the checkpoint explicitly requires 3 minutes, so no honest 2-minute script can verify it: on `/voice-check?role=interviewer`, connect with gate **CLOSED**, click **Silence soak**; spend 60 seconds silent, 60 seconds typing elsewhere, and 60 seconds reading aloud; require no audible agent speech, automated PASS, `audible unsolicited: 0`, no disconnect, and heartbeat delta at least 15. Record gated utterances separately.
@@ -51,6 +53,7 @@
 
 ### Risks I see for the demo
 
+- WA-9’s generated text is deterministic and green, but the ElevenLabs agent may still paraphrase `phrase=natural`; the exact spoken sentence and perceived tone remain human-only HT-5/HT-11 checks.
 - Automated recovery is green, but the actual male voice and WebRTC reconnect remain human-audibility checks; do not mark the hotfix live-verified until HT-1 above passes.
 - M1 is missed: real ElevenAgents + real Scribe + real vision + real compile have not completed one end-to-end session.
 - P-12 is implemented and automatically verified, but keyed speech timing, audibility, echo behavior, and microphone coexistence still require the human HT-1/HT-3/HT-4 runs before they can be called live-verified.

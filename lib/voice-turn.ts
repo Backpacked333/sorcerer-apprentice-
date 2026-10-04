@@ -29,6 +29,7 @@ export interface TurnOptions {
   recordClip?: { sessionId: string };
   abortOnHumanSpeech?: boolean;
   watchdogSecs?: number;
+  fallbackOnTimeout?: boolean;
   silenceCloseSecs?: number;
   ackMaxSecs?: number;
   onPhase?: (phase: TurnPhase, at: number) => void;
@@ -488,6 +489,7 @@ export function reduce(state: TurnState, event: TurnEvent): TurnTransition {
   if (state.phase === "waiting_for_speech") {
     const watchdogSecs = state.options?.watchdogSecs ?? 4;
     if (event.at - (state.sentAt ?? event.at) + EPSILON >= watchdogSecs) {
+      if (state.options?.fallbackOnTimeout === false) return immediateAbort(state, event.at, "silent");
       return {
         state: {
           ...state,

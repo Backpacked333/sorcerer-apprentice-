@@ -1070,8 +1070,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, [nowTurn, turnState.phase]);
 
   const turn = useCallback<VoiceApi["turn"]>((opts) => {
-    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, opts);
-  }, []);
+    return startTaggedTurn(authorization.current!, turnAdapterRef.current!, {
+      ...opts,
+      watchdogSecs: opts.watchdogSecs ?? 8,
+      fallbackOnTimeout: configuredMode === "fallback",
+    });
+  }, [configuredMode]);
   const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
   const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => turnAdapterRef.current!.submitTyped(text), []);
   const setSessionStart = useCallback((epochMs: number) => {

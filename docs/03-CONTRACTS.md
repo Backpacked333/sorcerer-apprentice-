@@ -188,6 +188,7 @@ type TurnPhase = "idle"|"sending"|"waiting_for_speech"|"speaking"|"listening"|"c
 interface TurnOptions {
   tag: string; text: string; spoken?: string; listen?: boolean; timeoutSecs?: number; maxSecs?: number;
   recordClip?: { sessionId: string }; abortOnHumanSpeech?: boolean; watchdogSecs?: number;
+  fallbackOnTimeout?: boolean;
   silenceCloseSecs?: number; ackMaxSecs?: number; onPhase?: (phase: TurnPhase, at: number) => void;
 }
 interface TurnResult {
@@ -239,6 +240,8 @@ Application-injected messages (`[TAG] …`) are **application control, never exp
 | `end_session` | tutor | — | `TeachClient` (C) | outcome card |
 
 Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `tools.current[name]`. A new tool = A adds it to `tools.json` + `TOOL_NAMES` + re-runs `npm run agents:create`; the consuming lane writes the handler.
+
+**Voice timeout quality:** `VoiceApi.turn()` allows eight seconds for agent speech by default (an explicit `watchdogSecs` still wins). Configured-agent turns force `fallbackOnTimeout: false`: missing speech resolves `via: "aborted", abortReason: "silent", spoke: false`, squelches late audio, and preserves the connection for the next explicitly authorized turn. A silent response is not a transport failure and must not replace V4 with browser speech. The standalone reducer retains its prior fallback default for compatibility; keyless and explicitly labeled connection-failure fallback remain available.
 
 **The verbatim rule:** the page records the expert's words from **Scribe** (what was actually said), not from the tool's `reason` param (which the LLM may reword). `reason` is only a fallback when Scribe heard nothing.
 

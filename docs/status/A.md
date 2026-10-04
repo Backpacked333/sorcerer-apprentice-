@@ -1,3 +1,10 @@
+## Oct 4 · Voice-quality timeout correction [M1-M3, S1]
+
+- Live diagnostic reproduction: both roles disconnected themselves after roughly four seconds without detected speech and invoked browser TTS. `FALLBACK_SPEAK` called `endSession()`, so the SDK's `user` disconnect reason did not mean a human clicked Disconnect. Subsequent tutor turns remained on browser speech. Audible fallback quality was not human-verified.
+- Configured-agent turns now wait eight seconds by default and resolve silent on timeout without requesting browser speech or terminating the healthy agent. Keyless and labeled connection-failure fallback are unchanged. New regression coverage checks delayed real speech, honest timeout/late-audio squelching, recovery on the next turn, and keyless speech.
+- Both tested sessions negotiated PCM/Opus at 48 kHz; the saved 16 kHz setting is not proof of the browser transport rate. Remote TTS usage reported `eleven_v4_turbo`. No voice/model/provider settings changed.
+- Human listening remains required. Tutor greeting/authorization overlap and duplicated responses were observed in diagnostics but are separate, unresolved investigations, not claimed as the cause of Roy's original complaint.
+
 ## Oct 4 · V4 Turbo release correction [S1]
 
 Both remote agents were updated and read back with `ttsModel: eleven_v4_turbo`, `expressiveMode: true`, `llm: gemini-2.5-flash`, matching prompt hashes, `recordVoice: false`, and seven-day retention. Their IDs are configured in Vercel production. The source now enforces the V4 wire model despite SDK 2.70's stale enum and rejects a different saved model on provisioning or `--check`. Initial local verification: typecheck and 223 tests passed. Human audio/timing and browser acceptance remain unverified.

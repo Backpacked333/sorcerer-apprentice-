@@ -84,6 +84,7 @@ export function observe(e: ScreenEvent, ctx: CuriosityContext) {
 const money = (n: number) => "€" + Math.round(n).toLocaleString("en-IE");
 
 export function templates(e: ScreenEvent): Partial<Record<CandidateKind, string>> {
+  if (e.subject?.type === "claim" && !e.invoice) return claimTemplates(e);
   const inv = e.invoice ? `invoice ${e.invoice}` : "that invoice";
   const field = labelField(e.field);
   const amount = e.state?.amount;
@@ -121,6 +122,38 @@ export function templates(e: ScreenEvent): Partial<Record<CandidateKind, string>
   }
 }
 
+/** Claims workbench events (vision-only, `subject.type === "claim"`, never an invoice): neutral claim wording. */
+function claimTemplates(e: ScreenEvent): Partial<Record<CandidateKind, string>> {
+  const claim = e.subject?.id ? `claim ${e.subject.id}` : "that claim";
+  const field = labelField(e.field);
+  const to = e.to ?? "";
+  switch (e.kind) {
+    case "field_changed":
+      return {
+        why: `You changed the ${field} on ${claim} from ${e.from ?? "empty"} to ${to}. What made you do that?`,
+        counterfactual: `What would have to be different on ${claim} for you to leave the ${field} on ${e.from ?? "empty"}?`,
+        limit: `Is there a kind of claim where you would handle the ${field} differently?`,
+        stop: `When would you stop at this step on ${claim} and check with someone instead?`,
+      };
+    case "status_changed":
+      return {
+        why: `You set ${claim} to ${to}. What made you do that?`,
+        limit: `Is that for every claim like this, or only this one?`,
+        who: `Who decides what happens next with ${claim}?`,
+        stop: `When would you stop here and ask someone before moving ${claim} on?`,
+      };
+    case "route_changed":
+      return {
+        why: `You sent ${claim} to ${String(to).replace(/_/g, " ")}. What made you do that?`,
+        limit: `Is there a kind of claim you would never decide alone?`,
+        who: `Who takes ${claim} from here, and what if they are away?`,
+        stop: `When would you stop here and ask someone instead of routing ${claim}?`,
+      };
+    default:
+      return {};
+  }
+}
+
 function monthName(m: number): string {
   return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][m - 1] ?? "another month";
 }
@@ -146,7 +179,11 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
     ),
   );
   const retro = (question: string) =>
-    e.invoice ? `On invoice ${e.invoice} a moment ago, ${question.charAt(0).toLowerCase()}${question.slice(1)}` : `A moment ago, ${question.charAt(0).toLowerCase()}${question.slice(1)}`;
+    e.invoice
+      ? `On invoice ${e.invoice} a moment ago, ${question.charAt(0).toLowerCase()}${question.slice(1)}`
+      : e.subject?.type === "claim" && e.subject.id
+        ? `On claim ${e.subject.id} a moment ago, ${question.charAt(0).toLowerCase()}${question.slice(1)}`
+        : `A moment ago, ${question.charAt(0).toLowerCase()}${question.slice(1)}`;
   const base = { invoice: e.invoice, field: e.field, stepRef, eventId: e.id, createdAt: now, status: "queued" as const, aliases };
   const make = (kind: CandidateKind, candidateValue: number, question: string, guardrail: boolean, parentId?: string): Candidate => ({
     id: cid(),
@@ -181,7 +218,7 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
     if (tpl.limit) out.push({ ...make("limit", value, tpl.limit, true), status: "debrief" });
     if (tpl.stop) out.push({ ...make("stop", value - 0.1, tpl.stop, true), status: "debrief" });
   } else if (cls === "repeat" && tpl.limit) {
-    out.push(make("limit", value, `Is it always ${e.to} for this kind of invoice, or does it depend?`, true));
+    out.push(make("limit", value, `Is it always ${e.to} for this kind of ${e.subject?.type === "claim" && !e.invoice ? "claim" : "invoice"}, or does it depend?`, true));
   }
   return out;
 }

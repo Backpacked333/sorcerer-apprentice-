@@ -38,11 +38,20 @@ Copy `.env.example` to `.env.local`. With no keys, browser speech, ERP telemetry
 
 | Question | Where to look |
 | --- | --- |
-| When to ask | The presence line. Timing is code, not a prompt. |
-| What to ask | The candidate queue, inside the mechanism. It never asks what the screen already shows. |
+| When to ask | The companion's glow, and the Governor under Show the mechanism. Timing is code, not a prompt. |
+| What to ask | Candidate questions, under Show the mechanism. It never asks what the screen already shows. |
 | When it has understood | Gaps closed, on the map. Only the expert's words fill a slot, and only an explicit yes locks it. |
 | Whether the new hire learned | The mastery card. Rescued and learned are different labels. |
-| Trust | The struck band and the privacy ledger. Masks are painted before a frame leaves the browser. |
+| Trust | Struck from the record, and the Privacy ledger. In the workspace, masks are painted before a frame leaves the browser. |
+
+## Product tour / Demo mode
+
+- `/` is the landing page: an animated hero labelled "Illustration" (generic beats, no business rules), the two doors (a finished sample Work Map and tutor, or a live capture), the Apprentice Test and honest limits. The status strip reads `/api/health` and the event source; it never claims a live voice without agent ids.
+- `/demo` is the presenter room: reset, launch links, cue card.
+- `/demo/companion` is **demo mode**: every companion state (13 moods, the capsule, ask, teach-back and teach layouts) plus a "Play states" scripted tour over a fake support console. All copy is fictional (Larkspur Telecom, fictional), labelled as demo data, and never imported by the live product. Under reduced motion, Play jumps to the end state.
+- `/platform/demo` shows the platform pages with a fictional company. Everything outside demo mode runs on real session data only.
+
+Screenshots in the submission are taken from these routes.
 
 ## Honest limits
 

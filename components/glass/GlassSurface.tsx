@@ -15,7 +15,7 @@ interface Recipe {
 
 export const GLASS: Record<GlassVariant, Recipe> = {
   companion: {
-    background: "linear-gradient(180deg,rgba(255,255,255,.62),rgba(255,255,255,.4))",
+    background: "linear-gradient(180deg,rgba(255,255,255,.8),rgba(255,255,255,.64))",
     backdrop: "blur(30px) saturate(1.9)",
     shadow: "inset 0 1px 0 rgba(255,255,255,.95),inset 0 -.5px 0 rgba(255,255,255,.5),0 1px 2px rgba(15,23,42,.05),0 20px 50px rgba(15,23,42,.11)",
     radius: 30,

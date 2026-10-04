@@ -15,7 +15,7 @@ export function Dock({ timeline, ph, counts, playLabel, before }: { timeline: Ti
       range={range}
       t={ph.t}
       onT={ph.setT}
-      beads={timeline.canPlay ? beads : beads.slice(0, 1).concat(beads.slice(1).filter((b) => b.at !== beads[0]?.at))}
+      beads={beads}
       ticks={timeline.ticks}
       today={timeline.today}
       playing={ph.playing}

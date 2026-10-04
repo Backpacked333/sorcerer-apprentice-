@@ -8,7 +8,7 @@ import { type InvoiceState, type WorkMap, uid } from "@/lib/workmap";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
 import { VoiceProvider, useTranscriber, useVoice, type ToolHandlers } from "./voice";
 import { TeachView } from "./views/TeachView";
-import type { TeachReplay, TeachVM } from "./views/teach.vm";
+import type { TeachDecision, TeachReplay, TeachVM } from "./views/teach.vm";
 
 export function TeachClient(props: { sessionId: string; agentId?: string; source: EventSource }) {
   const tools = useRef<ToolHandlers>({});
@@ -26,10 +26,12 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
   const [expertLog, setExpertLog] = useState<SessionLog | null>(null);
   const [started, setStarted] = useState(false);
   const [tick, setTick] = useState(0);
-  const [decisions, setDecisions] = useState<(TutorDecision & { t: number })[]>([]);
+  const [decisions, setDecisions] = useState<TeachDecision[]>([]);
   const [phase, setPhase] = useState<"coached" | "independent">("coached");
   const [replay, setReplay] = useState<TeachReplay | null>(null);
   const [ended, setEnded] = useState(false);
+  const [startedAt, setStartedAt] = useState<number | null>(null);
+  const [lastReplay, setLastReplay] = useState<TeachReplay | null>(null);
   const matcher = useRef<Matcher | null>(null);
   const logRef = useRef<SessionLog | null>(null);
   const pending = useRef<{ decision: TutorDecision; windowId: string } | null>(null);
@@ -67,14 +69,16 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     const frame = step?.screenMoment.frameId ? ex?.frames.find((f) => f.id === step.screenMoment.frameId) : undefined;
     const quote = step?.reason?.text ?? m.rules.find((r) => r.stepId === step?.id)?.quotes[0]?.text;
     const audioId = step?.reason?.audioId ?? m.rules.find((r) => r.stepId === step?.id)?.quotes.find((q) => q.audioId)?.audioId;
-    setReplay({ step, frame, quote, audioUrl: audioId && ex ? `/api/sessions/${ex.id}/clips?audioId=${audioId}` : undefined, rule: ruleTitle });
+    const r: TeachReplay = { step, frame, quote, audioUrl: audioId && ex ? `/api/sessions/${ex.id}/clips?audioId=${audioId}` : undefined, rule: ruleTitle };
+    setReplay(r);
+    setLastReplay(r);
   }, []);
 
   const flagForExpert = useCallback(async (context: string) => {
     const m = mapRef.current;
     const L = logRef.current;
     if (!m || !L) return;
-    const slot = { id: uid("slot"), kind: "novel" as const, question: `Lena hit a case you never showed me: ${context.replace(/^.*?\((.*?)\).*$/, "$1")}. What do you do with it?`, status: "open" as const };
+    const slot = { id: uid("slot"), kind: "novel" as const, question: `${L.expertName || "The new hire"} hit a case you never showed me: ${context.replace(/^.*?\((.*?)\).*$/, "$1")}. What do you do with it?`, status: "open" as const };
     const next = { ...m, slots: [...m.slots, slot] };
     mapRef.current = next;
     setMap(next);
@@ -115,7 +119,7 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
       const state: InvoiceState = { ...(pipelineState.current ?? {}), ...(e.state ?? {}) };
       const d = mt.decide(e, state, e.t);
       if (d.kind !== "none") {
-        setDecisions((xs) => [...xs, { ...d, t: e.t }]);
+        setDecisions((xs) => [...xs, { ...d, t: e.t, guard: e.kind === "save_blocked", cause: { kind: e.kind, field: e.field, to: e.to } }]);
         speak(d);
       }
       rerender();
@@ -195,23 +199,32 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
     },
   };
 
-  const start = async () => {
+  /** Synchronous up to getDisplayMedia (it needs the click's transient activation); the rest is async. */
+  const start = (opts?: { workspace?: boolean }): Promise<void> => {
     const L = logRef.current;
-    if (!L) return;
+    if (!L) return Promise.resolve();
+    const share = new URLSearchParams(window.location.search).get("share") !== "0";
+    const sharing = share ? pipeline.start({ mode: opts?.workspace ? "workspace" : "tab", app: "erp", queue: "newhire" }).catch(() => {}) : Promise.resolve();
     L.startedAt = Date.now();
     L.sourceMapRevision = map?.revision;
+    setStartedAt(L.startedAt);
     setStarted(true);
-    if (map?.confirmedAt) await fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "arm", mapSessionId: map.sessionId, teachSessionId: L.id }) }).catch(() => {});
-    if (new URLSearchParams(window.location.search).get("share") !== "0") await pipeline.start().catch(() => {});
-    await voice.connect({ firstMessage: `I'll watch while you work. I only speak when ${map?.expert.name ?? "the expert"} would.` });
-    voice.setMicMuted(true);
+    const armed = map?.confirmedAt
+      ? fetch("/api/teach/guard", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "arm", mapSessionId: map.sessionId, teachSessionId: L.id }) }).then(() => {}, () => {})
+      : Promise.resolve();
+    return (async () => {
+      await armed;
+      await sharing;
+      await voice.connect({ firstMessage: `I'll watch while you work. I only speak when ${map?.expert.name ?? "the expert"} would.` });
+      voice.setMicMuted(true);
+    })();
   };
 
   const card = matcher.current?.masteryCard() ?? [];
   const missed = card.filter((c) => c.status === "needs_practice");
   const events = log ? log.events.filter((e) => e.kind !== "typing").slice(-8).reverse() : [];
   void tick;
-  const crop = pipeline as { setCropTarget?: (el: HTMLElement | null) => void; surface?: "browser" | "window" | "monitor" };
+  const cur = pipelineState.current;
 
   const vm: TeachVM = {
     log,
@@ -233,9 +246,19 @@ function Teach({ sessionId, source, tools }: { sessionId: string; agentId?: stri
       start: pipeline.start,
       activity: pipeline.activity,
       visionLatency: pipeline.visionLatency,
-      ...(typeof crop.setCropTarget === "function" ? { setCropTarget: crop.setCropTarget, surface: crop.surface } : {}),
+      setCropTarget: pipeline.setCropTarget,
+      surface: pipeline.surface,
+      setOccluders: pipeline.setOccluders,
+      selfCapture: pipeline.selfCapture,
+      degraded: pipeline.degraded,
+      lastSentUrl: pipeline.lastSentUrl,
     },
-    currentInvoice: pipelineState.current.invoice,
+    currentInvoice: cur.invoice,
+    currentState: { invoice: cur.invoice, supplier: cur.supplier, amount: cur.amount, category: cur.category, costCenter: cur.costCenter, status: cur.status },
+    startedAt,
+    learnerName: log?.expertName || "New hire",
+    expertName: map?.expert.name,
+    reopenReplay: !replay && lastReplay ? () => setReplay(lastReplay) : undefined,
     events,
     start,
     endSession,

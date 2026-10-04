@@ -5,7 +5,7 @@
  * Ask why, what if, what the limit is, when to stop, who decides.
  */
 import type { ScreenEvent } from "./events";
-import { labelField } from "./events";
+import { labelField, stepRefOf } from "./events";
 
 export type CandidateKind = "why" | "counterfactual" | "limit" | "stop" | "who";
 
@@ -47,7 +47,6 @@ export function newContext(): CuriosityContext {
 export type EventClass = "edit_prefilled" | "hold_or_reroute" | "threshold_adjacent" | "unusual_entity" | "repeat" | "navigation";
 
 export function classifyEvent(e: ScreenEvent, ctx: CuriosityContext): { cls: EventClass; value: number } {
-  const key = `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
   if (e.kind === "field_changed") {
     const freeText = new Set(["notes", "note", "assetNumber", "hasAssetNumber", "description"]);
     const from = e.from ?? "";
@@ -73,7 +72,6 @@ export function classifyEvent(e: ScreenEvent, ctx: CuriosityContext): { cls: Eve
     const near = ctx.knownThresholds.some((th) => Math.abs(amt - th) / th <= 0.3);
     if (near) return { cls: "threshold_adjacent", value: 0.45 };
   }
-  void key;
   return { cls: "navigation", value: 0 };
 }
 
@@ -212,7 +210,7 @@ export function buildCandidates(e: ScreenEvent, ctx: CuriosityContext, now: numb
   const { cls, value } = classifyEvent(e, ctx);
   if (value === 0) return [];
   const tpl = templates(e);
-  const stepRef = `${e.invoice ?? e.subject?.id ?? "?"}:${e.field ?? e.kind}`;
+  const stepRef = stepRefOf(e);
   const label = e.to ? ctx.valueLabels?.[e.to] : undefined;
   const fieldLabel = labelField(e.field).toLowerCase();
   const aliases = Array.from(

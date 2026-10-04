@@ -117,7 +117,7 @@ Helpers: `emptySession(id, mode, task, expertName)` · `describeEvent(e): string
 
 All added fields are optional; existing logs remain valid. `save_intent` describes a save requested but not yet posted, unlike `save_clicked`. `Frame.dataUrl` is now optional so URL-only frames are valid; consumers must render `frame.url ?? frame.dataUrl`. `sample` marks sample sessions; `ws` is metadata, not automatic session isolation. Adding fields does not wire their producers or consumers.
 
-Persisted `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change the persisted form. Capture's transient `[ASK]` tool payload appends `::window:<QuestionWindow.id>` so a delayed `log_answer.stepRef` can be correlated to one turn; Capture strips that suffix before any lookup or persistence.
+Persisted `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change the persisted form. Capture's transient `[ASK]` tool payload appends `::window:<QuestionWindow.id>` so a delayed `log_answer.stepRef` can be correlated to one turn; Capture compares the complete reference to the current question and never persists the suffix. Stale/missing refs return an immediate `not_logged` correction without dispatching a turn event or enriching an old window; they must not wait for the replacement turn to finish.
 
 ### Telemetry channel — `lib/telemetry.ts` · Owner **B**
 
@@ -182,7 +182,8 @@ useVoice(): VoiceApi
 type TranscriptMeta = { startedAtMs: number; endedAtMs: number; speaker: "human"|"agent" };
 useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?, meta?), onAgentEcho?(text, startSecs?, endSecs?, meta?), onCommand?(command, text, meta), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
-type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
+type ToolResult = string | void | { dispatch: false; message: string };
+type ToolHandlers = Partial<Record<ToolName, (params) => ToolResult | Promise<ToolResult>>>;   // pages assign tools.current = {…}
 
 type TurnPhase = "idle"|"sending"|"waiting_for_speech"|"speaking"|"listening"|"closing";
 interface TurnOptions {

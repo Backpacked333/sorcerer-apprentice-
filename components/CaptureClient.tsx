@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, shouldPersistAgentSpokenText, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
+import { captureAnswerToolRejection, CaptureLoop, captureToolStepRef, shouldPersistAgentSpokenText, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
 import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
 import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
 import { COST_CENTERS } from "@/lib/erp-model";
@@ -341,27 +341,9 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   endTaskRef.current = endTask;
 
   tools.current = {
-    log_answer: async (params) => {
-      const correlated = parseCaptureToolStepRef(typeof params.stepRef === "string" ? params.stepRef : "");
-      const logged = {
-        reason: typeof params.reason === "string" ? params.reason : undefined,
-        guardrail: typeof params.guardrail === "string" ? params.guardrail : undefined,
-        kind: typeof params.kind === "string" ? params.kind : undefined,
-      };
+    log_answer: (params) => {
       const active = governor.current.window && log.current.windows.find((window) => window.id === governor.current.window!.id);
-      if (!active || !correlated.windowId || active.id !== correlated.windowId) {
-        const exact = correlated.windowId ? log.current.windows.find((window) => window.id === correlated.windowId) : undefined;
-        const late = exact
-          ? findLateAnswerWindow([exact], correlated.stepRef, nowSecs())
-          : findLateAnswerWindow(log.current.windows, correlated.stepRef, nowSecs());
-        if (late) {
-          late.logged = logged;
-          dirty.current = true;
-          rerender();
-        }
-        await awaitReplacementBeforeToolDispatch(active?.id, correlated.windowId ?? late?.id, activeTurn.current);
-      }
-      return "logged";
+      return captureAnswerToolRejection(active ?? undefined, params.stepRef) ?? "logged";
     },
     mark_off_record: (params) => {
       const seconds = typeof params.seconds === "number" ? params.seconds : undefined;

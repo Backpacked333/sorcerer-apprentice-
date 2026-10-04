@@ -111,6 +111,18 @@ export function captureToolStepRef(stepRef: string, windowId: string): string {
   return `${stepRef}${TOOL_WINDOW_SEPARATOR}${windowId}`;
 }
 
+export function captureAnswerToolRejection(active: QuestionWindow | undefined, stepRef: unknown): { dispatch: false; message: string } | undefined {
+  if (!active || active.outcome || active.closedAt !== undefined) {
+    return { dispatch: false, message: "not_logged: no active question. Do not retry or claim the answer was saved." };
+  }
+  const currentRef = captureToolStepRef(active.stepRef ?? "", active.id);
+  if (stepRef === currentRef) return;
+  return {
+    dispatch: false,
+    message: `not_logged: stale or missing question reference. The current question is ${JSON.stringify(active.question)}; stepRef=${currentRef}. Retry only if the expert's latest answer belongs to this current question. Never move an older answer to it. Do not claim it was saved.`,
+  };
+}
+
 export function parseCaptureToolStepRef(value: string): { stepRef: string; windowId?: string } {
   const separatorAt = value.lastIndexOf(TOOL_WINDOW_SEPARATOR);
   if (separatorAt < 0) return { stepRef: value };

@@ -1,3 +1,9 @@
+## Oct 4 · Prompt stale-tool rejection [C3, N2]
+
+- Local real Capture on `a2ada0d` verified expert attribution during agent speech and an empty connection-check timeout without a clip POST. A subsequent valid answer received "Ah, got you", but the model reused the earlier window reference. Capture waited for the active replacement turn, producing a 20-second provider client-tool timeout. All four generated speech turns were V4 Turbo; zero browser speech. Sampled response latency was 987ms for the connection check and 4.010s for the acknowledgment. Off-record UI acceptance and delayed-upload ordering were not reached.
+- Capture now rejects stale/missing refs promptly with a `not_logged` correction instead of blocking on the live turn or mutating an older window. Additive `ToolResult` rejection lets a page suppress the reducer's TOOL event while returning a useful string to ElevenLabs. The current full step/window reference and literal current transcript are both required; this does not automatically reassign an old answer.
+- New bridge/adapter regressions cover immediate rejection, no window mutation, current-step mismatch, absent/closed/struck windows, corrected-call acceptance, and existing handler behavior. Deployment remains paused until the actual answer path passes. No remote model/config changes in this correction.
+
 ## Oct 4 · Off-record tool precedence [N2, C3]
 
 - Review found that answer-tool matching ignored `mark_off_record` while listening or closing. The privacy tool now takes precedence, yielding an empty aborted/off-record result, discarding the clip and preventing late transcript/answer events from restoring it.

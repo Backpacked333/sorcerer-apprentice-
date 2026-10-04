@@ -1,60 +1,44 @@
-## Oct 4 · V4 release deployment [S1]
+# Lane B status — integrated release, Oct 4
+
+## Done (N2, M1–M3, T1–T3, S1)
+
+Roy authorized the cross-lane Supabase + Vercel integration. Preserved main’s voice turn adapter, screen-event grounding, privacy masks, compiler split, seed safety and keyless smoke, plus the parallel V4 Turbo/OIDC release.
+
+Production uses cookie-isolated Supabase PostgreSQL/private Storage for sessions, maps, evidence, invoices, rate limits and guards. Local filesystem mode remains available for development. Added the per-teach-session guard compatibility migration; live SQL assertions verified ordering, invoice preservation, RLS and denied anonymous privileges.
+
+Repaired three missing screen moments in the explicitly scripted sample rather than weakening confirmation. Fresh visitors can load that private sample from the home page without login or resetting their ERP/captures. Health distinguishes configuration from a successful provider request.
+
+## Live deployment
+
+- Public URL: https://tacit-ai-apprentice.vercel.app
+- Runtime revision: [47a0fb2](https://github.com/Backpacked333/sorcerer-apprentice-/commit/47a0fb240254cc7f0662f80c2462cbb59fd3acdc)
+- Deployment: `dpl_9kNuxT51cEFgows8s982nPAkvn12`, production READY, Next.js, 17-second remote build.
+- Staged with production variables, tested, then promoted. Repeated the same 36 HTTP checks against the public URL **without Vercel authentication**.
+- Both runs passed: private sample creation; cross-visitor isolation; durable session/PNG/WebM reads; upload type/size rejection; immediate media withdrawal after metadata-only reattachment; draft Teach/export rejection; persistent save guard; rejected wrong saves do not persist; stale-map saves fail closed.
+- Smoke-scoped error/fatal log scan returned zero records. Log drains/long-term monitoring were not inspected.
+
+## Automated and provider verification
+
+- Typecheck, 482 tests across 54 files, and production build pass. No lint command is configured.
+- The repository’s isolated keyless production smoke passed Capture, debrief/correction/confirmation, tutor intervention, independent save guard and mastery, with no page errors. This uses mocked browser audio, not real voice acceptance.
+- PR #36 CI passed on runtime revision 47a0fb2; PR remains unmerged.
+- The earlier Gateway billing restriction is resolved for the tested calls: production vision returned HTTP 200 with `anthropic/claude-haiku-4.5` (6,233 ms on a synthetic black image); production compile returned HTTP 200 with `llm: true` and three rules on the scripted example.
+- Production Scribe issued a single-use token. No token was logged or committed. Token issuance does not verify streaming transcription or a spoken conversation.
+
+## Human acceptance (who, when, what they did)
+
+Still outstanding. No person has verified the integrated release’s ElevenAgents conversation, microphone timing, transcription quality, real screen understanding or human before-save intervention. Synthetic provider checks are not accuracy evaluations or a live competition demonstration.
+
+## Next
+
+1. Run the README competition acceptance with a human wearing headphones: three natural-pause capture questions including a guardrail, three new debrief questions, evidence review, explicit teach-back confirmation, then an unseen-case spoken intervention before save.
+2. Record the required submission media against the accepted revision.
+3. Optional German/MCP/two-expert stretches stay deferred behind core acceptance.
+
+## Historical V4/OIDC checkpoint (superseded by the release above)
 
 Deployed the focused V4/OIDC revision `ff1a7de` from live durable-storage base `c51b9f3` as `dpl_6wSbRyuyfSCV6Rb5HoZ4pzVxFaf1`, without introducing the newer integration branch's UI/voice changes. Production health reports voice and Gateway configured and Supabase reachable; Scribe token minting succeeds. The readiness fix uses `getVercelOidcTokenSync()` because Vercel supplies OIDC through request context, retains API-key/local-token support, and fails closed without credentials.
 
 Live HTTP checks used synthetic input, not customer data: vision returned 502; compile returned `llm: false` with the explicit provider error "Free tier users do not have access to this model. Upgrade to paid credits". Paid AI Gateway credits are required; configuration presence is not successful model execution. No human audio/UI acceptance is claimed.
 
-PR #44 was updated from `B/durable-vercel-product`; the sole conflict was Lane A status documentation, resolved by retaining the newer checkpoint plus the V4 verification addendum. The integrated branch passed `npm ci`, typecheck, 289 tests across 36 files, and a production build. Production remains pinned to the focused hotfix above, not this broader merge integration.
-
-The checkpoint below records earlier deployment evidence, not the current live provider status.
-
-# Lane B status
-
-_Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/prompts/checkpoint.md)._
-
-## Done and merged (WP ids)
-
-In progress on `B/durable-vercel-product` (not merged): Supabase + Vercel deployment work authorized by Roy across lanes. PostgreSQL/Storage provisioned; migration applied. Anonymous cookie workspaces, fail-closed Supabase selection, private media, bounded uploads, durable rate limits, ERP isolation, and serialized session sync are implemented. Confirmation/export safety and finite AI SDK provider schemas are included as required dependencies (N2, M1–M3, T1–T3).
-
-## Live deployment
-
-Production: [https://tacit-ai-apprentice.vercel.app](https://tacit-ai-apprentice.vercel.app), currently deployed from `c51b9f3` (`dpl_8cB6Wci8xxxMSX3GpeuLu45o9ukN`). Earlier HTTP-only smoke checks verified public root/health access, reachable Supabase storage, cookie-workspace isolation, PNG/WebM uploads and private reads, and rejection of draft export/Teach creation. Those broader checks were not repeated after this redeploy.
-
-The narrow HTTP retest on `c51b9f3` uploaded valid PNG and WebM fixtures, persisted their references, warmed and byte-compared separate reads, withdrew both references once, and immediately reattached metadata only. The first reads after reattachment returned 404 for both media routes. References were then removed and verified absent. Health returned 200 with Supabase configured and reachable; voice and gateway remain degraded/not configured. The test was HTTP-only, not a browser or real-provider test. The current merge integration has not been HTTP/UI retested and is not deployed.
-
-## Human acceptance (who, when, what they did)
-
-No live human, voice/timing, rendered UI, or real-provider acceptance is claimed. Production verification to date was HTTP-only, not browser testing.
-
-## Automated verification
-
-The latest previously verified full suite passed `npm run test`: 23 files, 219 tests. It was not repeated for the cache-only follow-up or these documentation changes. The cache follow-up passed `npx vitest run lib/store.durable.test.ts` (1 file, 6 tests), `npm run typecheck`, and `npm run build`. PR #36's `check` job passed on `c51b9f3`. A prior local keyless HTTP smoke returned `demo_sabine` and `demo_sabine_confirmed` from `GET /api/sessions` under `STORAGE_BACKEND=local STORE_OWNER_ID=local`. The Vercel CLI smoke-session error/fatal query returned zero records; Vercel log-drain configuration was not inspected.
-
-## Not verified yet (and the script to verify)
-
-Real-provider connectivity and voice/screen-vision acceptance. Follow the README competition acceptance run: three live questions including a guardrail, three distinct debrief answers, evidence review and explicit confirmation, then a wrong decision on an unseen case caught before save.
-
-## Blocked on (lane, handshake id, what exactly)
-
-Real-provider configuration and a human wearing headphones for the competition acceptance run remain outstanding. Optional German, MCP and two-expert stretches remain deferred behind core acceptance.
-
-## Next 3 things
-
-1. Configure the real voice and AI Gateway integrations.
-2. Run the README competition acceptance with a human wearing headphones.
-3. Review Vercel log-drain/monitoring configuration if operational visibility is needed.
-
-## Risks I see for the demo
-
-Real-provider connectivity, voice timing, and the rendered UI have not been manually verified. Vercel log-drain configuration has not been checked.
-
-## Latest main integration (Oct 4)
-
-- User approved retaining Supabase + Vercel while integrating the newer main branch.
-- Preserved voice turn adapter, bounded/grounded vision, PII masks, compiler module split, seed boot safety and smoke gate.
-- Adapted the upstream store contracts to private durable workspaces, including atomic local media and per-teach-session guard records. Added a follow-up Supabase migration.
-- Health reports storage reachability independently from provider configuration; private samples are created per visitor, not shared globally.
-- Current integration: 482 tests, typecheck and production build pass. The isolated keyless production smoke passed Capture, debrief/correction/confirmation, tutor intervention, independent save guard and mastery; no page errors.
-- Repaired three missing scripted screen moments rather than weakening confirmation. Added a private, non-resetting sample loader to the home page and removed misleading live-provider claims from its health strip.
-- Applied the follow-up Supabase migration. Live SQL assertions passed guard ordering, invoice preservation, RLS and denied anonymous privileges. Production redeployment/HTTP acceptance is pending.
-- Real provider/human timing acceptance remains unverified. No competition-readiness claim.
+PR #44 was updated from `B/durable-vercel-product`; the sole conflict was Lane A status documentation, resolved by retaining the newer checkpoint plus the V4 verification addendum. The integrated branch passed `npm ci`, typecheck, 289 tests across 36 files, and a production build. At that checkpoint, production remained pinned to the focused hotfix above, not this broader merge integration.

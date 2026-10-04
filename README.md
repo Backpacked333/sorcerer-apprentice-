@@ -8,7 +8,7 @@ One pipeline. One artifact, the Work Map. Three readers: the expert who confirms
 
 [Open Tacit](https://tacit-ai-apprentice.vercel.app).
 
-The integrated branch preserves durable Supabase workspaces, the newer voice/vision/privacy pipeline, and the V4 Turbo provisioning gate. Production now has voice and Gateway configuration, but the parallel release’s live check found that the selected Gateway models require paid credits. Configured does not mean a successful provider call. Real spoken timing and human competition acceptance are still outstanding; see `docs/status/B.md` for revision-specific verification.
+The integrated release preserves durable Supabase workspaces, the newer voice/vision/privacy pipeline, and the V4 Turbo provisioning gate. Production HTTP checks pass storage/isolation, evidence withdrawal and save protection. Real vision and LLM compile requests and Scribe token issuance now pass too; the earlier Gateway billing restriction is resolved for those tested calls. Automated keyless flow testing passes, but real spoken timing and human competition acceptance remain outstanding. See `docs/status/B.md` for revision-specific evidence and limits.
 
 Fresh visitors can use **Load the sample Work Map** on the home page. It creates a private, explicitly scripted example without login and without resetting their ERP or captures. The example is not evidence of live learning.
 

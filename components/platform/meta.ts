@@ -11,15 +11,25 @@ export const KIND: Record<ItemKind, { label: string; color: string }> = {
 };
 
 /** Provenance chips. `seen` (vision) and `erp` (dom telemetry) stay separate (non-negotiable 5). */
-export const PROV: Record<Provenance, { label: string; short: string; color: string; bg: string; ink: string }> = {
-  said: { label: "Said by the expert", short: "said", color: "#f5a623", bg: "rgba(245,166,35,.14)", ink: "#a35f00" },
-  seen: { label: "Seen on screen", short: "seen", color: "#8fa1bb", bg: "rgba(107,133,168,.14)", ink: "#4a6488" },
-  erp: { label: "From the ERP", short: "erp", color: "#4a6488", bg: "rgba(74,100,136,.12)", ink: "#34496a" },
-  described: { label: "Described, not shown", short: "described", color: "#9a9aa2", bg: "rgba(0,0,0,.05)", ink: "#6e6e73" },
-  inferred: { label: "Inferred", short: "inferred", color: "#8f7bff", bg: "rgba(143,123,255,.14)", ink: "#6a55d8" },
-  teachback: { label: "Confirmed in the teach-back", short: "teach-back", color: "#22b45e", bg: "rgba(34,180,94,.12)", ink: "#1b8a4b" },
-  mapped: { label: "Mapped by you", short: "mapped", color: "#6e6e73", bg: "rgba(0,0,0,.05)", ink: "#6e6e73" },
+/** Named SVG dash patterns for provenance-styled edges. */
+export const EDGE_DASH = { dashed: "6 6", dotted: "2 6" } as const;
+export type EdgeStroke = "gradient" | "solid" | keyof typeof EDGE_DASH;
+
+export const PROV: Record<Provenance, { label: string; short: string; color: string; bg: string; ink: string; stroke: EdgeStroke }> = {
+  said: { label: "Said by the expert", short: "said", color: "#f5a623", bg: "rgba(245,166,35,.14)", ink: "#a35f00", stroke: "gradient" },
+  seen: { label: "Seen on screen", short: "seen", color: "#8fa1bb", bg: "rgba(107,133,168,.14)", ink: "#4a6488", stroke: "solid" },
+  erp: { label: "From the ERP", short: "erp", color: "#4a6488", bg: "rgba(74,100,136,.12)", ink: "#34496a", stroke: "solid" },
+  described: { label: "Described, not shown", short: "described", color: "#9a9aa2", bg: "rgba(0,0,0,.05)", ink: "#6e6e73", stroke: "dashed" },
+  inferred: { label: "Inferred", short: "inferred", color: "#8f7bff", bg: "rgba(143,123,255,.14)", ink: "#6a55d8", stroke: "dashed" },
+  teachback: { label: "Confirmed in the teach-back", short: "teach-back", color: "#22b45e", bg: "rgba(34,180,94,.12)", ink: "#1b8a4b", stroke: "dashed" },
+  mapped: { label: "Mapped by you", short: "mapped", color: "#6e6e73", bg: "rgba(0,0,0,.05)", ink: "#6e6e73", stroke: "dotted" },
 };
+
+/** How an edge of this provenance is drawn; shared by every canvas so provenance reads the same everywhere. */
+export function edgeStroke(prov: Provenance): { gradient: boolean; color: string; dash: string | null } {
+  const { stroke, color } = PROV[prov];
+  return { gradient: stroke === "gradient", color, dash: stroke === "dashed" || stroke === "dotted" ? EDGE_DASH[stroke] : null };
+}
 
 export const MASTERY: Record<MasteryLabel, { color: string; ink: string; short: string }> = {
   "correct without help": { color: "#22b45e", ink: "#1b8a4b", short: "alone" },

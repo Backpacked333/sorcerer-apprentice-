@@ -26,7 +26,7 @@ export function planInvoice(map: WorkMap, inv: Invoice): AutopilotStep {
   const stops = stopRules(map, state);
   if (stops.length) {
     const r = stops[0];
-    return { ...base, outcome: "halted", ruleTitle: r.title, who: r.stopAndAsk?.who, reason: `Stop: ${describeCond(r.stopAndAsk!.when)}. ${map.expert.name} asks ${r.stopAndAsk?.who} here.`, quote: r.quotes[0]?.text };
+    return { ...base, outcome: "halted", ruleTitle: r.title, who: r.stopAndAsk?.who, reason: `Stop: ${describeCond(r.stopAndAsk!.when)}. ${r.stopAndAsk?.who ? `${map.expert.name} asks ${r.stopAndAsk.who} here.` : "Who to ask is unresolved."}`, quote: r.quotes[0]?.text };
   }
   // 2. novel case: no rule and not routine
   const isNovel = inv.category === "credit_note" || inv.amount < 0 || !inv.hasPO;

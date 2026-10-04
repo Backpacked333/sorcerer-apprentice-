@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
+import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, shouldPersistAgentSpokenText, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
 import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
 import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
 import { COST_CENTERS } from "@/lib/erp-model";
@@ -200,7 +200,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     const effectiveResult = wasStruck ? { ...result, via: "aborted" as const, command: "off_record" as const } : result;
     const mapped = windowOutcome(effectiveResult);
 
-    if (result.spokenText) pushTranscript(result.spokenText, "agent", result.spokeAt ?? result.sentAt, result.askedAt);
+    if (result.spokenText && shouldPersistAgentSpokenText(mapped)) pushTranscript(result.spokenText, "agent", result.spokeAt ?? result.sentAt, result.askedAt);
     if (mapped.outcome === "remove") {
       session.windows = session.windows.filter((window) => window.id !== windowId);
     } else if (questionWindow) {

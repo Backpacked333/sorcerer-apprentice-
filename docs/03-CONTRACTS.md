@@ -117,7 +117,7 @@ Helpers: `emptySession(id, mode, task, expertName)` · `describeEvent(e): string
 
 All added fields are optional; existing logs remain valid. `save_intent` describes a save requested but not yet posted, unlike `save_clicked`. `Frame.dataUrl` is now optional so URL-only frames are valid; consumers must render `frame.url ?? frame.dataUrl`. `sample` marks sample sessions; `ws` is metadata, not automatic session isolation. Adding fields does not wire their producers or consumers.
 
-`stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change it.
+Persisted `stepRef` format is `"<invoice>:<field ?? kind>"` and is the join key between a live question, its answer, and the compiled `Step` (`compile.ts: stepRefOf`). Do not change the persisted form. Capture's transient `[ASK]` tool payload appends `::window:<QuestionWindow.id>` so a delayed `log_answer.stepRef` can be correlated to one turn; Capture strips that suffix before any lookup or persistence.
 
 ### Telemetry channel — `lib/telemetry.ts` · Owner **B**
 

@@ -125,8 +125,13 @@ export async function awaitReplacementBeforeToolDispatch(
   toolWindowId: string | undefined,
   replacement: Promise<unknown> | null,
 ): Promise<void> {
-  if (!activeWindowId || !toolWindowId || activeWindowId === toolWindowId || !replacement) return;
+  if (!activeWindowId || activeWindowId === toolWindowId || !replacement) return;
   await replacement.catch(() => undefined);
+}
+
+/** A struck turn was already redacted before its async result arrived. */
+export function shouldPersistAgentSpokenText(mapped: MappedWindowOutcome): boolean {
+  return mapped.outcome !== "off_record" && !mapped.strike;
 }
 
 const LIMIT_ANSWER = /\b(only|every|always|never|unless|except|over|above|under|below|more than|less than|at least|up to)\b/i;

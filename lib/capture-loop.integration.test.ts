@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, windowOutcome, type LoopSignals } from "./capture-loop";
+import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, shouldPersistAgentSpokenText, windowOutcome, type LoopSignals } from "./capture-loop";
 import { buildCandidates, CandidateQueue, newContext } from "./curiosity";
 import type { QuestionWindow, ScreenEvent } from "./events";
 import { DEMO_GOVERNOR, Governor } from "./governor";
@@ -97,6 +97,11 @@ describe("Capture turn integration", () => {
     expect(deferred.governor.questionsAsked).toBe(0);
   });
 
+  it("does not reinsert agent speech after an off-record strike", () => {
+    expect(shouldPersistAgentSpokenText(windowOutcome(turn({ via: "aborted", command: "off_record", spokenText: "Struck." })))).toBe(false);
+    expect(shouldPersistAgentSpokenText(windowOutcome(turn({ via: "scribe", heard: "A retained answer", spokenText: "Why?" })))).toBe(true);
+  });
+
   it("applies verbatim answered and timeout outcomes", () => {
     const answered = readyLoop();
     answered.loop.opened(answered.action.candidate, 20);
@@ -168,5 +173,14 @@ describe("late Capture tool attribution", () => {
     expect(safe).toBe(true);
 
     await expect(awaitReplacementBeforeToolDispatch("win-new", "win-new", replacement)).resolves.toBeUndefined();
+
+    let releaseMissing!: () => void;
+    const missingCorrelation = new Promise<void>((resolve) => { releaseMissing = resolve; });
+    let missingSafe = false;
+    const missingWaiting = awaitReplacementBeforeToolDispatch("win-new", undefined, missingCorrelation).then(() => { missingSafe = true; });
+    await Promise.resolve();
+    expect(missingSafe).toBe(false);
+    releaseMissing();
+    await missingWaiting;
   });
 });

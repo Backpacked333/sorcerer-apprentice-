@@ -3,6 +3,7 @@ import { labelField } from "../events";
 import { emptyMap, type Quote, type Step, type WorkMap, uid } from "../workmap";
 import { COST_CENTER_LABEL, deriveRules } from "./rules-regex";
 import { buildSlots, seenCases } from "./slots";
+import { compileEvidence } from "./evidence";
 
 const NARRATION_CUES = /\b(because|since|so|always|never|over|above|under|has to|must|only|every|whenever|unless|rule|double)\b/i;
 
@@ -68,7 +69,10 @@ export function compileDeterministic(log: SessionLog): WorkMap {
   const quoteOf = (w: QuestionWindow): Quote | undefined =>
     w.answerText && w.outcome === "answered" ? { text: w.answerText, t: w.answeredAt ?? w.openedAt, audioId: w.answerAudioId, source: w.kind === "counterfactual" ? "counterfactual" : w.kind === "debrief" ? "debrief" : "live" } : undefined;
 
-  const answered = log.windows.filter((w) => w.outcome === "answered" && w.answerText);
+  const typedWindows = new Set(log.transcript.filter((s) => s.typedFor).map((s) => s.typedFor));
+  const evidence = compileEvidence(log);
+  const answered = log.windows.filter((w) => w.outcome === "answered" && w.answerText
+    && (!typedWindows.has(w.id) || evidence.windows.includes(w)));
   for (const w of answered) {
     const step = w.stepRef ? byRef.get(w.stepRef) : undefined;
     const q = quoteOf(w);
@@ -87,7 +91,7 @@ export function compileDeterministic(log: SessionLog): WorkMap {
   // ---- narration: a reason the expert said out loud without being asked ----
   for (const step of steps) {
     if (step.reason || !step.judgment) continue;
-    const near = log.transcript.filter((s) => s.speaker === "expert" && !s.redacted && s.final && s.t >= step.screenMoment.t - 20 && s.t <= step.screenMoment.t + 25);
+    const near = evidence.transcript.filter((s) => !s.typedFor && s.t >= step.screenMoment.t - 20 && s.t <= step.screenMoment.t + 25);
     const hit = near.find((s) => NARRATION_CUES.test(s.text) && s.text.split(/\s+/).length >= 6);
     if (hit) step.reason = { text: hit.text, t: hit.t, source: "narration" };
   }

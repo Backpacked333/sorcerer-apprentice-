@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { SessionLog } from "../events";
 import { CondSchema, ActSchema, evalCond, type Cond, type Quote, type Rule, type WorkMap, uid } from "../workmap";
 import { buildSlots, seenCases } from "./slots";
-import { visibleAt } from "../memory";
+import { compileEvidence } from "./evidence";
 import { gatewayConfigured } from "../gateway-auth";
 
 const ALLOWED_FIELDS = new Set(["amount", "category", "supplier", "entity", "invoiceMonth", "costCenter", "hasAssetNumber", "knownSupplier", "hasPO", "route", "status"]);
@@ -38,21 +38,7 @@ const RefinementWire = RefinementSchema.extend({
 
 export async function refineWithLLM(log: SessionLog, draft: WorkMap): Promise<{ map: WorkMap; used: boolean; note?: string }> {
   if (!gatewayConfigured()) return { map: draft, used: false, note: "no AI_GATEWAY_API_KEY; deterministic map" };
-  const eligible = log.transcript.filter((s) => s.speaker === "expert" && s.final && !s.redacted && visibleAt(log, s.t, s.tEnd));
-  const windows = log.windows.filter((w) => {
-    if (w.outcome !== "answered" || !w.answerText) return false;
-    const end = w.closedAt ?? w.answeredAt ?? w.openedAt;
-    const next = log.windows.find((other) => other.openedAt > w.openedAt)?.openedAt ?? Infinity;
-    const spans = eligible.filter((s) => s.t >= (w.askedAt ?? w.openedAt) && s.t < next);
-    let answer = "";
-    // Final transcripts may arrive while Capture awaits clip upload, after closedAt.
-    for (const s of spans) {
-      answer = answer ? `${answer} ${s.text}` : s.text;
-      if (answer === w.answerText) return visibleAt(log, w.openedAt, Math.max(end, s.tEnd ?? s.t));
-      if (!w.answerText.startsWith(`${answer} `)) return false;
-    }
-    return false;
-  });
+  const { transcript: eligible, windows } = compileEvidence(log);
   const transcript = eligible.map((s) => `[${s.t.toFixed(1)}s expert] ${s.text}`).join("\n");
   const answers = windows.map((w) => `[${(w.answeredAt ?? w.openedAt).toFixed(1)}s] Q(${w.kind}, ${w.stepRef}): ${w.question}\nA: ${w.answerText}`).join("\n\n");
   const steps = draft.steps.map((s) => `${s.id} | invoice ${s.invoice} | ${s.title} | ${s.decision} | judgment=${s.judgment} | reason=${s.reason?.text ?? "none"}`).join("\n");

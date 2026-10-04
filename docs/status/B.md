@@ -7,7 +7,8 @@
   the same session. Four focused file-store tests cover update-before-check, update-during-
   publication, independent sessions, failed-write recovery and missing/mismatched sources.
 - Single-Node store only; carry the transaction into the separate durable-platform rollout.
-  Typecheck, 504 tests, production build, keyless smoke and diff check pass; no lint script.
+  Typecheck, 512 tests, production build, keyless smoke and diff check pass. Vitest now
+  includes colocated component callback tests alongside lib tests; workspace exclusions unchanged.
   No deployment or human privacy/voice acceptance claimed.
 
 ## Roy-authorized memory integration (C1/N2)

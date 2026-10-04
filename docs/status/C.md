@@ -10,8 +10,14 @@
   not Supabase/distributed transactions or post-compile session-edit invalidation.
 - Focused typed-evidence, persistence-race and conflict-view tests pass. The race regression
   fails when deliberately restoring a separate compile lock and passes with the shared lock.
-- Typecheck, 504 tests, production build, keyless smoke and diff check pass; no lint script
-  exists. Build retains the pre-existing filesystem tracing warnings. No human voice/timing/privacy validation, deployment, paid activation
+- Adversarial follow-up: typed evidence is no longer treated as nearby narration on unrelated
+  steps. Typed windows share deterministic/LLM provenance checks, including redaction and
+  withdrawal. Existing typed tests now exercise the full deterministic→refinement pipeline.
+- Capture closes are single-flight through Done, preserving an explicit strike; typed/mixed
+  recordings are discarded before upload. Callback regression tests run real extracted
+  callbacks against mocked recorder/fetch boundaries; no browser or live audio acceptance.
+- Typecheck, 512 tests, production build, keyless smoke and diff check pass. No lint
+  script exists. Build retains pre-existing tracing warnings. No human voice/timing/privacy validation, deployment, paid activation
   or remote-agent mutation. Next: parent review/landing; public reasoning admission/spend
   controls and held-out model evaluation remain separate gates.
 

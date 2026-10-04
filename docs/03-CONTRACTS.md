@@ -19,6 +19,12 @@ Text is redacted before persistence; redacted/off-record spans remain ineligible
 evidence. Spoken-plus-typed answers retain their question/source attribution, but windows
 containing typing do not claim an audio clip of those words. Agent tool summaries and
 legacy `answerText` without expert evidence are not promoted to transcript evidence.
+Typed spans stay bound to their answered question: both compiler passes use the same
+eligibility/reconstruction checks for typed windows, and typing is never nearby free narration.
+Legacy deterministic window handling is unchanged; unproven legacy text remains excluded
+from LLM evidence. Concurrent Capture closes share one completion; Done waits for it and
+an explicit strike can still withdraw the answer. Typed/mixed recordings are stopped and
+discarded before any upload instead of retaining unreferenced audio.
 
 `validateProposal(memory, output)` checks candidate identities, bounded questions and
 literal quote/source matches. Relationship claims always have `status: "proposed"`:

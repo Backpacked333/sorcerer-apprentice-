@@ -46,6 +46,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const lastSpeechAt = useRef(-Infinity);
   const spokeStarted = useRef(false);
   const recorder = useRef<MediaRecorder | null>(null);
+  const closing = useRef<Promise<void> | null>(null);
   const micStream = useRef<MediaStream | null>(null);
   const chunks = useRef<Blob[]>([]);
   const entitiesRedacted = useRef(0);
@@ -130,7 +131,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     }
   }, []);
 
-  const stopRecorder = useCallback(async (): Promise<string | undefined> => {
+  const stopRecorder = useCallback(async (keep: () => boolean = () => true): Promise<string | undefined> => {
     const r = recorder.current;
     recorder.current = null;
     if (!r) return undefined;
@@ -139,7 +140,8 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
       r.stop();
     });
     const blob = new Blob(chunks.current, { type: "audio/webm" });
-    if (blob.size < 2000) return undefined;
+    chunks.current = [];
+    if (!keep() || blob.size < 2000) return undefined;
     const audioId = `clip_${Date.now().toString(36)}`;
     const fd = new FormData();
     fd.append("audioId", audioId);
@@ -149,32 +151,39 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   }, []);
 
   const closeWindow = useCallback(
-    async (outcome: QuestionWindow["outcome"], extra?: { logged?: QuestionWindow["logged"] }) => {
+    (outcome: QuestionWindow["outcome"], extra?: { logged?: QuestionWindow["logged"] }) => {
+      if (closing.current) return closing.current;
       const g = governor.current;
       const w = g.window;
-      if (!w) return;
+      if (!w) return Promise.resolve();
       const L = log.current;
       const qw = L.windows.find((x) => x.id === w.id);
       const t = nowSecs();
       voiceRef.current.setMicMuted(true);
-      const audioId = await stopRecorder();
       if (qw) {
         qw.closedAt = t;
         qw.outcome = outcome;
         if (extra?.logged) qw.logged = extra.logged;
-        if (outcome === "answered" && !qw.answerText && qw.logged?.reason) qw.answerText = qw.logged.reason;
         if (outcome === "answered") qw.answeredAt ??= t;
-        qw.answerAudioId = L.transcript.some((s) => s.typedFor === qw.id) ? undefined : audioId;
       }
-      if (outcome === "answered") queue.current.markFilled(w.candidateId);
-      else {
-        const c = queue.current.items.find((c) => c.id === w.candidateId);
-        if (c) c.status = outcome === "off_record" ? "expired" : "debrief";
-      }
-      g.close(t);
-      spokeStarted.current = false;
-      dirty.current = true;
-      rerender();
+      closing.current = (async () => {
+        const audioId = await stopRecorder(() => qw?.outcome !== "off_record" && !L.transcript.some((s) => s.typedFor === w.id));
+        if (qw) {
+          if (qw.outcome === "answered" && !qw.answerText && qw.logged?.reason) qw.answerText = qw.logged.reason;
+          qw.answerAudioId = audioId;
+        }
+        const finalOutcome = qw?.outcome ?? outcome;
+        if (finalOutcome === "answered") queue.current.markFilled(w.candidateId);
+        else {
+          const c = queue.current.items.find((c) => c.id === w.candidateId);
+          if (c) c.status = finalOutcome === "off_record" ? "expired" : "debrief";
+        }
+        g.close(t);
+        spokeStarted.current = false;
+        dirty.current = true;
+        rerender();
+      })().finally(() => { closing.current = null; });
+      return closing.current;
     },
     [nowSecs, stopRecorder],
   );

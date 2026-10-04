@@ -37,6 +37,12 @@ export interface VoiceMessage {
   t: number; // epoch ms
 }
 
+interface PendingAgentSay {
+  tag: string;
+  text: string;
+  spoken?: string;
+}
+
 export interface VoiceDebugEvent {
   at: number;
   src: "agent" | "scribe" | "turn" | "gate" | "tool";
@@ -51,6 +57,11 @@ export interface VoiceConnectOptions {
   dynamicVariables?: Record<string, string>;
   sessionStartMs?: number;
   keyterms?: string[];
+}
+
+export function buildAgentReconnectOptions(opts: VoiceConnectOptions = {}): VoiceConnectOptions {
+  const { firstMessage: _firstMessage, ...rest } = opts;
+  return rest;
 }
 
 export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOptions = {}) {
@@ -332,6 +343,65 @@ export function createConnectionLifecycle({
   return { start, connected, mode, fail, cancel, activeGeneration: () => attempt?.generation, activeAttempt: () => attempt ? { generation: attempt.generation, promise: attempt.promise } : undefined };
 }
 
+export type AgentReconnectDecision =
+  | { action: "stop" }
+  | { action: "retry"; attempt: number; delayMs: number }
+  | { action: "exhausted"; attempt: number };
+
+export function createAgentReconnectPolicy({
+  delaysMs = [750, 1_500],
+  stableAfterMs = 10_000,
+  schedule = (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+  cancelTimer = (timer) => globalThis.clearTimeout(timer as ReturnType<typeof globalThis.setTimeout>),
+}: {
+  delaysMs?: number[];
+  stableAfterMs?: number;
+  schedule?: (callback: () => void, delayMs: number) => unknown;
+  cancelTimer?: (timer: unknown) => void;
+} = {}) {
+  let attempts = 0;
+  let retryTimer: unknown;
+  let stableTimer: unknown;
+  const cancelRetry = () => {
+    if (retryTimer === undefined) return;
+    cancelTimer(retryTimer);
+    retryTimer = undefined;
+  };
+  const cancelStableReset = () => {
+    if (stableTimer === undefined) return;
+    cancelTimer(stableTimer);
+    stableTimer = undefined;
+  };
+  return {
+    handleDisconnect({ reason, requested, current, retry }: { reason: string; requested: boolean; current: boolean; retry: () => void }): AgentReconnectDecision {
+      if (reason !== "error" || !requested || !current) return { action: "stop" };
+      cancelRetry();
+      cancelStableReset();
+      if (attempts >= delaysMs.length) return { action: "exhausted", attempt: attempts };
+      const attempt = ++attempts;
+      const delayMs = delaysMs[attempt - 1];
+      retryTimer = schedule(() => {
+        retryTimer = undefined;
+        retry();
+      }, delayMs);
+      return { action: "retry", attempt, delayMs };
+    },
+    connected() {
+      cancelRetry();
+      cancelStableReset();
+      stableTimer = schedule(() => {
+        stableTimer = undefined;
+        attempts = 0;
+      }, stableAfterMs);
+    },
+    cancel() {
+      cancelRetry();
+      cancelStableReset();
+      attempts = 0;
+    },
+  };
+}
+
 export interface VoiceApi {
   mode: "agent" | "fallback";
   connected: boolean;
@@ -406,6 +476,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const [fallbackSpeaking, setFallbackSpeaking] = useState(false);
   const [fallbackConnected, setFallbackConnected] = useState(false);
   const [voiceError, setVoiceError] = useState<string>();
+  const [agentReconnecting, setAgentReconnecting] = useState(false);
   const [sttError, setSttError] = useState<string>();
   const [sessionRequested, setSessionRequested] = useState(false);
   const [, setTranscriberRevision] = useState(0);
@@ -429,6 +500,10 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const turnAdapterRef = useRef<VoiceTurnAdapter | undefined>(undefined);
   const turnCleanupRef = useRef<() => void>(() => {});
   const degradedAgentFallbackRef = useRef(false);
+  const reconnectingRef = useRef(false);
+  const pendingAgentSaysRef = useRef<PendingAgentSay[]>([]);
+  const flushAgentQueueRef = useRef<() => void>(() => {});
+  const flushFallbackQueueRef = useRef<() => void>(() => {});
   const clipRecorderRef = useRef<MediaRecorder | null>(null);
   const clipStreamRef = useRef<MediaStream | null>(null);
   const clipChunksRef = useRef<Blob[]>([]);
@@ -484,6 +559,9 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     onOutcome: (outcome) => outcomeHandler.current(outcome),
     endSession: controls.endSession,
   });
+  const reconnectPolicy = useRef<ReturnType<typeof createAgentReconnectPolicy> | undefined>(undefined);
+  if (!reconnectPolicy.current) reconnectPolicy.current = createAgentReconnectPolicy();
+  const connectAgentRef = useRef<(opts: VoiceConnectOptions | undefined, reconnecting: boolean) => Promise<void>>(async () => {});
   const lastVadEventAt = useRef(0);
   const speakFallbackRef = useRef<(text: string, lifecycle?: { onStart?: () => void; onEnd?: () => void; isCancelled?: () => boolean }) => Promise<void>>(async () => {});
   const emit = useCallback((src: VoiceDebugEvent["src"], type: string, data?: unknown) => {
@@ -575,9 +653,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const activateFallback = useCallback((reason: string, generation?: number) => {
     if (generation !== undefined && establishedGeneration.current !== generation) return;
     establishedGeneration.current = undefined;
+    reconnectingRef.current = false;
+    setAgentReconnecting(false);
     setVoiceError(reason);
     setFallbackConnected(true);
     emit("agent", "degraded", { reason });
+    flushFallbackQueueRef.current();
   }, [emit]);
 
   useEffect(() => {
@@ -585,10 +666,14 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       const firstMessage = firstMessages.current.get(outcome.generation);
       firstMessages.current.delete(outcome.generation);
       if (outcome.kind === "connected") {
+        reconnectPolicy.current!.connected();
         establishedGeneration.current = outcome.generation;
+        reconnectingRef.current = false;
+        setAgentReconnecting(false);
         window.speechSynthesis?.cancel();
         setFallbackConnected(false);
         setVoiceError(undefined);
+        flushAgentQueueRef.current();
       } else if (outcome.kind === "degraded") {
         activateFallback(outcome.reason);
         if (firstMessage) {
@@ -751,6 +836,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         disconnectScribe: () => scribeDisconnectRef.current(),
       });
       turnCleanupRef.current();
+      reconnectPolicy.current!.cancel();
     };
   }, []);
   const scribe = useScribe(scribeCallbacks);
@@ -983,6 +1069,36 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     }, 1500);
   }), []);
   speakFallbackRef.current = speakFallback;
+  flushFallbackQueueRef.current = () => {
+    const queued = pendingAgentSaysRef.current.splice(0);
+    if (!queued.length) return;
+    void (async () => {
+      for (const item of queued) {
+        const line = item.spoken ?? item.text;
+        authorizeSpeech(line);
+        reassertGate();
+        await speakFallback(line);
+        authorization.current!.finish();
+      }
+    })();
+  };
+  flushAgentQueueRef.current = () => {
+    const queued = pendingAgentSaysRef.current.splice(0);
+    for (const [index, item] of queued.entries()) {
+      const line = item.spoken ?? item.text;
+      authorizeSpeech(line);
+      reassertGate();
+      setMessages((xs) => [...xs, { role: "user", text: `[${item.tag}] ${item.text}`, t: Date.now() }]);
+      try {
+        controls.sendUserMessage(`[${item.tag}] ${item.text}`);
+      } catch (error) {
+        pendingAgentSaysRef.current = [...queued.slice(index), ...pendingAgentSaysRef.current];
+        controls.endSession();
+        activateFallback(error instanceof Error ? error.message : String(error), establishedGeneration.current);
+        break;
+      }
+    }
+  };
 
   const nowTurn = useCallback(() => sessionStartRef.current === undefined ? Date.now() / 1_000 : Math.max(0, (Date.now() - sessionStartRef.current) / 1_000), []);
   nowTurnRef.current = nowTurn;
@@ -1080,16 +1196,20 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     hubRef.current!.setSessionStart(epochMs);
   }, []);
 
-  const connect = useCallback<VoiceApi["connect"]>(
-    async (opts) => {
+  const connectAgent = useCallback(
+    async (opts: VoiceConnectOptions | undefined, reconnecting: boolean) => {
       degradedAgentFallbackRef.current = false;
-      lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
-      hubRef.current!.setSessionStart(opts?.sessionStartMs);
-      sessionStartRef.current = opts?.sessionStartMs;
-      scribeKeytermsRef.current = opts?.keyterms;
-      setTranscriberRevision((revision) => revision + 1);
-      sessionRequestedRef.current = true;
-      setSessionRequested(true);
+      if (!reconnecting) {
+        reconnectPolicy.current!.cancel();
+        pendingAgentSaysRef.current = [];
+        lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
+        hubRef.current!.setSessionStart(opts?.sessionStartMs);
+        sessionStartRef.current = opts?.sessionStartMs;
+        scribeKeytermsRef.current = opts?.keyterms;
+        setTranscriberRevision((revision) => revision + 1);
+        sessionRequestedRef.current = true;
+        setSessionRequested(true);
+      }
       if (configuredMode === "fallback") {
         setFallbackConnected(true);
         setVoiceError(undefined);
@@ -1117,6 +1237,34 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
             activateFallback(reason, attempt.generation);
           }
         };
+        let retryScheduledForAttempt = false;
+        const recover = (reason: string) => {
+          if (retryScheduledForAttempt) return true;
+          const decision = reconnectPolicy.current!.handleDisconnect({
+            reason: "error",
+            requested: sessionRequestedRef.current,
+            current: reconnectingRef.current || establishedGeneration.current === attempt.generation,
+            retry: () => {
+              emit("agent", "reconnect_attempt", { previousGeneration: attempt.generation });
+              void connectAgentRef.current(buildAgentReconnectOptions(opts), true);
+            },
+          });
+          if (decision.action === "retry") {
+            retryScheduledForAttempt = true;
+            establishedGeneration.current = undefined;
+            reconnectingRef.current = true;
+            setAgentReconnecting(true);
+            emit("agent", "reconnect_scheduled", { ...decision, reason });
+            const pendingGeneration = lifecycle.current!.activeGeneration();
+            if (pendingGeneration === attempt.generation) lifecycle.current!.cancel(attempt.generation);
+            return true;
+          }
+          if (decision.action === "exhausted") {
+            fail(`${reason}; reconnect attempts exhausted.`);
+            return true;
+          }
+          return false;
+        };
         try {
           const inputDeviceId = localStorage.getItem("tacit.micDeviceId") || undefined;
           controls.startSession({
@@ -1130,19 +1278,33 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
               lifecycle.current!.connected(attempt.generation);
             },
             onModeChange: ({ mode }) => lifecycle.current!.mode(attempt.generation, mode),
-            onError: (message) => fail(message),
-            onDisconnect: (details) => fail(`Agent disconnected (${details.reason}).`),
+            onError: (message) => {
+              if (!reconnectingRef.current || !recover(message)) fail(message);
+            },
+            onDisconnect: (details) => {
+              if (retryScheduledForAttempt) return;
+              const reason = `Agent disconnected (${details.reason})`;
+              if (details.reason === "error" && recover(reason)) return;
+              fail(`${reason}.`);
+            },
           });
         } catch (error) {
-          fail(error instanceof Error ? error.message : String(error));
+          const reason = error instanceof Error ? error.message : String(error);
+          if (!reconnectingRef.current || !recover(reason)) fail(reason);
         }
       }
       await attempt.promise;
     },
     [activateFallback, agentId, authorizeSpeech, configuredMode, controls, conversationStatus.status, reassertGate, speakFallback],
   );
+  connectAgentRef.current = connectAgent;
+  const connect = useCallback<VoiceApi["connect"]>((opts) => connectAgent(opts, false), [connectAgent]);
 
   const disconnect = useCallback(() => {
+    reconnectPolicy.current!.cancel();
+    reconnectingRef.current = false;
+    setAgentReconnecting(false);
+    pendingAgentSaysRef.current = [];
     turnAdapterRef.current!.disconnect();
     degradedAgentFallbackRef.current = false;
     void stopClip(false);
@@ -1177,6 +1339,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const say = useCallback<VoiceApi["say"]>(
     (tag, text, spoken) => {
       const line = spoken ?? text;
+      if (configuredMode === "agent" && !voiceError && sessionRequestedRef.current && conversationStatus.status !== "connected") {
+        pendingAgentSaysRef.current.push({ tag, text, spoken });
+        emit("agent", "message_queued", { tag, reconnecting: reconnectingRef.current });
+        return;
+      }
       authorizeSpeech(line);
       reassertGate();
       if (configuredMode === "fallback" || voiceError || conversationStatus.status !== "connected") {
@@ -1192,7 +1359,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         void speakFallback(line).finally(() => authorization.current!.finish());
       }
     },
-    [activateFallback, authorizeSpeech, configuredMode, controls, conversationStatus.status, reassertGate, voiceError, speakFallback],
+    [activateFallback, authorizeSpeech, configuredMode, controls, conversationStatus.status, emit, reassertGate, voiceError, speakFallback],
   );
 
   const setMicMuted = useCallback(
@@ -1248,7 +1415,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     () => ({
       mode,
       connected: mode === "fallback" ? fallbackConnected : conversationStatus.status === "connected",
-      status: mode === "fallback" ? (fallbackConnected ? "fallback: browser speech" : "fallback: off") : conversationStatus.message ? `error: ${conversationStatus.message}` : conversationStatus.status,
+      status: mode === "fallback" ? (fallbackConnected ? "fallback: browser speech" : "fallback: off") : agentReconnecting ? "reconnecting: ElevenAgents" : conversationStatus.message ? `error: ${conversationStatus.message}` : conversationStatus.status,
       isSpeaking: mode === "fallback" ? fallbackSpeaking : conversationMode.isSpeaking,
       micMuted,
       messages,
@@ -1271,7 +1438,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       partial: turnState.partial,
       stt: { engine: transcriberState.engine, connected: transcriberState.connected },
     }),
-    [mode, fallbackConnected, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity, turn, cancelTurn, submitTyped, setSessionStart, turnState.phase, turnState.partial, transcriberState.engine, transcriberState.connected],
+    [mode, fallbackConnected, agentReconnecting, conversationStatus.status, conversationStatus.message, conversationMode.isSpeaking, fallbackSpeaking, micMuted, messages, degraded, lastError, connect, disconnect, getId, say, setMicMuted, sendContext, gateOpen, noteUserActivity, turn, cancelTurn, submitTyped, setSessionStart, turnState.phase, turnState.partial, transcriberState.engine, transcriberState.connected],
   );
   const transcriberHub = useMemo<TranscriberHubValue>(() => ({
     ...transcriberState,

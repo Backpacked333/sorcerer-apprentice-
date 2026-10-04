@@ -292,6 +292,7 @@ body {
   .workspace-frame iframe { width: 100%; height: 100%; border: 0; background: #f4f6f8; display: block; }
   .workspace-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 4; }
   .workspace-companion { position: fixed; right: 28px; bottom: 28px; z-index: 5; }
+  .capture-floating-stack { display: flex; flex-direction: row-reverse; align-items: flex-end; gap: 14px; max-height: calc(100dvh - 56px); }
   .workspace-lock {
     position: absolute; inset: 0; display: grid; place-items: center; z-index: 3;
     background: rgba(244, 244, 247, .55);
@@ -453,6 +454,12 @@ body {
 
 @media (min-width: 900px) { .doors { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 900px) { .timeline { flex-direction: column; } .t-display { font-size: 32px; line-height: 36px; } }
+
+@media (max-width: 780px) {
+  .workspace-companion:has(.capture-floating-stack) { right: clamp(0px, calc((100vw - 320px) / 2), 16px); }
+  .capture-floating-stack { flex-direction: column; overflow-y: auto; overscroll-behavior: contain; }
+  .capture-floating-stack > * { flex-shrink: 0; }
+}
 
 /* Reduced motion: exact global rule (PLAN a.2). One-shots use fill `both` so end states hold. */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.001s!important;animation-iteration-count:1!important;transition-duration:.001s!important}}

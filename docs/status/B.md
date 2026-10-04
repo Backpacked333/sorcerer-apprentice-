@@ -63,3 +63,9 @@ None reported; all results below are automated. No human verification, UI/browse
 
 - Local workspace default is shared, not per-visitor isolation. ERP object-entry validation is not full invoice-field validation.
 - Production build passes with two dynamic-filesystem tracing warnings; deployment size/tracing remains untested.
+
+## [PR #32](https://github.com/Backpacked333/sorcerer-apprentice-/pull/32) — A5/P-24: PII helpers (not merged)
+
+- Done: source-scoped DOM rectangles, crop projection, pre-encoding black painter and conservative text redaction; baseline-failing privacy regressions pass, including contiguous international phones and trailing business values.
+- Automated: mocked geometry/canvas and text tests, typecheck, full tests and production build. No human live/network verification or browser/provider tests; helpers alone do not protect outgoing frames.
+- Blocked/next: D adds actual `data-pii` fields and layout/scroll/resize publication; B pairs `sourceId` with the selected surface, enforces freshness and paints outgoing vision frames AND stored stills before encoding. Pipeline wiring remains open. After integration, a human must inspect sent/stored frames for masking during scrolling/cropping and publisher changes.

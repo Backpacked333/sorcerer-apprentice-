@@ -188,7 +188,7 @@ type TurnPhase = "idle"|"sending"|"waiting_for_speech"|"speaking"|"listening"|"c
 interface TurnOptions {
   tag: string; text: string; spoken?: string; listen?: boolean; timeoutSecs?: number; maxSecs?: number;
   recordClip?: { sessionId: string }; abortOnHumanSpeech?: boolean; watchdogSecs?: number;
-  silenceCloseSecs?: number; ackMaxSecs?: number; onPhase?: (phase: TurnPhase, at: number) => void;
+  silenceCloseSecs?: number; ackMaxSecs?: number; answerTool?: ToolName; onPhase?: (phase: TurnPhase, at: number) => void;
 }
 interface TurnResult {
   spoke: boolean; heard: string; via: "tool"|"scribe"|"typed"|"timeout"|"aborted"|"spoken";
@@ -241,6 +241,8 @@ Application-injected messages (`[TAG] …`) are **application control, never exp
 Every tool is registered once in `voice.tsx` (`TOOL_NAMES`) and dispatched to `tools.current[name]`. A new tool = A adds it to `tools.json` + `TOOL_NAMES` + re-runs `npm run agents:create`; the consuming lane writes the handler.
 
 **Voice timeout quality:** `VoiceApi.turn()` allows eight seconds for agent speech by default (an explicit `watchdogSecs` still wins). If no speech starts within that window, its existing labeled browser fallback and late-agent squelch apply. This avoids replacing a healthy V4 response at the former four-second boundary while retaining recovery for a true send/transport failure.
+
+**Answer acceptance:** `VoiceApi.turn()` defaults listening `ASK`/`DEBRIEF` turns to `answerTool: "log_answer"`. When the agent speaks, raw Scribe/agent-ASR text alone cannot fill the slot: wait for the matching tool or resolve as an empty timeout within the existing bounds. A logged reason becomes `heard` only when it literally occurs in Scribe or agent ASR, excluding unrelated text accumulated in the same window; unmatched model text is never a quote. Late raw commits cannot promote an unconfirmed timeout. Typed answers and browser/keyless speech retain their existing completion paths. Other tags are unchanged.
 
 **The verbatim rule:** the page records the expert's words from **Scribe** (what was actually said), not from the tool's `reason` param (which the LLM may reword). `reason` is only a fallback when Scribe heard nothing.
 

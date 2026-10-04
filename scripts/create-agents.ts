@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ElevenLabsClient } from "@elevenlabs/elevenlabs-js";
 import type { ElevenLabs } from "@elevenlabs/elevenlabs-js";
-import { assertV4Agent, REQUIRED_VOICE_MODEL, v4AgentOptions } from "../lib/agent-model";
+import { assertVoiceFlowAgent, REQUIRED_VOICE_MODEL, voiceFlowAgentOptions } from "../lib/agent-model";
 
 for (const file of [".env.local", ".env"]) {
   try {
@@ -169,11 +169,11 @@ function buildBody(role: Role, toolIds: string[], knowledgeBase?: ElevenLabs.Kno
       tts: {
         expressiveMode: true,
         suggestedAudioTags: (role === "interviewer"
-          ? [{ tag: "curious" }, { tag: "thoughtful" }, { tag: "warm" }]
+          ? [{ tag: "curious" }, { tag: "warm" }]
           : [{ tag: "calm" }, { tag: "warm" }, { tag: "encouraging" }]),
         ...(VOICE ? { voiceId: VOICE } : {}),
       },
-      turn: { turnTimeout: 30, silenceEndCallTimeout: -1, turnEagerness: "patient" as const },
+      turn: { turnTimeout: 30, silenceEndCallTimeout: -1 },
       conversation: {
         maxDurationSeconds: 3600,
         clientEvents: [
@@ -216,14 +216,14 @@ async function writeAgent(
   privacy: "recordVoice=false, retentionDays=7" | "recordVoice=false" | "not applied";
 }> {
   const write = async (request: AgentBody) => {
-    const options = v4AgentOptions(request.conversationConfig);
+    const options = voiceFlowAgentOptions(request.conversationConfig);
     if (id) {
       const response = await client.conversationalAi.agents.update(id, request, options);
-      assertV4Agent(response);
+      assertVoiceFlowAgent(response);
       return response.agentId;
     }
     const response = await client.conversationalAi.agents.create(request, options);
-    assertV4Agent(await client.conversationalAi.agents.get(response.agentId));
+    assertVoiceFlowAgent(await client.conversationalAi.agents.get(response.agentId));
     return response.agentId;
   };
 
@@ -312,6 +312,9 @@ async function check() {
       name: agent.name,
       id: agent.agentId,
       llm: prompt?.llm ?? null,
+      thinkingBudget: prompt?.thinkingBudget ?? null,
+      turnEagerness: agent.conversationConfig.turn?.turnEagerness ?? null,
+      vad: agent.conversationConfig.vad ?? null,
       ttsModel: tts?.modelId ?? null,
       expressiveMode: tts?.expressiveMode ?? false,
       voiceId: tts?.voiceId ?? null,
@@ -319,7 +322,7 @@ async function check() {
       privacy: agent.platformSettings?.privacy ?? null,
       promptSha1: { remote: sha1(remotePrompt), local: sha1(localPrompt), equal: remotePrompt === localPrompt },
     }, null, 2));
-    assertV4Agent(agent);
+    assertVoiceFlowAgent(agent);
   }
 }
 

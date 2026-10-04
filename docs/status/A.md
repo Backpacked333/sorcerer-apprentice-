@@ -7,7 +7,7 @@
 
 ### Done and merged (WP ids)
 
-- WA-9 tone polish (pending this PR): grounded status, approval-route, and cost-center candidates now use short coworker language while retaining the exact invoice and material values; unknown fields are humanized, retro questions name the invoice once, and candidate kind/order/timing are unchanged. Automated evidence: `lib/curiosity.tone.test.ts`; full gate 457 passed / 1 skipped and typecheck green at 10:56 PM ET.
+- WA-9 tone polish (pending this PR): grounded status, approval-route, and cost-center candidates now use short coworker language while retaining the exact invoice and material values; hold-to-active follows the existing status-candidate path, unknown fields are humanized, and retro questions name the invoice once. Existing candidate scores/order and governor timing are unchanged. Automated evidence: `lib/curiosity.tone.test.ts`; full gate 457 passed / 1 skipped and typecheck green at 10:59 PM ET.
 - WA-1 recovery hardening: restored a fully local dependency tree after macOS offloaded 23,677 package files, then added bounded ElevenAgents WebRTC auto-reconnect with a 10-second stability reset, suppressed stale tagged speech during recovery, no duplicate greeting, preserved app-clock/session metadata, and browser fallback only after recovery is exhausted (this PR).
 - WA-1: generic prompts/tools, idempotent provisioning/check script, awaited connection/fallback contract, debug tap, and keyed/keyless `/voice-check` diagnostics (PRs #2, #3, #7).
 - WA-2: client-side ElevenLabs output gate, idle heartbeat, persistent late-speech squelch, and soak counters (PR #22).

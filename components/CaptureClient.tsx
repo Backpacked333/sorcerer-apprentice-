@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { CaptureLoop, findLateAnswerWindow, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
+import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
 import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
 import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
 import { COST_CENTERS } from "@/lib/erp-model";
@@ -59,6 +59,9 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const activeHeard = useRef("");
   const activeForced = useRef(false);
   const struckWindowIds = useRef(new Set<string>());
+  const deferredSignature = useRef("");
+  const syncPromise = useRef<Promise<void> | null>(null);
+  const ending = useRef(false);
   const expertSpeech = useRef<Array<{ at: number; words: number }>>([]);
   const quietSamples = useRef<Array<{ at: number; quiet: boolean }>>([]);
   const pipelineRef = useRef<ReturnType<typeof useScreenPipeline> | null>(null);
@@ -181,6 +184,15 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   }, [redactRange]);
   strikeRef.current = strike;
 
+  const updateDeferred = useCallback(() => {
+    const next = loop.current.deferred();
+    const signature = JSON.stringify(next);
+    log.current.deferred = next;
+    if (signature === deferredSignature.current) return;
+    deferredSignature.current = signature;
+    dirty.current = true;
+  }, []);
+
   const applyTurnResult = useCallback((action: OpenAction, windowId: string, result: TurnResult) => {
     const session = log.current;
     const questionWindow = session.windows.find((window) => window.id === windowId);
@@ -204,10 +216,10 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
 
     loop.current.applyOutcome(action.candidate, mapped, result.closedAt);
     if (mapped.strike && !wasStruck) redactRange(questionWindow?.openedAt, result.closedAt);
-    session.deferred = loop.current.deferred();
+    updateDeferred();
     dirty.current = true;
     rerender();
-  }, [pushTranscript, redactRange, rerender]);
+  }, [pushTranscript, redactRange, rerender, updateDeferred]);
 
   const runWindow = useCallback(async (action: OpenAction) => {
     if (!loop.current.isFresh(action, readSignals())) return;
@@ -215,7 +227,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     const openWindow = loop.current.opened(action.candidate, openedAt);
     const question = action.retro ? action.candidate.questionRetro : action.candidate.question;
     const session = log.current;
-    session.windows.push({ id: openWindow.id, candidateId: action.candidate.id, kind: action.candidate.kind, question: action.candidate.question, stepRef: action.candidate.stepRef, openedAt });
+    session.windows.push({ id: openWindow.id, candidateId: action.candidate.id, kind: action.candidate.kind, question, stepRef: action.candidate.stepRef, openedAt });
     activeWindowId.current = openWindow.id;
     activeHeard.current = "";
     activeForced.current = action.forced;
@@ -223,7 +235,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     rerender();
 
     const lastExpertSentence = [...session.transcript].reverse().find((segment) => segment.speaker === "expert" && !segment.redacted)?.text;
-    const payload = buildAsk(action.candidate, {
+    const payload = buildAsk({ ...action.candidate, stepRef: captureToolStepRef(action.candidate.stepRef, openWindow.id) }, {
       events: session.events.filter((event) => !event.redacted && event.kind !== "typing").slice(-3),
       labels: COST_CENTERS,
       lastExpertSentence,
@@ -278,6 +290,8 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   }, [applyTurnResult, nowSecs, readSignals, rerender]);
 
   const endTask = useCallback(async () => {
+    if (ending.current) return;
+    ending.current = true;
     const session = log.current;
     if (activeTurn.current) {
       if (activeHeard.current.trim()) voiceRef.current.submitTyped(activeHeard.current);
@@ -296,32 +310,38 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     }
     session.endedAt = Date.now();
     queue.current.drainToDebrief();
-    session.deferred = loop.current.deferred();
+    updateDeferred();
     const currentPipeline = pipelineRef.current;
     session.metrics = { ...computeMetrics(session), framesSeen: currentPipeline?.framesSeen ?? 0, entitiesRedacted: entitiesRedacted.current + (currentPipeline?.piiBlurred ?? 0) } as unknown as Record<string, number>;
+    await syncPromise.current?.catch(() => undefined);
     await fetch(`/api/sessions/${session.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(session) });
+    dirty.current = false;
     voiceRef.current.disconnect();
     currentPipeline?.stop();
     router.push(`/map/${session.id}`);
-  }, [router]);
+  }, [router, updateDeferred]);
   endTaskRef.current = endTask;
 
   tools.current = {
-    log_answer: (params) => {
-      const stepRef = typeof params.stepRef === "string" ? params.stepRef : "";
+    log_answer: async (params) => {
+      const correlated = parseCaptureToolStepRef(typeof params.stepRef === "string" ? params.stepRef : "");
       const logged = {
         reason: typeof params.reason === "string" ? params.reason : undefined,
         guardrail: typeof params.guardrail === "string" ? params.guardrail : undefined,
         kind: typeof params.kind === "string" ? params.kind : undefined,
       };
       const active = governor.current.window && log.current.windows.find((window) => window.id === governor.current.window!.id);
-      if (!active || active.stepRef !== stepRef) {
-        const late = findLateAnswerWindow(log.current.windows, stepRef, nowSecs());
+      if (!active || !correlated.windowId || active.id !== correlated.windowId) {
+        const exact = correlated.windowId ? log.current.windows.find((window) => window.id === correlated.windowId) : undefined;
+        const late = exact
+          ? findLateAnswerWindow([exact], correlated.stepRef, nowSecs())
+          : findLateAnswerWindow(log.current.windows, correlated.stepRef, nowSecs());
         if (late) {
           late.logged = logged;
           dirty.current = true;
           rerender();
         }
+        await awaitReplacementBeforeToolDispatch(active?.id, correlated.windowId ?? late?.id, activeTurn.current);
       }
       return "logged";
     },
@@ -359,6 +379,7 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
         return;
       }
       const action = loop.current.next(signals);
+      updateDeferred();
       if (action.type === "open") void runWindow(action);
     }, 500);
     return () => {
@@ -373,16 +394,23 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     if (!started) return;
     let syncing = false;
     const interval = window.setInterval(async () => {
+      if (ending.current) return;
       const session = log.current;
-      session.deferred = loop.current.deferred();
-      if (!dirty.current || syncing) return;
+      updateDeferred();
+      if (!dirty.current || syncing || syncPromise.current) return;
       syncing = true;
       dirty.current = false;
       const currentPipeline = pipelineRef.current;
       session.metrics = { framesSeen: currentPipeline?.framesSeen ?? 0, entitiesRedacted: entitiesRedacted.current + (currentPipeline?.piiBlurred ?? 0) };
-      const response = await fetch(`/api/sessions/${session.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(session) }).catch(() => null);
-      if (response?.ok) setSynced(Date.now());
-      else dirty.current = true;
+      const request = fetch(`/api/sessions/${session.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(session) })
+        .then((response) => {
+          if (response.ok) setSynced(Date.now());
+          else dirty.current = true;
+        })
+        .catch(() => { dirty.current = true; });
+      syncPromise.current = request;
+      await request;
+      if (syncPromise.current === request) syncPromise.current = null;
       syncing = false;
     }, 5000);
     return () => window.clearInterval(interval);
@@ -393,6 +421,8 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     const { session } = await response.json();
     log.current = session;
     log.current.startedAt = Date.now();
+    deferredSignature.current = "";
+    ending.current = false;
     voiceRef.current.setSessionStart(log.current.startedAt);
     pipeline.signals.current = { lastScreenChangeAt: -Infinity, lastTypingAt: -Infinity, lastBoundaryAt: -Infinity, lastInvoiceOpenedAt: -Infinity, activity: "still" };
     setStarted(true);

@@ -1,5 +1,10 @@
 ## Checkpoint M1 — 8:02 PM ET
 
+### Ready for independent review (not merged)
+
+- WA-4/WA-5 Capture integration is on `a/wa45-capture-integration`: Capture now drives `CaptureLoop` through P-12 `VoiceApi.turn()`, rechecks freshness, records phase/app-clock evidence, persists deferred questions, exposes cadence diagnostics, and keeps keyless typed fallback operational. Automated gates pass, including the isolated production smoke; HT-5/HT-6 remain human-only and unverified.
+- Issue #40 / P-12 is merged on `main` at `ee41948`. The WA-4/WA-5 branch is based on that commit and does not modify `components/voice.tsx`, `lib/voice-turn*`, `lib/voice-hub*`, or `app/voice-check/*`.
+
 ### Done and merged (WP ids)
 
 - WA-1 recovery hardening: restored a fully local dependency tree after macOS offloaded 23,677 package files, then added bounded ElevenAgents WebRTC auto-reconnect with a 10-second stability reset, suppressed stale tagged speech during recovery, no duplicate greeting, preserved app-clock/session metadata, and browser fallback only after recovery is exhausted (this PR).

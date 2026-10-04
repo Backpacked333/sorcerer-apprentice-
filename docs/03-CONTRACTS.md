@@ -368,6 +368,8 @@ Optional fields a view already reads, and which stay absent until the owning lan
 | `TeachVM` | `practice` | C | no "Practice this" button |
 | `TeachVM` | `pipeline.setCropTarget` | C | same companion fallback as Capture |
 
+Capture exposes the WA-4/WA-5 controller state additively: `turnPhase`, `gateOpen`, `stt`, `deferred`, `deferredCount`, `reasonHeardItems`, `noisy`, `chainedCount`, and `forced`. `reasonHeard` remains the latest display string for the current view; `reasonHeardItems` is the timestamped evidence list. `deferred` is the persisted P-15 payload and `deferredCount` is its render-ready count. Views may ignore these fields until their presentation lands.
+
 `CropHandle` (`setCropTarget?`, `surface?`) lives on `capture.vm.ts` and is shared by the teach pipeline pick.
 
 ---

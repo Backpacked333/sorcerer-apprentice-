@@ -1,25 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { CaptureLoop, findLateAnswerWindow, windowOutcome, type LoopSignals } from "./capture-loop";
+import { awaitReplacementBeforeToolDispatch, CaptureLoop, captureToolStepRef, findLateAnswerWindow, parseCaptureToolStepRef, windowOutcome, type LoopSignals } from "./capture-loop";
 import { buildCandidates, CandidateQueue, newContext } from "./curiosity";
 import type { QuestionWindow, ScreenEvent } from "./events";
 import { DEMO_GOVERNOR, Governor } from "./governor";
 import type { TurnResult } from "./voice-turn";
 
-const event = (invoice = "4471"): ScreenEvent => ({
+const event = (invoice = "9001"): ScreenEvent => ({
   id: `edit-${invoice}`,
   source: "dom",
   t: 10,
   kind: "field_changed",
   invoice,
   field: "costCenter",
-  from: "4711",
-  to: "0400",
-  state: { amount: 7_850 },
+  from: "1000",
+  to: "2000",
+  state: { amount: 3_200 },
 });
 
 const signals = (now: number, extra: Partial<LoopSignals> = {}): LoopSignals => ({
   now,
-  currentInvoice: "4471",
+  currentInvoice: "9001",
   lastSpeechAt: now - 10,
   lastScreenChangeAt: now - 10,
   lastTypingAt: now - 10,
@@ -103,13 +103,13 @@ describe("Capture turn integration", () => {
     answered.governor.markAsked(21);
     answered.loop.applyOutcome(
       answered.action.candidate,
-      windowOutcome(turn({ via: "scribe", heard: "I use 0400 because this is equipment." })),
+      windowOutcome(turn({ via: "scribe", heard: "I use 2000 because this is the matching category." })),
       24,
     );
     expect(answered.action.candidate).toMatchObject({
       status: "filled",
       filledBy: "window",
-      heardQuote: "I use 0400 because this is equipment.",
+      heardQuote: "I use 2000 because this is the matching category.",
       heardAt: 24,
     });
     expect(answered.governor.questionsAsked).toBe(1);
@@ -129,7 +129,7 @@ describe("late Capture tool attribution", () => {
     candidateId: "candidate-old",
     kind: "why",
     question: "Why?",
-    stepRef: "4471:costCenter",
+    stepRef: "9001:costCenter",
     openedAt: 10,
     askedAt: 12,
     answeredAt: 17,
@@ -139,13 +139,34 @@ describe("late Capture tool attribution", () => {
   });
 
   it("selects only the latest safe closed window for the same step", () => {
-    const replacement = window({ id: "win-new", candidateId: "candidate-new", stepRef: "4472:route", openedAt: 19, askedAt: undefined, closedAt: undefined, outcome: undefined });
+    const replacement = window({ id: "win-new", candidateId: "candidate-new", stepRef: "9002:route", openedAt: 19, askedAt: undefined, closedAt: undefined, outcome: undefined });
     const struck = window({ id: "win-struck", closedAt: 19, outcome: "off_record" });
     const aborted = window({ id: "win-aborted", closedAt: 19.5, outcome: "aborted" });
     const answer = window({ id: "win-answer", closedAt: 18 });
 
-    expect(findLateAnswerWindow([answer, struck, aborted, replacement], "4471:costCenter", 25)?.id).toBe("win-answer");
-    expect(findLateAnswerWindow([answer], "4471:costCenter", 34)).toBeUndefined();
-    expect(findLateAnswerWindow([answer], "4472:route", 25)).toBeUndefined();
+    expect(findLateAnswerWindow([answer, struck, aborted, replacement], "9001:costCenter", 25)?.id).toBe("win-answer");
+    expect(findLateAnswerWindow([answer], "9001:costCenter", 34)).toBeUndefined();
+    expect(findLateAnswerWindow([answer], "9002:route", 25)).toBeUndefined();
+  });
+
+  it("gives each turn a unique tool correlation without changing its canonical step", () => {
+    const correlated = captureToolStepRef("9001:costCenter", "win-why");
+    expect(correlated).not.toBe("9001:costCenter");
+    expect(parseCaptureToolStepRef(correlated)).toEqual({ stepRef: "9001:costCenter", windowId: "win-why" });
+    expect(parseCaptureToolStepRef("9001:costCenter")).toEqual({ stepRef: "9001:costCenter" });
+  });
+
+  it("holds a stale tool dispatch until its active replacement has settled", async () => {
+    let release!: () => void;
+    const replacement = new Promise<void>((resolve) => { release = resolve; });
+    let safe = false;
+    const waiting = awaitReplacementBeforeToolDispatch("win-new", "win-old", replacement).then(() => { safe = true; });
+    await Promise.resolve();
+    expect(safe).toBe(false);
+    release();
+    await waiting;
+    expect(safe).toBe(true);
+
+    await expect(awaitReplacementBeforeToolDispatch("win-new", "win-new", replacement)).resolves.toBeUndefined();
   });
 });

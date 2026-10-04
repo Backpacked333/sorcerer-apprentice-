@@ -104,6 +104,31 @@ export function findLateAnswerWindow(windows: QuestionWindow[], stepRef: string,
     .sort((left, right) => (right.closedAt ?? Number.NEGATIVE_INFINITY) - (left.closedAt ?? Number.NEGATIVE_INFINITY))[0];
 }
 
+const TOOL_WINDOW_SEPARATOR = "::window:";
+
+/** Correlate an agent tool call to one exact Capture turn while preserving the canonical stepRef separately. */
+export function captureToolStepRef(stepRef: string, windowId: string): string {
+  return `${stepRef}${TOOL_WINDOW_SEPARATOR}${windowId}`;
+}
+
+export function parseCaptureToolStepRef(value: string): { stepRef: string; windowId?: string } {
+  const separatorAt = value.lastIndexOf(TOOL_WINDOW_SEPARATOR);
+  if (separatorAt < 0) return { stepRef: value };
+  const stepRef = value.slice(0, separatorAt);
+  const windowId = value.slice(separatorAt + TOOL_WINDOW_SEPARATOR.length);
+  return stepRef && windowId ? { stepRef, windowId } : { stepRef: value };
+}
+
+/** Keep voice.tsx's eventual TOOL event away from a different turn generation. */
+export async function awaitReplacementBeforeToolDispatch(
+  activeWindowId: string | undefined,
+  toolWindowId: string | undefined,
+  replacement: Promise<unknown> | null,
+): Promise<void> {
+  if (!activeWindowId || !toolWindowId || activeWindowId === toolWindowId || !replacement) return;
+  await replacement.catch(() => undefined);
+}
+
 const LIMIT_ANSWER = /\b(only|every|always|never|unless|except|over|above|under|below|more than|less than|at least|up to)\b/i;
 const WHO_ANSWER = /\b(ask|check with|sign|approv\w*|releas\w*|decid\w*)\b/i;
 const STOP_ANSWER = /\b(stop|wait|hold off|check with|ask)\b/i;

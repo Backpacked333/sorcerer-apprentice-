@@ -19,7 +19,9 @@ export function generateTeachback(map: WorkMap): { text: string; sure: string[];
     if (rule?.confidence === "high" || (step.reason && rule?.confidence === "medium")) sure.push(sentence);
     else unsure.push(sentence);
   }
-  const stops = map.rules.filter((r) => r.stopAndAsk).map((r) => `You stop and ask ${r.stopAndAsk!.who} when ${describeCond(r.stopAndAsk!.when)}.`);
+  const stops = map.rules.filter((r) => r.stopAndAsk).map((r) => r.stopAndAsk!.who
+    ? `You stop and ask ${r.stopAndAsk!.who} when ${describeCond(r.stopAndAsk!.when)}.`
+    : `You stop when ${describeCond(r.stopAndAsk!.when)}. Who to ask is still unresolved.`);
   const routine = map.steps.filter((s) => !s.judgment).length;
   const parts: string[] = [];
   parts.push(`Here is how I understand it. ${routine ? `${routine} routine steps, ` : ""}${judgment.length} decisions.`);

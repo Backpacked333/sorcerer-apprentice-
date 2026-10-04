@@ -239,6 +239,7 @@ export interface SaveVerdict {
   quote?: string;
   who?: string;
   reason?: string;
+  missing?: string;
 }
 
 /**

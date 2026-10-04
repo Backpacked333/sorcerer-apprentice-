@@ -8,6 +8,12 @@ Production uses cookie-isolated Supabase PostgreSQL/private Storage for sessions
 
 Repaired three missing screen moments in the explicitly scripted sample rather than weakening confirmation. Fresh visitors can load that private sample from the home page without login or resetting their ERP/captures. Health distinguishes configuration from a successful provider request.
 
+## CaptureLoop integration follow-up (C1–C3, N2, S1)
+
+Merged main through `8164d6a`, retaining CaptureLoop window correlation, natural-pause decisions and ElevenAgents reconnection. Capture keeps ordered frame upload/session sync and retryable save errors. VoiceApi owns the single answer recorder; the optional consent-epoch callback now protects its pending microphone acquisition and clip uploads, including deletion after an off-record/upload race. Recorder chunks and session identity are captured before asynchronous shutdown.
+
+Post-merge verification: typecheck, **502 tests across 57 files**, production build, isolated keyless smoke and diff checks pass. Six new HTTP upload/withdrawal regressions cover consent changes and rejected requests. No lint script is configured. This follow-up has **not** been deployed or verified live by a human; the production evidence below applies only to the pinned revision.
+
 ## Live deployment
 
 - Public URL: https://tacit-ai-apprentice.vercel.app

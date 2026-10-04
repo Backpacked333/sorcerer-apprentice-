@@ -26,7 +26,7 @@ export interface TurnOptions {
   listen?: boolean;
   timeoutSecs?: number;
   maxSecs?: number;
-  recordClip?: { sessionId: string };
+  recordClip?: { sessionId: string; consentEpoch?: () => number; onError?: (error: unknown) => void };
   abortOnHumanSpeech?: boolean;
   watchdogSecs?: number;
   silenceCloseSecs?: number;

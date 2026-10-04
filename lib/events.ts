@@ -12,6 +12,7 @@ export type EventKind =
   | "status_changed"
   | "route_changed"
   | "save_clicked"
+  | "save_intent" // the ERP opened its save confirm; the proposed state is not committed yet (P-11)
   | "save_blocked" // the sandbox's pre-save guard refused a commit that broke a confirmed rule
   | "typing";
 
@@ -30,6 +31,7 @@ export interface ScreenEvent {
   uiActivity?: "typing" | "reading" | "navigating" | "idle";
   frameId?: string;
   confidence?: number;
+  latencyMs?: number;
   /** set when a second source confirmed the same change (vision saw it, the ERP reported it) */
   alsoSeenBy?: EventSource;
   /** teach mode: coached or independent, as the sandbox reports it per case */
@@ -58,9 +60,11 @@ export interface QuestionWindow {
   question: string;
   stepRef?: string; // invoice + field, e.g. "4471:costCenter"
   openedAt: number;
-  askedAt?: number; // agent started speaking
+  spokeAt?: number; // agent started speaking
+  askedAt?: number; // question finished; listening mic opened
   answeredAt?: number;
   closedAt?: number;
+  closedBy?: "tool" | "scribe_fallback" | "timeout" | "user";
   outcome?: "answered" | "timeout" | "aborted" | "off_record";
   answerText?: string;
   answerAudioId?: string;
@@ -72,7 +76,8 @@ export interface Frame {
   id: string;
   t: number;
   /** data URL of a downscaled JPEG with PII regions blurred */
-  dataUrl: string;
+  dataUrl?: string;
+  url?: string;
   width: number;
   height: number;
   piiRegionsBlurred: number;
@@ -91,6 +96,9 @@ export interface SessionLog {
   frames: Frame[];
   offRecord: { from: number; to: number }[];
   metrics?: Record<string, number>;
+  deferred?: { kind: string; question: string; stepRef: string }[];
+  sample?: boolean;
+  ws?: string;
   /** teach mode only */
   mastery?: { ruleId: string; outcome: string; t: number }[];
   flagged?: { t: number; context: string }[];
@@ -119,6 +127,8 @@ export function describeEvent(e: ScreenEvent): string {
       return `${inv}: approval route ${e.from ?? "single"} -> ${e.to}`;
     case "save_clicked":
       return `${inv}: saved`;
+    case "save_intent":
+      return `${inv}: save requested, not yet posted`;
     case "save_blocked":
       return `${inv}: save held by the guard (${e.blocked?.title ?? "learned rule"})`;
     case "typing":

@@ -4,6 +4,7 @@
 // The card itself never carries an infinite transform; glow/rim/tint are aria-hidden siblings.
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { MOODS, type OrbMood } from "@/lib/ui/moods";
+import { prefersReducedMotion } from "@/lib/ui/motion";
 import { IridescentRim } from "./IridescentRim";
 import { TintBlobs } from "./TintBlobs";
 import { useOccluder } from "./occluders";
@@ -80,7 +81,7 @@ export function CompanionCard(p: {
   useIsoLayoutEffect(() => {
     if (prevMode.current === mode) return;
     prevMode.current = mode;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (prefersReducedMotion()) return;
     const anims = [bodyRef.current, footRef.current]
       .filter((el): el is HTMLDivElement => !!el && typeof el.animate === "function")
       .map((el, i) =>

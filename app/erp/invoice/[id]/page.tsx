@@ -9,14 +9,22 @@ export default async function InvoicePage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const inv = await getInvoice(id);
   if (!inv) notFound();
-  const siblings = (await listInvoices(inv.queue)).map((i) => i.id);
-  const idx = siblings.indexOf(inv.id);
-  const next = siblings[idx + 1];
+  const siblings = await listInvoices(inv.queue);
+  const idx = siblings.findIndex((i) => i.id === inv.id);
+  const next = siblings.slice(idx + 1).find((i) => i.status === "open" || i.status === "hold");
+  const remainingOpen = siblings.filter((i) => i.status === "open").length;
   return (
-    <main className="min-h-screen">
-      <ErpHeader title={`Invoice INV-${inv.id}`} />
-      <div className="mx-auto max-w-6xl px-6 py-6">
-        <InvoiceForm invoice={inv} costCenters={COST_CENTERS} nextId={next} />
+    <main>
+      <ErpHeader title={`Invoice INV-${inv.id}`} queue={inv.queue} />
+      <div className="erp-wrap">
+        <InvoiceForm
+          key={inv.id}
+          invoice={inv}
+          costCenters={COST_CENTERS}
+          nextId={next?.id}
+          queue={inv.queue}
+          queueProgress={{ position: idx + 1, total: siblings.length, remainingOpen }}
+        />
       </div>
     </main>
   );

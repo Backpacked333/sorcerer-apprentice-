@@ -55,6 +55,15 @@ export class AgentSpeechTimeline {
     if (entry) entry.end = Math.max(entry.start, end);
   }
 
+  updateText(text: string, id?: string): void {
+    const clean = text.trim();
+    if (!clean) return;
+    const entry = id
+      ? this.entries.find((candidate) => candidate.id === id)
+      : [...this.entries].reverse().find((candidate) => candidate.end === undefined);
+    if (entry) entry.text = clean;
+  }
+
   all(): readonly AgentSpeechInterval[] {
     return this.entries;
   }
@@ -129,11 +138,13 @@ export function classifySegment(segment: SpeechSegment, timeline: AgentSpeechTim
       const leading = leadingEchoLength(heard, spoken);
       const humanText = stripLeadingTokens(segment.text, heard, leading);
       const humanSuffix = tokenDetails(humanText);
+      const incrementalPromptPrefix = heard.length > 0 && heard.length < spoken.length && leading === heard.length;
       const completePromptPrefix = spoken.length > 0 && leading === spoken.length;
       const fuzzyPromptPrefix = spoken.length > 0 && leading / spoken.length >= 0.6;
       if ((completePromptPrefix && humanSuffix.length > 0) || (fuzzyPromptPrefix && humanSuffix.length >= 2)) {
         return { kind: "mixed", text: humanText, interval };
       }
+      if (incrementalPromptPrefix) return { kind: "agent", text: "", interval };
       const matched = orderedMatchCount(heard, spoken);
       const heardCoverage = heard.length > 0 ? matched / heard.length : 0;
       const promptCoverage = spoken.length > 0 ? matched / spoken.length : 0;

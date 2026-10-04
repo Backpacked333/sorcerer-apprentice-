@@ -1,34 +1,35 @@
-> **Team: start at [`docs/00-START-HERE.md`](docs/00-START-HERE.md).**
-> Competition acceptance and remaining live checks are tracked below. A working fallback demo is not evidence that real voice and vision pass the challenge.
-
 # Tacit · the AI Apprentice
 
-> We know more than we can tell. A recorder captures what happened. An automation tool copies the clicks. An apprentice asks why, learns the limit and the moment to stop, and refuses to say it understands until the expert says so.
+Tacit sits beside an expert while they work, asks why at the pauses, and turns what it learns into a tutor that stops a new hire before a wrong decision is saved.
 
-Hack-Nation × ElevenLabs "AI Apprentice": three modules on one pipeline, one artifact (the Work Map) with three readers: the expert who confirms it, the new hire who is tutored from it, and an agent that loads it as guardrails.
-
-**Everything runs keyless.** The sandbox ERP reports its own events over a BroadcastChannel, the browser's speech synthesis and recognizer stand in for the voice agent, and the Work Map compiles deterministically. Add keys for the real thing: ElevenAgents for the interviewer and tutor voices, Scribe v2 Realtime for the transcript, a Vercel AI Gateway key for vision and the LLM compile pass.
+One pipeline. One artifact, the Work Map. Three readers: the expert who confirms it, the new hire who is tutored from it, and an agent that can load the same rules.
 
 ## Live deployment
 
 [Open Tacit](https://tacit-ai-apprentice.vercel.app).
 
-The deployed health endpoint reported Supabase configured and reachable, but voice and AI Gateway integrations are degraded/not configured. This deployment predates the storage CDN cache-bypass follow-up on `B/durable-vercel-product`; do not consider evidence-withdrawal caching resolved until that change is deployed and rechecked. Real-provider, browser/UI, voice/timing, and human acceptance remain unverified.
+The `c51b9f3` deployment passed a narrow HTTP retest: valid PNG/WebM reads matched their uploads, and after one evidence withdrawal an immediate metadata-only reattachment still returned 404 for both media routes on the first read. Health reported Supabase configured and reachable; voice and AI Gateway integrations are degraded/not configured. An earlier HTTP smoke verified workspace isolation and draft Teach/export rejection; those broader checks were not repeated after this redeploy. Real-provider, browser/UI, voice/timing, and human acceptance remain unverified. This in-progress merge integration has not been HTTP/UI retested and is not deployed.
 
-## Run it in two minutes
+## Run it
 
 ```bash
 npm install
 STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session
-STORAGE_BACKEND=local STORE_OWNER_ID=local npm run dev  # http://localhost:3000
+STORAGE_BACKEND=local STORE_OWNER_ID=local npm run dev
 ```
 
-1. Open the ERP in one tab: `/erp` (Sabine's queue: 4471, 4472, 4473).
-2. Open `/capture` in another tab, click Start, share the ERP tab. Work the invoices. The side panel shows the governor lights, the question window, the candidate queue and the privacy ledger.
-3. Click Done. `/map/<session>` compiles the Work Map, runs the debrief on the open slots, reads the calibrated teach-back, and locks on your yes.
-4. `/teach` picks a confirmed map. Share the ERP tab on Lena's queue. Coached cases first: the tutor asks for a prediction on 4490, steps in before the €7,200 equipment invoice is saved to opex and replays Sabine's captured still, stays quiet on 4491, and on the credit note (4492) either quotes what Sabine said in the debrief or, if nobody asked, says so and flags it for her. Then the independent follow-up (4493, 4494): the tutor stays silent, help is recorded before each decision, and the sandbox's server-side save guard holds any commit that breaks a confirmed rule so the tutor can explain it in her words. The session outcome labels each rule: correct without help, correct after a hint, corrected after intervention, not tested. The stretch panel on the Map page loads `policy.json` and runs the routine queue, halting on the unknown supplier.
+Open [http://localhost:3000](http://localhost:3000).
 
-Add `?share=0` to `/capture` or `/teach` to skip screen sharing (the ERP telemetry still delivers exact events). Use headphones once voice is on: the apprentice must not hear itself.
+1. **See a finished Work Map** and try the tutor from the front page. No microphone.
+2. **Run it yourself.** `/capture` is one window: the sandbox ERP on the left, Tacit on the right. Tick consent, start, and in the share dialog choose **This tab**. Work the expert queue, then **Done · start the debrief**. Answer the open slots, confirm the teach-back, and open Teach.
+3. **Two windows.** `/capture?layout=companion` plus **Open the ERP window**. Both pages must be the same origin.
+4. **Presenter reset.** `/demo` resets the three queues and disarms the save guard. Sample sessions come back with `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session`.
+
+`?share=0` skips screen sharing. The ERP still reports exact events. Headphones, once voice is on: the apprentice must not hear itself.
+
+The ERP tab is titled **MB-ERP · Accounts payable**. Posting period 12/2025. A normal save commits **posted**.
+
+The explicit local owner lets browser requests read seeded sessions outside Vercel. Production requests remain cookie-scoped even if `STORE_OWNER_ID` is set.
 
 ## Keys
 
@@ -87,7 +88,7 @@ scripts/               create-agents.ts, seed-session.ts, smoke.mjs (keyless end
 
 ## Demo-day checklist
 
-- `npm run seed:session` before every rehearsal; it resets the two demo sessions. `/api/erp/reset?queue=expert` resets a queue.
+- `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session` before every local rehearsal; it resets the two demo sessions. `/api/erp/reset?queue=expert` resets a queue.
 - Headphones on both laptops. Share the ERP tab only.
 - Production uses `NEXT_PUBLIC_EVENT_SOURCE=both` (or `vision`); `dom` is for local development only. Degraded ERP telemetry stays explicitly labeled, never presented as vision.
 - If ElevenLabs is down, leave the agent ids empty: the browser voice fallback keeps every beat runnable, including the question windows, the debrief and the interventions.
@@ -174,3 +175,9 @@ Use Vercel's Next.js framework preset. Select the Supabase project URL/key from 
 For a local seeded rehearsal, run both `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run seed:session` and `STORAGE_BACKEND=local STORE_OWNER_ID=local npm run dev`. The explicit local owner lets browser requests read the seeded workspace outside Vercel; production remains cookie-scoped. Local `.data/` is not uploaded to Vercel. Production users create their own captures; do not treat a seeded recording as evidence of a live challenge run.
 
 Do not connect automatic production deployment to an older `main` revision until this deployment change is merged. This repository's earlier long-running Node hosting recommendation is superseded for this deployment by Supabase + Vercel.
+
+## Repo
+
+Public repository: [github.com/Backpacked333/sorcerer-apprentice-](https://github.com/Backpacked333/sorcerer-apprentice-).
+
+Team, videos and the live link are on the submission form. The closing frame is [public/moonshot.svg](public/moonshot.svg): People first, then agents, then a living memory.

@@ -139,7 +139,7 @@ interface VoiceApi {
   connected: boolean; status: string; isSpeaking: boolean; micMuted: boolean;
   messages: { role: "user"|"agent"; text: string; t: number }[];
   degraded: boolean; lastError?: string;    // true/reason when voice or STT is on a labeled fallback
-  connect(opts?: { firstMessage?: string; prompt?: string; language?: string; dynamicVariables?: Record<string,string> }): Promise<void>;
+  connect(opts?: { firstMessage?: string; prompt?: string; language?: string; dynamicVariables?: Record<string,string>; sessionStartMs?: number; keyterms?: string[] }): Promise<void>;
   disconnect(): void;
   getId(): string | undefined;              // safe before/after a live agent session
   say(tag: string, text: string, spoken?: string): void;   // agent mode: sends "[TAG] text" as a user message; fallback: speaks `spoken ?? text`
@@ -159,7 +159,8 @@ type VoiceDebugEvent = { at: number; src: "agent"|"scribe"|"turn"|"gate"|"tool";
 interface VoiceProviderProps { agentId?: string; tools: MutableRefObject<ToolHandlers>; onDebugEvent?: (event: VoiceDebugEvent) => void }
 <VoiceProvider agentId={id} tools={ref} onDebugEvent={callback}>…</VoiceProvider>
 useVoice(): VoiceApi
-useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?), language? })
+type TranscriptMeta = { startedAtMs: number; endedAtMs: number; speaker: "human"|"agent" };
+useTranscriber({ enabled, onPartial(text), onCommitted(text, startSecs?, endSecs?, meta?), onAgentEcho?(text, startSecs?, endSecs?, meta?), onCommand?(command, text, meta), language? })
   → { engine: "scribe"|"webspeech"|"none", connected, partial }
 type ToolHandlers = Partial<Record<ToolName, (params) => string | void | Promise<string | void>>>;   // pages assign tools.current = {…}
 
@@ -179,7 +180,7 @@ interface TurnResult {
 }
 ```
 
-**What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. Remote ElevenLabs stream audio receives the current gate volume synchronously before LiveKit invokes `play()` and remains inaudible outside an authorized first-message, `say()`, legacy-mic or `turn()` window; ordinary clips/replays are not intercepted. A user-activity heartbeat prevents idle timeout turns, and an authorized response that does not start within 8 seconds is persistently gated closed and reported until another response is explicitly authorized or the voice disconnects. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; anything transcribed while `isSpeaking` is never attributed to the human; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
+**What A guarantees to C and D:** `connect()` always supplies safe `expert_name`, `newhire_name`, and `task` dynamic-variable defaults, resolves from SDK lifecycle events (not the non-awaitable `startSession` return), and resolves into a labeled browser fallback on connection failure. Empty override strings are omitted per the SDK guidance; suppressing a stored tutor greeting with an empty override is not supported until live behavior is verified. Remote ElevenLabs stream audio receives the current gate volume synchronously before LiveKit invokes `play()` and remains inaudible outside an authorized first-message, `say()`, legacy-mic or `turn()` window; ordinary clips/replays are not intercepted. A user-activity heartbeat prevents idle timeout turns, and an authorized response that does not start within 8 seconds is persistently gated closed and reported until another response is explicitly authorized or the voice disconnects. `VoiceInner` owns one shared Scribe connection while an enabled transcriber subscriber or voice session exists; `?stt=off` prevents microphone acquisition. One demand window mints at most one token; fatal Scribe errors latch a labeled WebSpeech fallback until demand stops, and a language/device/keyterm/background-filter change performs one controlled reconnect. Expected-close state is connection-generation scoped, so a suppressed old SDK CLOSE cannot mask a later replacement failure. Transcript times use the application clock once `sessionStartMs` is known. Agent/fallback echo is routed only to `onAgentEcho`; human barge-in and the human suffix of a mixed segment remain human. After `say(tag, …)` the line is spoken once, promptly, in the right voice; `isSpeaking` is truthful; the mic is closed unless the page opened it; the registered client tool for that tag fires (or A's timeout fallback closes the turn — see lane A). C never calls the ElevenLabs SDK directly.
 
 ### 3.1 Tag protocol (page → agent, via `say`)
 
@@ -304,27 +305,21 @@ Anything prefixed `NEXT_PUBLIC_` ships to the browser: never a secret.
 
 ## 7. View-models — `components/views/*.vm.ts` · Owners **A** (capture), **C** (map, teach) · Consumer **D**
 
-Created by D's seam-split PR (protocol §3). Shape rule: a `vm` is a plain object of **render-ready state + callbacks**, no SDK objects, no refs except `videoRef`.
+Created by D's seam-split PR (protocol §3). Shape rule: a `vm` is a plain object of **render-ready state + callbacks**, no SDK objects, no refs except `videoRef`. The TypeScript interfaces in the three `*.vm.ts` files are the source of truth. A client builds that object and returns `<XView vm={vm} />`. A view renders it and does not fetch.
 
-```ts
-// capture.vm.ts (A) — minimum fields after the split; A adds more as needed
-interface CaptureVM { started: boolean; expertName: string; task: string; consented: boolean;
-  setExpertName, setTask, setConsented, start(): Promise<void>, endTask(): Promise<void>;
-  sessionId: string; voice: Pick<VoiceApi,"mode"|"connected"|"status"|"isSpeaking">; sttEngine: "scribe"|"webspeech"|"none";
-  pipeline: { videoRef, sharing, start(), activity, framesSeen, framesSent, dropped, visionLatency, visionError, masks, addMask, clearMasks, paused };
-  decision?: Decision; questionsLast10Min: number; budget: number;          // the governor meter
-  openWindow?: QuestionWindow & { phase: "asking"|"answering" }; partial: string;
-  queued: Candidate[]; askedCount: number; guardrailAsked: boolean; toDebrief: number;
-  events: ScreenEvent[]; candidateFor(eventId): Candidate | undefined; transcript: TranscriptSegment[];
-  ledger: { framesSeen: number; framesKept: number; entitiesRedacted: number; secondsStruck: number };
-  strike(): void; notNow(): void; holding: boolean; setHolding(b: boolean): void;
-  submitTypedAnswer(text: string): void; synced: number | null; }
-// map.vm.ts (C): map, session frames, phase, currentSlot, heard, teachback, rounds, metrics, autopilot state,
-//                startDebrief(), submitAnswer(text), confirm(yes, correction?), recompile(llm), runAutopilot(), onMapChange(map)
-// teach.vm.ts (C): log, map, started, ended, phase, decisions[], replay, card[], missed[], pipeline view, start(), endSession(), closeReplay()
-```
+Optional fields a view already reads, and which stay absent until the owning lane sets them:
 
-D may *read* any field and call any callback. D never imports `lib/governor`, `lib/matcher`, the ElevenLabs SDK, or `fetch`es an API from a view.
+| View-model | Field | Owner | What the view does when it is missing |
+|---|---|---|---|
+| `CaptureVM` | `voice.degraded`, `voice.lastError` | A | badges stay on `mode` / `connected` |
+| `CaptureVM` | `reasonHeard` | A | the "reason heard" chip stays hidden |
+| `CaptureVM` | `pipeline.setCropTarget`, `pipeline.surface` | A, from B's pipeline | real vision uses the companion layout |
+| `MapVM` | `lastPatch`, `pending`, `canonical`, `matrix`, `knowledge`, `llm` | C | teach-back has no rule diff; confirm stays clickable; headline counts recorded steps; no matrix |
+| `TeachVM` | `tutorState` | C | presence stays Watching or Speaking from `voice.isSpeaking`. The view never infers listening |
+| `TeachVM` | `practice` | C | no "Practice this" button |
+| `TeachVM` | `pipeline.setCropTarget` | C | same companion fallback as Capture |
+
+`CropHandle` (`setCropTarget?`, `surface?`) lives on `capture.vm.ts` and is shared by the teach pipeline pick.
 
 ---
 
@@ -332,15 +327,19 @@ D may *read* any field and call any callback. D never imports `lib/governor`, `l
 
 | Queue | Invoice | What it is | Role in the demo |
 |---|---|---|---|
-| expert | 4471 | Müller Werkzeugbau, €7,850 CNC spindle unit, prefilled 4711 | re-code to 0400 (capex) |
-| expert | 4472 | Novak Logistik s.r.o. (subsidiary), €2,300 intercompany freight | send for second approval |
-| expert | 4473 | Bäcker Elektrotechnik, €1,180, dated Dec 2 | put on hold |
-| newhire (coached) | 4490 | Hoffmann Maschinen, **€7,200** hydraulic press controller, prefilled 4711 | the brief's unseen case: tutor intervenes before save |
-| newhire (coached) | 4491 | Schmidt Reinigung, €640, dated Dec 4 | tutor stays quiet: the December hold is Bäcker-only |
-| newhire (coached) | 4492 | Müller, −€420 credit note, no PO | never shown: tutor quotes the debrief or flags it |
-| newhire (independent) | 4493 | Krüger Automation, €8,900 equipment | tutor silent; guard is the only backstop |
-| newhire (independent) | 4494 | Novak (subsidiary), €2,750 freight | tutor silent |
-| autopilot | 4501–4505 | four routine, one unknown supplier (4505) | stretch X1: agent halts where she would |
+| expert | 4470 | Schmidt Reinigung, €640 office cleaning, prefilled 4300, dated 2025-11-25 | routine warm-up: nothing to change, post it |
+| expert | 4471 | Müller Werkzeugbau, €7,850 CNC spindle unit, prefilled 4711, dated 2025-11-26 | re-code to 0400 (capex) |
+| expert | 4472 | Novak Logistik s.r.o. (subsidiary), €2,300 intercompany freight, dated 2025-11-27 | send for second approval |
+| expert | 4473 | Bäcker Elektrotechnik, €1,180, dated 2025-12-02 | put on hold |
+| expert | 4474 | Hartmann Werkzeuge, €1,460 bench vise, prefilled 4711, dated 2025-11-28 | routine: nothing to change, post it |
+| newhire (coached) | 4490 | Hoffmann Maschinen, **€7,200** hydraulic press controller, cost center starts empty, dated 2025-12-03 | the brief's unseen case: tutor intervenes before save |
+| newhire (coached) | 4491 | Schmidt Reinigung, €640, dated 2025-12-04, cost center starts empty | tutor stays quiet: the December hold is Bäcker-only |
+| newhire (coached) | 4492 | Müller, −€420 credit note, no PO, cost center starts empty | never shown: tutor quotes the debrief or flags it |
+| newhire (independent) | 4493 | Krüger Automation, €8,900 equipment, cost center starts empty | tutor silent; guard is the only backstop |
+| newhire (independent) | 4494 | Novak (subsidiary), €2,750 freight, cost center starts empty | tutor silent |
+| autopilot | 4501–4505 | four routine, one unknown supplier (4505); dates in 2025; 4502 asset `A-2025-117` | stretch X1: agent halts on the unknown supplier |
+
+`Invoice` also carries `contactName`, `contactEmail`, `contactPhone` and `iban` on the expert and new-hire rows. Those fields never enter `InvoiceState`. `toInvoiceState` omits an empty `costCenter`. A normal save commits `status: "posted"`. Dates are all in 2025.
 
 The **business reasoning is not in the code or any prompt** — only fields are. The expert's rules live on a private role card (`docs/05-DEMO-AND-SUBMISSION.md`) that must never be copied into `agents/*.md`, compile prompts, seed data or tests of the live path. Changing an invoice's id, amount, supplier, date or queue is a `CONTRACT:` change (D's script and video depend on them).
 
@@ -378,7 +377,7 @@ See `docs/01-SPEC.md` §8 for why each exists. Field and route names here are bi
 | P-10 | `GET /api/health` → `{ ok, storage: { configured, reachable, backend }, integrations: { voice: { available, status }, gateway: { available, status } } }`; storage failures return 503 and integrations report `ready` or `degraded`. | B | D (preflight screen) |
 | P-11 | `EventKind` gains **`"save_intent"`**: posted by the ERP when the save-confirm opens, carrying the *proposed* `state`. A sandbox verdict like `save_blocked`: delivered in every source mode, never a vision event, never a compiled step. | B (type, pipeline) · D (`InvoiceForm` posts it) | C (matcher intervenes on it) |
 | P-12 | **`VoiceApi.turn(opts): Promise<TurnResult>`** — the one way to “say a tagged line and (optionally) listen”; exact additive options/results are in §3 above. It owns the wait-for-speech watchdog, output gate, mic-open-after-speech rule, echo-filtered verbatim capture, speech-aware timeout, clip policy, acknowledgement grace and re-mute. It never rejects. `say()` stays for legacy/no-listen lines; `via: "spoken"` means a no-listen line finished. | A | C (Map + Teach controllers adopt by M2) |
-| P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`) and resolves only when the session is connected | A | C passes names in Map and Teach |
+| P-13 | `VoiceApi.connect(opts)` gains `dynamicVariables?: Record<string, string>` (`expert_name`, `newhire_name`, `task`), `sessionStartMs?: number`, and `keyterms?: string[]`; it resolves only when the agent session is connected | A | C passes names in Map and Teach; A/C pass the app clock and session vocabulary |
 | P-14 | `TelemetryMessage` gains `queue: Queue` and `sandboxSession?: string`; a `"hello"` message from a subscriber makes an open `InvoiceForm` re-announce `invoice_opened` | B · D | A, C |
 | P-15 | `SessionLog.deferred?: { kind: string; question: string; stepRef: string }[]` — live candidates that were deferred, stale or never asked | B (type) · A (writes) | C (`buildSlots` asks them first) |
 | P-16 | `Rule.stopAndAsk` gains `quote?: Quote`; `stopAndAsk.who` becomes optional (set only when the expert named someone); `SaveVerdict` gains `missing?: string` (human-readable failed condition) | C | D (held-save panel), A (tutor line) |

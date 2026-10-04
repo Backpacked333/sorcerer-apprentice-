@@ -3,6 +3,25 @@ import { describe, expect, it } from "vitest";
 import { AgentSpeechTimeline, classifySegment } from "./voice-protocol";
 
 describe("voice protocol echo attribution", () => {
+  it("classifies an incremental leading prompt fragment as agent speech", () => {
+    const timeline = new AgentSpeechTimeline([{ start: 10, end: 12, text: "What made you choose the blue option?" }]);
+
+    expect(classifySegment({ text: "What made", tStart: 10.2, tEnd: 10.4 }, timeline)).toMatchObject({
+      kind: "agent",
+      text: "",
+    });
+  });
+
+  it("refines an active interval with the agent's delivered transcript", () => {
+    const timeline = new AgentSpeechTimeline();
+    const id = timeline.start(10, "Expected prompt wording");
+
+    timeline.updateText("What the agent actually said", id);
+
+    expect(timeline.all()[0].text).toBe("What the agent actually said");
+    expect(classifySegment({ text: "What the agent actually said", tStart: 10.5, tEnd: 11 }, timeline).kind).toBe("agent");
+  });
+
   it("classifies an exact in-window echo as agent speech", () => {
     const timeline = new AgentSpeechTimeline([{ start: 10, end: 12, text: "What made you choose the blue option?" }]);
 

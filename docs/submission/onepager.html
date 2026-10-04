@@ -1,0 +1,70 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+@page{size:Letter;margin:0.35in 0.45in}
+body{font-family:"DejaVu Sans",Helvetica,Arial,sans-serif;font-size:7.3pt;line-height:1.22;color:#1d2330;margin:0}
+h1{font-size:17pt;margin:0;color:#14213d}
+.sub{color:#555;font-size:8.6pt;margin:1px 0 6px}
+h2{font-size:8.6pt;margin:5px 0 2px;color:#fff;background:#14213d;padding:2px 6px;border-radius:2px}
+ul{margin:2px 0 0 0;padding-left:14px}li{margin:1px 0}
+.cols{display:flex;gap:14px}.cols>div{flex:1}
+table{border-collapse:collapse;width:100%;margin-top:2px;table-layout:fixed}
+td{padding:1.5px 5px;border-bottom:1px solid #e3e6ec;vertical-align:top}td:first-child{font-weight:bold;width:30%}
+.flow{display:flex;gap:4px;align-items:stretch;margin:4px 0}
+.box{flex:1;border:1px solid #14213d;border-radius:3px;padding:3px 5px;background:#f3f5fa}
+.arrow{align-self:center;font-weight:bold;color:#14213d}
+.note{font-size:7.4pt;color:#555}
+</style></head><body>
+<h1>Simon — the AI Apprentice</h1>
+<div class="sub">Hack-Nation × ElevenLabs · <b>Capture → Map → Teach</b> · Live: tacit-ai-apprentice.vercel.app · Code: github.com/Backpacked333/sorcerer-apprentice-</div>
+
+<h2>Challenge Tackled</h2>
+<ul>
+<li><b>Problem:</b> a screen recording shows <i>what</i> an expert clicked, not <i>why</i>, <i>when the rule stops applying</i>, or <i>who to ask</i>. That judgment leaves with the person.</li>
+<li><b>Users:</b> the expert (shares screen, works real cases) and the new hire (works an unseen case with the expert's reasoning as tutor). Demo domain: accounts-payable invoices in a sandbox ERP.</li>
+<li><b>Approach:</b> an apprentice is a slot-filling machine, not a recorder. Each rule has empty slots (reason, limit, exception, who to ask). The screen shows <i>when</i> a judgment happened; voice fills a slot only at a pause. "Understood" = zero open slots <b>plus</b> the expert's explicit yes.</li>
+</ul>
+
+<div class="flow">
+<div class="box"><b>Capture</b><br>screen frames + ERP events → governor opens a question window at a pause → voice asks "why / limit / when stop"</div><div class="arrow">→</div>
+<div class="box"><b>Map</b><br>spoken debrief closes gaps; teach-back until expert says yes → confirmed <b>Work Map</b> (steps, verbatim quotes, guardrails)</div><div class="arrow">→</div>
+<div class="box"><b>Teach</b><br>new hire's field change triggers tutor <i>before save</i>; replays expert's screen moment; mastered vs. practice</div>
+</div>
+
+<h2>Tools / ML Models Used</h2>
+<table>
+<tr><td>ElevenAgents (V4 Turbo voice, Gemini 2.5 Flash)</td><td>Two voice agents: interviewer and tutor. Mic is closed outside governor-opened windows; speaks only on tagged messages, via client tools (<code>log_answer</code>, <code>record_prediction</code>).</td></tr>
+<tr><td>ElevenLabs Scribe v2 Realtime</td><td>Live speech-to-text of the expert; transcript is the only source of verbatim quotes.</td></tr>
+<tr><td>Claude Haiku 4.5 (vision)</td><td>Turns screen stills into events labeled <code>vision</code>; sandbox ERP telemetry is labeled <code>dom</code> — two sources, never disguised as one.</td></tr>
+<tr><td>Claude Sonnet 4.5 (compile)</td><td>Compiles transcript + events into the Work Map (structured output); a deterministic compile is the keyless fallback. A model never confirms its own map.</td></tr>
+<tr><td>Next.js 16, React 19, Tailwind 4, Zod 4, AI SDK 7 / Vercel AI Gateway, Supabase (Postgres + private Storage), Vercel, Vitest</td><td>App, schemas, model routing, per-visitor isolated storage, hosting, tests.</td></tr>
+</table>
+
+<div class="cols"><div>
+<h2>What Worked Well</h2>
+<ul>
+<li><b>Timing is code, not a prompt.</b> A deterministic governor decides when the agent may speak; in production tests, questions began in ~585–740 ms on one connection and closed gates stayed muted.</li>
+<li><b>Honesty by construction:</b> verbatim-or-nothing quotes, rules only where the expert stated the trigger, labeled fallbacks, consent-epoch "off the record" that strikes transcript, events, frames and clips.</li>
+<li><b>Only a confirmed map teaches:</b> tutor, save guard and exports load only maps with an expert confirmation.</li>
+<li><b>Keyless mode</b> runs the full loop (seed → Capture → Map → confirm → tutor → guard) as an end-to-end smoke test; 546 automated tests, typecheck and production build pass.</li>
+
+</ul>
+</div><div>
+<h2>What Was Challenging</h2>
+<ul>
+<li><b>Voice reliability:</b> background voices and agent echo triggered false answers. Fix: background-voice detection, a required <code>log_answer</code> tool confirmation, and discarding pre-listening transcript (false-quote bug P-12).</li>
+<li><b>SDK drift:</b> the installed ElevenLabs SDK dropped a VAD field and had a stale model enum; we override the wire payload and verify via read-back (<code>agents:create --check</code>).</li>
+<li><b>Self-disconnect on timeout</b> was mistaken for user hang-up; now an 8 s wait before a labeled browser-speech fallback.</li>
+<li><b>Trust:</b> masks painted before frames leave the browser; strict evidence-clock checks so one invoice's narration cannot satisfy another's.</li>
+<li><b>Limits:</b> human listening/real-room naturalness acceptance is still pending; we did not claim it.</li>
+</ul>
+</div></div>
+
+<h2>How We Spent Our Time <span style="font-weight:normal">(approx., from git history; 4 people, parallel lanes)</span></h2>
+<table>
+<tr><td>Sat 1 PM–5 PM</td><td>Brief → spec, contracts, lanes (Voice · Eyes/Trust · Map/Teach · Experience), keyless baseline</td></tr>
+<tr><td>Sat 5 PM–11 PM</td><td>Voice adapter and governor, vision + redaction, compile and teach-back, ERP sandbox; first agent provisioning</td></tr>
+<tr><td>Sat 11 PM–Sun 3 AM</td><td>Integration: CaptureLoop, Supabase + Vercel deploy, V4 Turbo release, voice-quality and evidence-integrity fixes</td></tr>
+<tr><td>Sun 3 AM–7:30 AM</td><td>Feature freeze, production tests, three 60 s videos, team photo, this report, submission</td></tr>
+</table>
+
+<div style="margin-top:4px;border-left:3px solid #14213d;padding-left:7px"><b>If we had 24 more hours,</b> we'd run real human listening sessions with strangers as the expert and the new hire, tune the pause governor on those recordings, and extend the Work Map beyond accounts-payable to a second domain.</div>
+</body></html>

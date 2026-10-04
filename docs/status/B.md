@@ -4,7 +4,7 @@ _Updated by the lane's AI on every PR. Overwritten at each checkpoint (see docs/
 
 ## Done and merged (WP ids)
 
-No merge claimed for WB-4 / PR #29.
+- [PR #26](https://github.com/Backpacked333/sorcerer-apprentice-/pull/26) merged as [38b3ccd](https://github.com/Backpacked333/sorcerer-apprentice-/commit/38b3ccd): private-agent/TTS deployment defaults, full governor tuning examples, and persistent `DATA_DIR` guidance (N2/C3). No secrets included.
 
 ## PR prepared (not merged)
 
@@ -13,23 +13,26 @@ No merge claimed for WB-4 / PR #29.
 
 ## Verified live by a human (who, when, what they did)
 
-None for this PR. No human verification, UI/browser testing, live-provider calls or deployed-storage testing was performed.
+None reported for either PR; all results below are automated. No human verification, UI/browser testing, live-provider calls or deployed-storage testing was performed for PR #29.
 
 ## Not verified yet (and the script to verify)
 
 - After C/D integration, a human should capture a session, replay a URL-backed frame from its Work Map, start Teach from a confirmed map, exercise the before-save guard, and confirm explicit reset disarms it. Record who/when and the observed result; automated tests do not establish human timing or voice behavior.
+- No human/live deployment check. After deployment, inspect `/api/health` and exercise a real voice pause; environment examples alone do not enable private-agent token exchange.
 
 ## Blocked on (lane, handshake id, what exactly)
 
-- Parent's fresh re-review before landing; this PR remains unmerged, with no auto-merge enabled.
+- Parent owns review and landing of PR #29; it remains prepared and unmerged, with no auto-merge enabled.
 - C / P-21, P-25 ([#24](https://github.com/Backpacked333/sorcerer-apprentice-/issues/24)): migrate `lib/erp.ts` to store APIs and wire request workspace identity. `currentWorkspace()` returns `"local"`; per-visitor isolation is not delivered.
 - C/D / P-1 ([#24](https://github.com/Backpacked333/sorcerer-apprentice-/issues/24), [#23](https://github.com/Backpacked333/sorcerer-apprentice-/issues/23)): render `frame.url ?? frame.dataUrl` in Teach and WorkMap replay consumers. A/D hello/reannounce producer/subscriber wiring also remains outside this PR.
 
+- Railway dashboard setup and lane A private-agent integration; CODEOWNERS usernames remain outstanding. PR #26 is already merged.
+
 ## Next 3 things
 
-1. Parent completes fresh review and decides whether to merge PR #29.
-2. Owning lanes integrate store, telemetry and frame contracts; do not treat optional metadata as isolation or automatic wiring.
-3. Run the post-integration human script above and record results before claiming live verification.
+1. Parent completes review and lands PR #29 and dependencies in the approved order.
+2. Owning lanes integrate store, telemetry and frame contracts, then re-run the keyless gate on landed main; do not treat optional metadata as isolation or automatic wiring.
+3. Complete the live Railway and post-integration human browser/audio checks above, recording results before claiming readiness or live verification.
 
 ## Risks I see for the demo
 

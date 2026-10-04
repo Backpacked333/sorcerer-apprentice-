@@ -21,7 +21,7 @@ export function AppShell({
     <div className={fill ? "flex h-full min-h-0 flex-col" : "flex min-h-dvh flex-col"}>
       <header className="app-bar">
         <span className="mark" aria-hidden />
-        <span className="font-semibold">Tacit</span>
+        <span className="font-semibold">Simon</span>
         <Stepper current={step} sessionId={sessionId} confirmed={confirmed} />
         <span className="ml-auto flex items-center gap-2">
           {presenter && <span className="tag tag-amber">Presenter</span>}

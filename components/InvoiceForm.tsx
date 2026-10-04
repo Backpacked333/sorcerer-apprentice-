@@ -318,7 +318,7 @@ export function InvoiceForm({
           {locked && nextId && (
             <button type="button" className="erp-btn erp-btn-primary" data-testid="erp-next" onClick={() => router.push(`/erp/invoice/${nextId}`)}>Next invoice →</button>
           )}
-          {locked && !nextId && <p className="erp-banner">Queue complete. Return to the Tacit panel to finish.</p>}
+          {locked && !nextId && <p className="erp-banner">Queue complete. Return to the Simon panel to finish.</p>}
         </div>
       </section>
     </div>

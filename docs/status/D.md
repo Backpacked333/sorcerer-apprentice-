@@ -1,5 +1,14 @@
 # Lane D status
 
+## Simon branding · WD-2 / WD-5 / WD-10 / WD-12 / P1
+
+- Done: renamed visible product branding to Simon in page metadata, landing copy, shared app header, ERP return links/completion banners, README, demo/submission copy and moonshot frame.
+- Scope: technical identifiers, infrastructure names, team references and voice-agent configuration remain unchanged.
+- Verification: `npm run typecheck`, `npm test` (462 tests) and `npm run build` passed. Agent visual spot-check of the production build confirmed Simon on the landing page/tab title, Capture header, ERP return link and moonshot frame. No lint script is configured.
+- Verified live by a human: not yet.
+- Next: review and merge the branding PR; no deployment or external submission changes are included.
+- Blocked on: none for the copy change.
+
 Updated on branch `d/experience`. Not merged. Nothing below is a live human verification.
 
 ## Done on this branch (not merged)

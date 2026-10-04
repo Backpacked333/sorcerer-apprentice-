@@ -30,7 +30,7 @@ describe("responsive conversation policy", () => {
     const request = fetch.mock.calls[0] as unknown as [unknown, RequestInit];
     expect(JSON.parse(request[1].body as string)).toMatchObject({
       tool_config: {
-        pre_tool_speech: "force", execution_mode: "post_tool_speech", expects_response: true,
+        pre_tool_speech: "auto", execution_mode: "post_tool_speech", expects_response: true,
       },
     });
   });

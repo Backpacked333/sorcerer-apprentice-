@@ -7,13 +7,13 @@ export const SKIP_TURN_DESCRIPTION = "Stay silent outside an active tagged excha
 
 export function answerAcknowledgmentOptions(name: string): Pick<ElevenLabs.ClientToolConfigInput, "preToolSpeech" | "executionMode"> {
   return name === "log_answer"
-    ? { preToolSpeech: "force", executionMode: "post_tool_speech" }
+    ? { preToolSpeech: "auto", executionMode: "post_tool_speech" }
     : { preToolSpeech: "off", executionMode: "immediate" };
 }
 
 export function assertAnswerAcknowledgment(tool?: Pick<ElevenLabs.ClientToolConfigInput, "preToolSpeech" | "executionMode" | "expectsResponse">) {
-  if (tool?.preToolSpeech !== "force" || tool.executionMode !== "post_tool_speech" || tool.expectsResponse !== true) {
-    throw new Error("Voice-flow check failed: log_answer must acknowledge before saving and still await its result.");
+  if (tool?.preToolSpeech !== "auto" || tool.executionMode !== "post_tool_speech" || tool.expectsResponse !== true) {
+    throw new Error("Voice-flow check failed: log_answer must allow acknowledgment before saving without forcing retry speech, and await its result.");
   }
 }
 

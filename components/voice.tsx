@@ -7,7 +7,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe, type ScribeCallbacks } from "@elevenlabs/react";
-import { composedVoiceGateState, initialTurnState, withAnswerConfirmation, withVoiceQualityWindow, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
+import { answerToolEvidenceRejection, composedVoiceGateState, initialTurnState, withAnswerConfirmation, withVoiceQualityWindow, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
 import { stopAndClearMediaStream, VoiceTurnAdapter } from "@/lib/voice-turn-adapter";
 import { uploadRecordingWithConsent } from "@/lib/recording-consent";
 export type { TurnOptions, TurnPhase, TurnResult } from "@/lib/voice-turn";
@@ -33,7 +33,9 @@ export type ToolResult = string | void | { dispatch: false; message: string };
 export type ToolHandler = (params: Record<string, unknown>) => ToolResult | Promise<ToolResult>;
 export type ToolHandlers = Partial<Record<ToolName, ToolHandler>>;
 
-export async function dispatchClientTool(handler: ToolHandler | undefined, params: Record<string, unknown>, dispatch: () => void): Promise<string> {
+export async function dispatchClientTool(handler: ToolHandler | undefined, params: Record<string, unknown>, dispatch: () => void, turn?: { state: TurnState; name: ToolName }): Promise<string> {
+  const rejection = turn && answerToolEvidenceRejection(turn.state, { name: turn.name, params });
+  if (rejection) return rejection;
   let result: ToolResult = undefined;
   try {
     result = await handler?.(params);
@@ -1032,7 +1034,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     if (!fn && !activeTurn) return `no handler for ${name}`;
     return dispatchClientTool(fn, params ?? {}, () => {
       turnAdapterRef.current!.dispatchForGeneration(turnGeneration, { type: "TOOL", at: nowTurnRef.current(), name, params: params ?? {} });
-    });
+    }, { state: turnAdapterRef.current!.snapshot(), name });
   };
   useConversationClientTool("log_answer", handle("log_answer"));
   useConversationClientTool("mark_off_record", handle("mark_off_record"));

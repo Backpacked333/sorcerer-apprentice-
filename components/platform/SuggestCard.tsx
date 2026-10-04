@@ -73,7 +73,7 @@ export function SuggestCard({ items, onFocusRole, defaultOpen = true }: { items:
               <span aria-hidden style={{ width: 7, height: 7, borderRadius: 4, marginTop: 7, flex: "none", background: TONE[s.tone] }} />
               <span style={{ fontSize: 13.5, lineHeight: 1.45, color: "#1d1d1f" }}>{s.text}</span>
             </div>
-            <div style={{ display: "flex", gap: 6, marginTop: 9, paddingLeft: 15 }}>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 9, paddingLeft: 15 }}>
               {s.action ? (
                 s.action.href ? (
                   <Link href={s.action.href} style={pill(true)}>{s.action.label}</Link>

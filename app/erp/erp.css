@@ -427,7 +427,7 @@ html.erp-embedded .erp-main .erp-card-flush { container-type: inline-size; }
   /* The narrowed line-items card (≈570–720px): give the cost center and asset number their full width. */
   @container (max-width: 760px) {
     .erp-lines-head, .erp-line-row { grid-template-columns: 20px minmax(0, 2fr) minmax(0, 1fr) 128px 96px; gap: 10px; padding-left: 16px; padding-right: 16px; }
-    .erp-lines-head > * { white-space: nowrap; }
+    .erp-lines-head > * { min-width: 0; white-space: normal; overflow-wrap: anywhere; }
     .erp-line-error { padding-left: 46px; }
   }
 }

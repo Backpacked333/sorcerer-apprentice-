@@ -5,7 +5,7 @@
 - Done: preserve the desktop Liquid Glass companion/left-hand mechanism layout; at narrow widths, stack and scroll them vertically. A responsive Capture-only inset accommodates the sheet plus non-overlay scrollbar at 320px. The preview stays mounted and the floating/occluder registrations are unchanged.
 - Done: reserve horizontal space beside the embedded ERP only at 1024px and above. At smaller widths, keep the existing vertical clearance so invoice fields can scroll above the tutor rather than collapsing inside a 2px-wide card. Capture/Teach logic and business rules are unchanged.
 - Agent verification: recorded local/keyless testing reproduced both failures. Capture now passes 320px/390px, 667px landscape, 780/781px breakpoint, desktop resize-back, separate companion layout and preview-node identity checks. Initial desktop sample → Work Map → before-save guidance → replay → corrected posting/mastery and platform/claims/demo checks passed. Mobile Teach retest is pending after the ERP fix.
-- Automated verification: 806 tests passed before the ERP change; 38 targeted presentation tests and production build pass with both fixes. No lint script is configured.
+- Automated verification: typecheck, 820 tests across 91 files, production build and whitespace checks pass after integration with main. No lint script is configured.
 - Verified live by a human: not yet. Provider voice, microphone quality, real screen sharing and deployed QA remain unverified; local synthetic evidence is not live-provider proof.
 - Next: finish mobile Teach/Ontology retest, publish the responsive regression fixes, settle CI. No deployment or submission performed.
 - Blocked on: no setup blocker; browser retest pending.

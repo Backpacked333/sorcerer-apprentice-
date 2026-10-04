@@ -266,6 +266,7 @@ describe("Liquid Glass observation presence", () => {
     expect(css).toContain("html.erp-embedded .erp-main { padding-bottom: calc(var(--tacit-reserve-h, 0px) + 28px); }");
     expect(css).toMatch(/@media \(min-width: 1024px\)\s*\{\s*html\.erp-embedded \.erp-main \.erp-card-flush,\s*html\.erp-embedded \.erp-main \.erp-approval-card \{ margin-right: max\(0px, calc\(var\(--tacit-reserve-w, 0px\) - 28px\)\); \}\s*\}/);
     expect(css.match(/margin-right: max\(0px, calc\(var\(--tacit-reserve-w/g)).toHaveLength(1);
+    expect(css).toContain(".erp-lines-head > * { min-width: 0; white-space: normal; overflow-wrap: anywhere; }");
   });
 
   it("stacks and scrolls the Capture mechanism on narrow screens without remounting the preview", () => {

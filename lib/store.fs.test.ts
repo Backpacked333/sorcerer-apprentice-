@@ -87,6 +87,7 @@ it("round-trips isolated ERP workspaces and never treats corrupt ERP as missing"
   expect(await store.getErpState("visitor")).toEqual([]);
   for (const raw of ["{", "null", "[]", "{}", '{"invoices":null}', '{"invoices":[null]}', '{"invoices":[[]]}', '{"invoices":[1]}']) {
     await fs.writeFile(path.join(root, "local", "erp"), raw);
+    await expect(store.getErpState()).rejects.toThrow();
     await expect(store.getErpSnapshot()).rejects.toThrow();
   }
 });

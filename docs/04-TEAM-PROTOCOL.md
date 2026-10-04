@@ -46,9 +46,12 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 | `lib/store.ts`, `app/api/sessions/route.ts`, `app/api/sessions/[id]/route.ts`, `…/clips/`, `…/frames/` | **B** | persistence |
 | `lib/export.ts`, `lib/autopilot.ts`, `app/api/export/`, `app/api/autopilot/`, `app/api/mcp/`, `app/api/health/`, `app/api/demo/` | **B** | stretch X1 (agent-ready) and X3 (MCP); health + one-call demo reset |
 | `scripts/seed-session.ts`, `scripts/smoke.mjs`, `scripts/vision-eval.mjs`, `.github/`, `next.config.ts`, `.env.example` | **B** | |
+| `lib/seed.ts`, `lib/seed-boot.test.ts`, `lib/health.test.ts` | **B** | non-destructive sample boot and readiness regressions |
 | `lib/platform-env.test.ts` | **B** | deployment environment example regression |
 | `package.json`, `package-lock.json` | **B** (gatekeeper) | see §5.4 |
+| `lib/platform-config.test.ts` | **B** | N2 structural regressions for CI, runtime configuration and worktree exclusions |
 | `lib/workmap.ts` | **C** | THE contract: additive only |
+| `lib/workmap.contracts.test.ts` | **C** | legacy/new map compatibility for pre-approved contract additions |
 | `lib/compile.ts`, `lib/teachback.ts`, `lib/matcher.ts`, `lib/metrics.ts` | **C** | |
 | `lib/compile/{steps,rules-regex,slots,rules-llm,fill,correct}.ts`, `lib/compile.split.test.ts` | **C** | compiler internals; `lib/compile.ts` retains the public API |
 | `lib/erp.ts`, `app/api/erp/`, `app/api/teach/` | **C** | sandbox server + save guard |

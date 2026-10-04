@@ -1,7 +1,15 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildAgentReconnectOptions, createAgentReconnectPolicy } from "@/components/voice";
+import { buildAgentReconnectOptions, createAgentReconnectPolicy, shouldSuppressAgentSpeech } from "@/components/voice";
 
 describe("agent reconnect policy", () => {
+  it("suppresses tagged speech while an agent session is requested but its transport is down", () => {
+    expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: false, sessionRequested: true, status: "disconnected" })).toBe(true);
+    expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: false, sessionRequested: true, status: "connecting" })).toBe(true);
+    expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: false, sessionRequested: true, status: "connected" })).toBe(false);
+    expect(shouldSuppressAgentSpeech({ configuredMode: "agent", hasVoiceError: true, sessionRequested: true, status: "disconnected" })).toBe(false);
+    expect(shouldSuppressAgentSpeech({ configuredMode: "fallback", hasVoiceError: false, sessionRequested: true, status: "disconnected" })).toBe(false);
+  });
+
   it("preserves session metadata without replaying the greeting", () => {
     expect(buildAgentReconnectOptions({
       firstMessage: "Hello again.",

@@ -37,12 +37,6 @@ export interface VoiceMessage {
   t: number; // epoch ms
 }
 
-interface PendingAgentSay {
-  tag: string;
-  text: string;
-  spoken?: string;
-}
-
 export interface VoiceDebugEvent {
   at: number;
   src: "agent" | "scribe" | "turn" | "gate" | "tool";
@@ -62,6 +56,20 @@ export interface VoiceConnectOptions {
 export function buildAgentReconnectOptions(opts: VoiceConnectOptions = {}): VoiceConnectOptions {
   const { firstMessage: _firstMessage, ...rest } = opts;
   return rest;
+}
+
+export function shouldSuppressAgentSpeech({
+  configuredMode,
+  hasVoiceError,
+  sessionRequested,
+  status,
+}: {
+  configuredMode: VoiceApi["mode"];
+  hasVoiceError: boolean;
+  sessionRequested: boolean;
+  status: string;
+}): boolean {
+  return configuredMode === "agent" && !hasVoiceError && sessionRequested && status !== "connected";
 }
 
 export function buildAgentSessionOptions(agentId: string, opts: VoiceConnectOptions = {}) {
@@ -501,9 +509,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const turnCleanupRef = useRef<() => void>(() => {});
   const degradedAgentFallbackRef = useRef(false);
   const reconnectingRef = useRef(false);
-  const pendingAgentSaysRef = useRef<PendingAgentSay[]>([]);
-  const flushAgentQueueRef = useRef<() => void>(() => {});
-  const flushFallbackQueueRef = useRef<() => void>(() => {});
   const clipRecorderRef = useRef<MediaRecorder | null>(null);
   const clipStreamRef = useRef<MediaStream | null>(null);
   const clipChunksRef = useRef<Blob[]>([]);
@@ -658,7 +663,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     setVoiceError(reason);
     setFallbackConnected(true);
     emit("agent", "degraded", { reason });
-    flushFallbackQueueRef.current();
   }, [emit]);
 
   useEffect(() => {
@@ -673,7 +677,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         window.speechSynthesis?.cancel();
         setFallbackConnected(false);
         setVoiceError(undefined);
-        flushAgentQueueRef.current();
       } else if (outcome.kind === "degraded") {
         activateFallback(outcome.reason);
         if (firstMessage) {
@@ -1069,36 +1072,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     }, 1500);
   }), []);
   speakFallbackRef.current = speakFallback;
-  flushFallbackQueueRef.current = () => {
-    const queued = pendingAgentSaysRef.current.splice(0);
-    if (!queued.length) return;
-    void (async () => {
-      for (const item of queued) {
-        const line = item.spoken ?? item.text;
-        authorizeSpeech(line);
-        reassertGate();
-        await speakFallback(line);
-        authorization.current!.finish();
-      }
-    })();
-  };
-  flushAgentQueueRef.current = () => {
-    const queued = pendingAgentSaysRef.current.splice(0);
-    for (const [index, item] of queued.entries()) {
-      const line = item.spoken ?? item.text;
-      authorizeSpeech(line);
-      reassertGate();
-      setMessages((xs) => [...xs, { role: "user", text: `[${item.tag}] ${item.text}`, t: Date.now() }]);
-      try {
-        controls.sendUserMessage(`[${item.tag}] ${item.text}`);
-      } catch (error) {
-        pendingAgentSaysRef.current = [...queued.slice(index), ...pendingAgentSaysRef.current];
-        controls.endSession();
-        activateFallback(error instanceof Error ? error.message : String(error), establishedGeneration.current);
-        break;
-      }
-    }
-  };
 
   const nowTurn = useCallback(() => sessionStartRef.current === undefined ? Date.now() / 1_000 : Math.max(0, (Date.now() - sessionStartRef.current) / 1_000), []);
   nowTurnRef.current = nowTurn;
@@ -1201,7 +1174,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       degradedAgentFallbackRef.current = false;
       if (!reconnecting) {
         reconnectPolicy.current!.cancel();
-        pendingAgentSaysRef.current = [];
         lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
         hubRef.current!.setSessionStart(opts?.sessionStartMs);
         sessionStartRef.current = opts?.sessionStartMs;
@@ -1304,7 +1276,6 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     reconnectPolicy.current!.cancel();
     reconnectingRef.current = false;
     setAgentReconnecting(false);
-    pendingAgentSaysRef.current = [];
     turnAdapterRef.current!.disconnect();
     degradedAgentFallbackRef.current = false;
     void stopClip(false);
@@ -1339,9 +1310,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const say = useCallback<VoiceApi["say"]>(
     (tag, text, spoken) => {
       const line = spoken ?? text;
-      if (configuredMode === "agent" && !voiceError && sessionRequestedRef.current && conversationStatus.status !== "connected") {
-        pendingAgentSaysRef.current.push({ tag, text, spoken });
-        emit("agent", "message_queued", { tag, reconnecting: reconnectingRef.current });
+      if (shouldSuppressAgentSpeech({
+        configuredMode,
+        hasVoiceError: Boolean(voiceError),
+        sessionRequested: sessionRequestedRef.current,
+        status: conversationStatus.status,
+      })) {
+        emit("agent", "message_suppressed_reconnecting", { tag, reconnecting: reconnectingRef.current });
         return;
       }
       authorizeSpeech(line);

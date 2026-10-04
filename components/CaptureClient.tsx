@@ -2,11 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { CaptureLoop, findLateAnswerWindow, windowOutcome, type LoopAction, type LoopSignals } from "@/lib/capture-loop";
+import { CandidateQueue, buildCandidates, extractThresholds, newContext, observe } from "@/lib/curiosity";
+import { describeEvent, emptySession, type Frame, type ScreenEvent, type SessionLog } from "@/lib/events";
+import { COST_CENTERS } from "@/lib/erp-model";
 import { Governor, type Decision, type GovernorConfig } from "@/lib/governor";
-import { CandidateQueue, buildCandidates, extractThresholds, narrationFills, newContext, observe, type Candidate } from "@/lib/curiosity";
-import { describeEvent, emptySession, type Frame, type QuestionWindow, type ScreenEvent, type SessionLog } from "@/lib/events";
-import { redactText } from "@/lib/redact";
 import { computeMetrics } from "@/lib/metrics";
+import { redactText } from "@/lib/redact";
+import { buildAsk, keytermsFrom } from "@/lib/voice-protocol";
+import type { TurnResult } from "@/lib/voice-turn";
 import { useScreenPipeline, type EventSource } from "./useScreenPipeline";
 import { VoiceProvider, useTranscriber, useVoice, type ToolHandlers } from "./voice";
 import { CaptureView } from "./views/CaptureView";
@@ -14,7 +18,10 @@ import type { CaptureVM } from "./views/capture.vm";
 
 const OFF_RECORD = /\b(off the record|scratch that|don'?t keep that|do not keep that|strike that)\b/i;
 
-export function CaptureClient(props: { agentId?: string; source: EventSource; governor: Partial<GovernorConfig> }) {
+type CaptureGovernorConfig = Partial<GovernorConfig> & { graceSecs?: number };
+type OpenAction = Extract<LoopAction, { type: "open" }>;
+
+export function CaptureClient(props: { agentId?: string; source: EventSource; governor: CaptureGovernorConfig }) {
   const tools = useRef<ToolHandlers>({});
   return (
     <VoiceProvider agentId={props.agentId} tools={tools}>
@@ -23,7 +30,7 @@ export function CaptureClient(props: { agentId?: string; source: EventSource; go
   );
 }
 
-function Capture({ source, governor: govConfig, tools }: { agentId?: string; source: EventSource; governor: Partial<GovernorConfig>; tools: React.MutableRefObject<ToolHandlers> }) {
+function Capture({ source, governor: govConfig, tools }: { agentId?: string; source: EventSource; governor: CaptureGovernorConfig; tools: React.MutableRefObject<ToolHandlers> }) {
   const router = useRouter();
   const voice = useVoice();
   const [expertName, setExpertName] = useState("");
@@ -35,298 +42,384 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
   const [holding, setHolding] = useState(false);
   const [synced, setSynced] = useState<number | null>(null);
   const [consented, setConsented] = useState(false);
+  const [noisy, setNoisy] = useState(false);
 
   const log = useRef<SessionLog>(emptySession("pending", "capture", task, expertName));
   const governor = useRef(new Governor(govConfig));
-  const queue = useRef(new CandidateQueue(90));
+  const queue = useRef(new CandidateQueue(90, govConfig.graceSecs ?? 18));
+  const loop = useRef(new CaptureLoop(governor.current, queue.current, { graceSecs: govConfig.graceSecs, maxChained: govConfig.maxChained }));
   const ctx = useRef(newContext());
-  const lastSpeechAt = useRef(-Infinity);
-  const spokeStarted = useRef(false);
-  const recorder = useRef<MediaRecorder | null>(null);
-  const micStream = useRef<MediaStream | null>(null);
-  const chunks = useRef<Blob[]>([]);
+  ctx.current.valueLabels ??= Object.fromEntries(COST_CENTERS.map(({ code, label }) => [code, label]));
   const entitiesRedacted = useRef(0);
   const dirty = useRef(false);
+  const holdingRef = useRef(false);
   const voiceRef = useRef(voice);
+  const activeTurn = useRef<Promise<TurnResult> | null>(null);
+  const activeWindowId = useRef<string | undefined>(undefined);
+  const activeHeard = useRef("");
+  const activeForced = useRef(false);
+  const struckWindowIds = useRef(new Set<string>());
+  const expertSpeech = useRef<Array<{ at: number; words: number }>>([]);
+  const quietSamples = useRef<Array<{ at: number; quiet: boolean }>>([]);
+  const pipelineRef = useRef<ReturnType<typeof useScreenPipeline> | null>(null);
+  const strikeRef = useRef<(fromSecs?: number, toSecs?: number) => void>(() => {});
+  const endTaskRef = useRef<() => Promise<void>>(async () => {});
   voiceRef.current = voice;
+  holdingRef.current = holding;
 
-  const rerender = () => setTick((t) => t + 1);
-  const nowSecs = useCallback(() => (Date.now() - log.current.startedAt) / 1000, []);
+  const rerender = useCallback(() => setTick((value) => value + 1), []);
+  const nowSecs = useCallback(() => Math.max(0, (Date.now() - log.current.startedAt) / 1000), []);
 
-  const onEvent = useCallback((e: ScreenEvent, frame?: Frame) => {
-    const L = log.current;
-    L.events.push(e);
-    if (frame) L.frames.push(frame);
-    if (e.kind !== "typing") {
-      const cs = buildCandidates(e, ctx.current, e.t);
-      observe(e, ctx.current);
-      queue.current.add(cs);
-      voiceRef.current.sendContext(`[SCREEN t=${e.t.toFixed(0)}s] ${describeEvent(e)}`);
+  const onEvent = useCallback((event: ScreenEvent, frame?: Frame) => {
+    const session = log.current;
+    session.events.push(event);
+    if (frame) session.frames.push(frame);
+    if (event.kind !== "typing") {
+      const candidates = buildCandidates(event, ctx.current, event.t);
+      observe(event, ctx.current);
+      queue.current.add(candidates);
+      voiceRef.current.sendContext(`[SCREEN t=${event.t.toFixed(0)}s] ${describeEvent(event)}`);
     }
     dirty.current = true;
     rerender();
-  }, []);
+  }, [rerender]);
 
   const pipeline = useScreenPipeline({ sessionStart: log.current.startedAt, source, onEvent });
+  pipelineRef.current = pipeline;
 
-  const holdingRef = useRef(false);
-  holdingRef.current = holding;
+  const pushTranscript = useCallback((text: string, speaker: "expert" | "agent", start?: number, end?: number) => {
+    const clean = speaker === "expert" ? redactText(text) : { text: text.trim(), entities: [] };
+    if (!clean.text) return;
+    entitiesRedacted.current += clean.entities.length;
+    const session = log.current;
+    session.transcript.push({
+      id: `tr_${session.transcript.length}`,
+      t: start ?? nowSecs(),
+      ...(end === undefined ? {} : { tEnd: end }),
+      text: clean.text,
+      speaker,
+      final: true,
+    });
+  }, [nowSecs]);
+
   const transcriber = useTranscriber({
     enabled: started,
     onPartial: (text) => {
-      if (holdingRef.current) return;
-      if (!voiceRef.current.isSpeaking) lastSpeechAt.current = nowSecs();
-      setPartial(text);
+      if (!holdingRef.current) setPartial(text);
     },
-    onCommitted: (text, start) => {
+    onCommitted: (text, start, end) => {
       if (holdingRef.current) return;
       setPartial("");
-      const L = log.current;
-      const t = start !== undefined && start > 0 ? start : nowSecs();
-      if (voiceRef.current.isSpeaking) {
-        L.transcript.push({ id: `tr_${L.transcript.length}`, t, text, speaker: "agent", final: true });
-        return;
-      }
-      lastSpeechAt.current = nowSecs();
-      const { text: clean, entities } = redactText(text);
-      entitiesRedacted.current += entities.length;
-      L.transcript.push({ id: `tr_${L.transcript.length}`, t, text: clean, speaker: "expert", final: true });
-      const w = governor.current.window;
-      if (w && w.phase === "answering") {
-        const qw = L.windows.find((x) => x.id === w.id);
-        if (qw) {
-          qw.answerText = [qw.answerText, clean].filter(Boolean).join(" ");
-          governor.current.markAnswered(nowSecs());
-          qw.answeredAt ??= nowSecs();
-        }
-      }
-      if (OFF_RECORD.test(text) && voiceRef.current.mode === "fallback") strike();
-      for (const c of queue.current.items.filter((c) => c.status === "queued" && c.kind === "why")) {
-        if (narrationFills(clean, c)) queue.current.fillByStep(c.stepRef);
-      }
-      for (const th of extractThresholds(clean)) if (!ctx.current.knownThresholds.includes(th)) ctx.current.knownThresholds.push(th);
+      const at = start ?? nowSecs();
+      pushTranscript(text, "expert", at, end);
+      const clean = redactText(text).text;
+      expertSpeech.current.push({ at: end ?? at, words: clean.split(/\s+/u).filter(Boolean).length });
+      if (activeWindowId.current) activeHeard.current = [activeHeard.current, clean].filter(Boolean).join(" ");
+      queue.current.fillNarration(clean, at, pipelineRef.current?.currentState.current.invoice);
+      for (const threshold of extractThresholds(clean)) if (!ctx.current.knownThresholds.includes(threshold)) ctx.current.knownThresholds.push(threshold);
+      if (OFF_RECORD.test(text)) strikeRef.current();
       dirty.current = true;
       rerender();
+    },
+    onAgentEcho: (text, start, end) => {
+      pushTranscript(text, "agent", start, end);
+      dirty.current = true;
+      rerender();
+    },
+    onCommand: (command) => {
+      if (command === "off_record") strikeRef.current();
+      else if (command === "not_now") voiceRef.current.cancelTurn("user");
     },
   });
 
-  const startRecorder = useCallback(async () => {
-    try {
-      micStream.current ??= await navigator.mediaDevices.getUserMedia({ audio: true });
-      chunks.current = [];
-      const r = new MediaRecorder(micStream.current, { mimeType: MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm" });
-      r.ondataavailable = (ev) => ev.data.size && chunks.current.push(ev.data);
-      r.start(250);
-      recorder.current = r;
-    } catch {
-      recorder.current = null;
+  const readSignals = useCallback((): LoopSignals => {
+    const currentPipeline = pipelineRef.current;
+    const pipelineSignals = currentPipeline?.signals.current;
+    const currentVoice = voiceRef.current;
+    const sttHealthy = currentVoice.stt.connected || currentVoice.mode === "fallback";
+    return {
+      now: nowSecs(),
+      currentInvoice: currentPipeline?.currentState.current.invoice,
+      lastSpeechAt: currentVoice.lastHumanSpeechAt(),
+      lastScreenChangeAt: pipelineSignals?.lastScreenChangeAt ?? Number.NEGATIVE_INFINITY,
+      lastTypingAt: pipelineSignals?.lastTypingAt ?? Number.NEGATIVE_INFINITY,
+      lastBoundaryAt: pipelineSignals?.lastBoundaryAt ?? Number.NEGATIVE_INFINITY,
+      lastInvoiceOpenedAt: pipelineSignals?.lastInvoiceOpenedAt ?? Number.NEGATIVE_INFINITY,
+      agentSpeaking: currentVoice.isSpeaking,
+      transcriberHealthy: sttHealthy,
+      sttHealthy,
+      paused: holdingRef.current,
+    };
+  }, [nowSecs]);
+
+  const redactRange = useCallback((fromSecs?: number, toSecs?: number) => {
+    const session = log.current;
+    const now = nowSecs();
+    const currentWindow = governor.current.window;
+    const from = fromSecs ?? (currentWindow ? currentWindow.openedAt : Math.max(0, now - 30));
+    const to = toSecs ?? now;
+    for (const segment of session.transcript) if (segment.t >= from && segment.t <= to) Object.assign(segment, { text: "", redacted: true });
+    for (const event of session.events) if (event.t >= from && event.t <= to) Object.assign(event, { redacted: true, from: undefined, to: undefined, state: undefined });
+    session.frames = session.frames.filter((frame) => frame.t < from || frame.t > to);
+    for (const window of session.windows) {
+      if (window.openedAt >= from && window.openedAt <= to) Object.assign(window, { answerText: "", outcome: "off_record", logged: undefined, answerAudioId: undefined });
     }
-  }, []);
+    for (const candidate of queue.current.items) if (candidate.createdAt >= from && candidate.createdAt <= to && candidate.status === "queued") candidate.status = "expired";
+    const previousStrike = session.offRecord.at(-1);
+    if (previousStrike && Math.abs(previousStrike.from - from) < 0.01 && from <= previousStrike.to + 2) previousStrike.to = Math.max(previousStrike.to, to);
+    else session.offRecord.push({ from, to });
+    pipelineRef.current?.bumpEpoch();
+    dirty.current = true;
+    rerender();
+  }, [nowSecs, rerender]);
 
-  const stopRecorder = useCallback(async (): Promise<string | undefined> => {
-    const r = recorder.current;
-    recorder.current = null;
-    if (!r) return undefined;
-    await new Promise<void>((resolve) => {
-      r.onstop = () => resolve();
-      r.stop();
+  const strike = useCallback((fromSecs?: number, toSecs?: number) => {
+    const id = activeWindowId.current;
+    if (id) struckWindowIds.current.add(id);
+    redactRange(fromSecs, toSecs);
+    if (id) voiceRef.current.cancelTurn("user");
+  }, [redactRange]);
+  strikeRef.current = strike;
+
+  const applyTurnResult = useCallback((action: OpenAction, windowId: string, result: TurnResult) => {
+    const session = log.current;
+    const questionWindow = session.windows.find((window) => window.id === windowId);
+    const wasStruck = struckWindowIds.current.delete(windowId);
+    const effectiveResult = wasStruck ? { ...result, via: "aborted" as const, command: "off_record" as const } : result;
+    const mapped = windowOutcome(effectiveResult);
+
+    if (result.spokenText) pushTranscript(result.spokenText, "agent", result.spokeAt ?? result.sentAt, result.askedAt);
+    if (mapped.outcome === "remove") {
+      session.windows = session.windows.filter((window) => window.id !== windowId);
+    } else if (questionWindow) {
+      questionWindow.spokeAt ??= result.spokeAt;
+      questionWindow.closedAt = result.closedAt;
+      questionWindow.outcome = mapped.outcome;
+      questionWindow.closedBy = mapped.closedBy;
+      questionWindow.answerText = mapped.answerText ?? "";
+      questionWindow.logged = mapped.logged;
+      questionWindow.answerAudioId = mapped.answerAudioId;
+      if (mapped.outcome === "answered") questionWindow.answeredAt = result.answeredAt ?? result.closedAt;
+    }
+
+    loop.current.applyOutcome(action.candidate, mapped, result.closedAt);
+    if (mapped.strike && !wasStruck) redactRange(questionWindow?.openedAt, result.closedAt);
+    session.deferred = loop.current.deferred();
+    dirty.current = true;
+    rerender();
+  }, [pushTranscript, redactRange, rerender]);
+
+  const runWindow = useCallback(async (action: OpenAction) => {
+    if (!loop.current.isFresh(action, readSignals())) return;
+    const openedAt = nowSecs();
+    const openWindow = loop.current.opened(action.candidate, openedAt);
+    const question = action.retro ? action.candidate.questionRetro : action.candidate.question;
+    const session = log.current;
+    session.windows.push({ id: openWindow.id, candidateId: action.candidate.id, kind: action.candidate.kind, question: action.candidate.question, stepRef: action.candidate.stepRef, openedAt });
+    activeWindowId.current = openWindow.id;
+    activeHeard.current = "";
+    activeForced.current = action.forced;
+    dirty.current = true;
+    rerender();
+
+    const lastExpertSentence = [...session.transcript].reverse().find((segment) => segment.speaker === "expert" && !segment.redacted)?.text;
+    const payload = buildAsk(action.candidate, {
+      events: session.events.filter((event) => !event.redacted && event.kind !== "typing").slice(-3),
+      labels: COST_CENTERS,
+      lastExpertSentence,
+      retro: action.retro,
+      followup: action.followup,
+      phrase: "natural",
     });
-    const blob = new Blob(chunks.current, { type: "audio/webm" });
-    if (blob.size < 2000) return undefined;
-    const audioId = `clip_${Date.now().toString(36)}`;
-    const fd = new FormData();
-    fd.append("audioId", audioId);
-    fd.append("file", blob, `${audioId}.webm`);
-    await fetch(`/api/sessions/${log.current.id}/clips`, { method: "POST", body: fd }).catch(() => {});
-    return audioId;
-  }, []);
-
-  const closeWindow = useCallback(
-    async (outcome: QuestionWindow["outcome"], extra?: { answerText?: string; logged?: QuestionWindow["logged"] }) => {
-      const g = governor.current;
-      const w = g.window;
-      if (!w) return;
-      const L = log.current;
-      const qw = L.windows.find((x) => x.id === w.id);
-      const t = nowSecs();
-      voiceRef.current.setMicMuted(true);
-      const audioId = await stopRecorder();
-      if (qw) {
-        qw.closedAt = t;
-        qw.outcome = outcome;
-        if (extra?.logged) qw.logged = extra.logged;
-        if (extra?.answerText) qw.answerText = [qw.answerText, extra.answerText].filter(Boolean).join(" ");
-        if (outcome === "answered" && !qw.answerText && qw.logged?.reason) qw.answerText = qw.logged.reason;
-        if (outcome === "answered") qw.answeredAt ??= t;
-        qw.answerAudioId = audioId;
+    const turnPromise = voiceRef.current.turn({
+      tag: "ASK",
+      text: payload,
+      spoken: question,
+      listen: true,
+      timeoutSecs: governor.current.config.windowTimeoutSecs,
+      maxSecs: 60,
+      recordClip: { sessionId: session.id },
+      abortOnHumanSpeech: true,
+      onPhase: (phase, at) => {
+        if (activeWindowId.current !== openWindow.id) return;
+        const liveWindow = log.current.windows.find((window) => window.id === openWindow.id);
+        if (!liveWindow) return;
+        if (phase === "speaking") liveWindow.spokeAt ??= at;
+        if (phase === "listening") {
+          liveWindow.askedAt ??= at;
+          if (governor.current.window?.id === openWindow.id && governor.current.window.phase === "asking") governor.current.markAsked(at);
+        }
+        rerender();
+      },
+    });
+    activeTurn.current = turnPromise;
+    try {
+      applyTurnResult(action, openWindow.id, await turnPromise);
+    } catch {
+      const closedAt = nowSecs();
+      applyTurnResult(action, openWindow.id, {
+        spoke: false,
+        heard: "",
+        via: "aborted",
+        abortReason: "disconnected",
+        sentAt: openedAt,
+        askedAt: openedAt,
+        closedAt,
+      });
+    } finally {
+      if (activeTurn.current === turnPromise) activeTurn.current = null;
+      if (activeWindowId.current === openWindow.id) {
+        activeWindowId.current = undefined;
+        activeHeard.current = "";
+        activeForced.current = false;
       }
-      if (outcome === "answered") queue.current.markFilled(w.candidateId);
-      else {
-        const c = queue.current.items.find((c) => c.id === w.candidateId);
-        if (c) c.status = outcome === "off_record" ? "expired" : "debrief";
-      }
-      g.close(t);
-      spokeStarted.current = false;
-      dirty.current = true;
       rerender();
-    },
-    [nowSecs, stopRecorder],
-  );
-
-  const openQuestion = useCallback(
-    (c: Candidate) => {
-      const t = nowSecs();
-      const w = governor.current.open(c.id, t);
-      queue.current.markAsked(c.id);
-      const L = log.current;
-      const recentEvents = L.events.filter((e) => !e.redacted && e.kind !== "typing").slice(-3).map(describeEvent).join("; ");
-      L.windows.push({ id: w.id, candidateId: c.id, kind: c.kind, question: c.question, stepRef: c.stepRef, openedAt: t });
-      spokeStarted.current = false;
-      voiceRef.current.say("ASK", `${c.question} | stepRef=${c.stepRef} | on screen: ${recentEvents}`, c.question);
-      dirty.current = true;
-      rerender();
-    },
-    [nowSecs],
-  );
-
-  const strike = useCallback(
-    (fromSecs?: number, toSecs?: number) => {
-      const L = log.current;
-      const t = nowSecs();
-      const w = governor.current.window;
-      const from = fromSecs ?? (w ? w.openedAt : Math.max(0, t - 30));
-      const to = toSecs ?? t;
-      for (const s of L.transcript) if (s.t >= from && s.t <= to) Object.assign(s, { text: "", redacted: true });
-      for (const e of L.events) if (e.t >= from && e.t <= to) Object.assign(e, { redacted: true, from: undefined, to: undefined, state: undefined });
-      L.frames = L.frames.filter((f) => f.t < from || f.t > to);
-      for (const qw of L.windows) if (qw.openedAt >= from && qw.openedAt <= to) Object.assign(qw, { answerText: "", outcome: "off_record", logged: undefined });
-      for (const c of queue.current.items) if (c.createdAt >= from && c.createdAt <= to && c.status === "queued") c.status = "expired";
-      L.offRecord.push({ from, to });
-      pipeline.bumpEpoch();
-      if (w) void closeWindow("off_record");
-      dirty.current = true;
-      rerender();
-    },
-    [closeWindow, nowSecs, pipeline],
-  );
-
-  const notNow = useCallback(() => {
-    const g = governor.current;
-    const w = g.window;
-    if (!w) return;
-    const c = queue.current.items.find((c) => c.id === w.candidateId);
-    if (c) c.status = "debrief";
-    void closeWindow("aborted");
-  }, [closeWindow]);
+    }
+  }, [applyTurnResult, nowSecs, readSignals, rerender]);
 
   const endTask = useCallback(async () => {
-    const L = log.current;
-    if (governor.current.window) await closeWindow("timeout");
-    L.endedAt = Date.now();
+    const session = log.current;
+    if (activeTurn.current) {
+      if (activeHeard.current.trim()) voiceRef.current.submitTyped(activeHeard.current);
+      else voiceRef.current.cancelTurn("user");
+      await activeTurn.current.catch(() => undefined);
+      const lastWindow = session.windows.at(-1);
+      if (lastWindow?.outcome === "aborted" && !lastWindow.answerText) {
+        lastWindow.outcome = "timeout";
+        lastWindow.closedBy = "timeout";
+        const candidate = queue.current.items.find((item) => item.id === lastWindow.candidateId);
+        if (candidate) {
+          candidate.status = "debrief";
+          candidate.userDeferred = undefined;
+        }
+      }
+    }
+    session.endedAt = Date.now();
     queue.current.drainToDebrief();
-    L.metrics = { ...computeMetrics(L), framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred } as unknown as Record<string, number>;
-    await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) });
+    session.deferred = loop.current.deferred();
+    const currentPipeline = pipelineRef.current;
+    session.metrics = { ...computeMetrics(session), framesSeen: currentPipeline?.framesSeen ?? 0, entitiesRedacted: entitiesRedacted.current + (currentPipeline?.piiBlurred ?? 0) } as unknown as Record<string, number>;
+    await fetch(`/api/sessions/${session.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(session) });
     voiceRef.current.disconnect();
-    pipeline.stop();
-    router.push(`/map/${L.id}`);
-  }, [closeWindow, pipeline, router]);
+    currentPipeline?.stop();
+    router.push(`/map/${session.id}`);
+  }, [router]);
+  endTaskRef.current = endTask;
 
   tools.current = {
-    log_answer: async (p) => {
-      await closeWindow("answered", { logged: { reason: String(p.reason ?? ""), guardrail: p.guardrail ? String(p.guardrail) : undefined, kind: p.kind ? String(p.kind) : undefined } });
+    log_answer: (params) => {
+      const stepRef = typeof params.stepRef === "string" ? params.stepRef : "";
+      const logged = {
+        reason: typeof params.reason === "string" ? params.reason : undefined,
+        guardrail: typeof params.guardrail === "string" ? params.guardrail : undefined,
+        kind: typeof params.kind === "string" ? params.kind : undefined,
+      };
+      const active = governor.current.window && log.current.windows.find((window) => window.id === governor.current.window!.id);
+      if (!active || active.stepRef !== stepRef) {
+        const late = findLateAnswerWindow(log.current.windows, stepRef, nowSecs());
+        if (late) {
+          late.logged = logged;
+          dirty.current = true;
+          rerender();
+        }
+      }
       return "logged";
     },
-    mark_off_record: (p) => {
-      const secs = typeof p.seconds === "number" ? p.seconds : undefined;
-      strike(secs !== undefined ? Math.max(0, nowSecs() - secs) : undefined);
+    mark_off_record: (params) => {
+      const seconds = typeof params.seconds === "number" ? params.seconds : undefined;
+      strike(seconds === undefined ? undefined : Math.max(0, nowSecs() - seconds));
       return "struck from the record";
     },
-    end_task: async () => {
-      void endTask();
+    end_task: () => {
+      queueMicrotask(() => void endTaskRef.current());
       return "ending";
     },
   };
 
   useEffect(() => {
     if (!started) return;
-    const id = window.setInterval(() => {
-      const g = governor.current;
-      const t = nowSecs();
-      const sig = pipeline.signals.current;
-      const s = { now: t, lastSpeechAt: lastSpeechAt.current, lastScreenChangeAt: sig.lastScreenChangeAt, lastTypingAt: sig.lastTypingAt, lastBoundaryAt: sig.lastBoundaryAt, lastInvoiceOpenedAt: sig.lastInvoiceOpenedAt, agentSpeaking: voiceRef.current.isSpeaking || holding };
-      const d = g.evaluate(s);
-      setDecision(d);
-      queue.current.expire(t, pipeline.currentState.current.invoice);
-      const w = g.window;
-      if (w) {
-        if (w.phase === "asking") {
-          if (voiceRef.current.isSpeaking) spokeStarted.current = true;
-          else if (spokeStarted.current) {
-            g.markAsked(t);
-            const qw = log.current.windows.find((x) => x.id === w.id);
-            if (qw) qw.askedAt = t;
-            voiceRef.current.setMicMuted(false);
-            void startRecorder();
-          } else if (t - w.openedAt > 8) {
-            const c = queue.current.items.find((c) => c.id === w.candidateId);
-            if (c) c.status = "queued";
-            g.abort();
-            log.current.windows = log.current.windows.filter((x) => x.id !== w.id);
-          }
-        } else if (g.timedOut(t)) {
-          void closeWindow("timeout");
-        }
+    const interval = window.setInterval(() => {
+      const signals = readSignals();
+      const currentDecision = governor.current.evaluate(signals);
+      setDecision(currentDecision);
+      quietSamples.current.push({ at: signals.now, quiet: currentDecision.lights.silence });
+      quietSamples.current = quietSamples.current.filter((sample) => signals.now - sample.at <= 60);
+      expertSpeech.current = expertSpeech.current.filter((sample) => signals.now - sample.at <= 60);
+      const samples = quietSamples.current;
+      const redRatio = samples.length ? samples.filter((sample) => !sample.quiet).length / samples.length : 0;
+      const humanWords = expertSpeech.current.reduce((sum, sample) => sum + sample.words, 0);
+      setNoisy(samples.length >= 20 && redRatio > 0.8 && humanWords < 12);
+
+      const active = governor.current.window;
+      if (active) {
+        const phase = voiceRef.current.turnPhase;
+        const resumedBeforeListening = phase === "sending" || phase === "waiting_for_speech";
+        if (resumedBeforeListening && (signals.lastTypingAt > active.openedAt || signals.lastScreenChangeAt > active.openedAt)) voiceRef.current.cancelTurn("resumed");
         rerender();
         return;
       }
-      const force = queue.current.askedCount >= 2 && !queue.current.guardrailAsked;
-      const c = queue.current.pick(force, t);
-      if (c && g.canOpen(s, c.value)) openQuestion(c);
+      const action = loop.current.next(signals);
+      if (action.type === "open") void runWindow(action);
     }, 500);
-    return () => window.clearInterval(id);
-  }, [started, holding, nowSecs, pipeline, openQuestion, closeWindow, startRecorder]);
-
-  useEffect(() => {
-    if (!started) return;
-    const id = window.setInterval(async () => {
-      if (!dirty.current) return;
-      dirty.current = false;
-      const L = log.current;
-      L.metrics = { framesSeen: pipeline.framesSeen, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred };
-      const res = await fetch(`/api/sessions/${L.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(L) }).catch(() => null);
-      if (res?.ok) setSynced(Date.now());
-    }, 5000);
-    return () => window.clearInterval(id);
-  }, [started, pipeline.framesSeen, pipeline.piiBlurred]);
-
-  const start = async () => {
-    const res = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });
-    const { session } = await res.json();
-    log.current = session;
-    log.current.startedAt = Date.now();
-    setStarted(true);
-    if (new URLSearchParams(window.location.search).get("share") !== "0") await pipeline.start().catch(() => {});
-    await voice.connect({ firstMessage: "" });
-    voice.setMicMuted(true);
-  };
-
-  useEffect(() => {
-    pipeline.setPaused(holding);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [holding]);
-
-  useEffect(() => {
-    if (!started) return;
-    pipeline.signals.current = { lastScreenChangeAt: -Infinity, lastTypingAt: -Infinity, lastBoundaryAt: -Infinity, lastInvoiceOpenedAt: -Infinity, activity: "still" };
+    return () => {
+      window.clearInterval(interval);
+      if (activeTurn.current) voiceRef.current.cancelTurn("disconnected");
+    };
+    // The loop reads live refs; restarting it on render would make cadence nondeterministic.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [started]);
 
-  const L = log.current;
-  const openWin = governor.current.window ? L.windows.find((w) => w.id === governor.current.window!.id) : undefined;
-  const queued = queue.current.items.filter((c) => c.status === "queued").sort((a, b) => b.value - a.value);
-  const struck = L.offRecord.reduce((a, r) => a + (r.to - r.from), 0);
-  const events = useMemo(() => L.events.filter((e) => e.kind !== "typing").slice(-14).reverse(), [L.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
-  const crop = pipeline as { setCropTarget?: (el: HTMLElement | null) => void; surface?: "browser" | "window" | "monitor" };
+  useEffect(() => {
+    if (!started) return;
+    let syncing = false;
+    const interval = window.setInterval(async () => {
+      const session = log.current;
+      session.deferred = loop.current.deferred();
+      if (!dirty.current || syncing) return;
+      syncing = true;
+      dirty.current = false;
+      const currentPipeline = pipelineRef.current;
+      session.metrics = { framesSeen: currentPipeline?.framesSeen ?? 0, entitiesRedacted: entitiesRedacted.current + (currentPipeline?.piiBlurred ?? 0) };
+      const response = await fetch(`/api/sessions/${session.id}`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(session) }).catch(() => null);
+      if (response?.ok) setSynced(Date.now());
+      else dirty.current = true;
+      syncing = false;
+    }, 5000);
+    return () => window.clearInterval(interval);
+  }, [started]);
+
+  const start = async () => {
+    const response = await fetch("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ mode: "capture", task, expertName: expertName.trim() || "Expert" }) });
+    const { session } = await response.json();
+    log.current = session;
+    log.current.startedAt = Date.now();
+    voiceRef.current.setSessionStart(log.current.startedAt);
+    pipeline.signals.current = { lastScreenChangeAt: -Infinity, lastTypingAt: -Infinity, lastBoundaryAt: -Infinity, lastInvoiceOpenedAt: -Infinity, activity: "still" };
+    setStarted(true);
+    if (new URLSearchParams(window.location.search).get("share") !== "0") await pipeline.start().catch(() => undefined);
+    await voiceRef.current.connect({
+      firstMessage: "",
+      sessionStartMs: log.current.startedAt,
+      dynamicVariables: { expert_name: expertName.trim() || "Expert", task },
+      keyterms: keytermsFrom([], COST_CENTERS),
+    });
+  };
+
+  const setCaptureHolding = useCallback((paused: boolean) => {
+    holdingRef.current = paused;
+    setHolding(paused);
+    pipelineRef.current?.setPaused(paused);
+    if (paused && activeTurn.current) voiceRef.current.cancelTurn("paused");
+  }, []);
+
+  const session = log.current;
+  const governorWindow = governor.current.window;
+  const openWindow = governorWindow ? session.windows.find((window) => window.id === governorWindow.id) : undefined;
+  const queued = queue.current.items.filter((candidate) => candidate.status === "queued").sort((left, right) => right.value - left.value);
+  const struckSeconds = session.offRecord.reduce((sum, range) => sum + (range.to - range.from), 0);
+  const events = useMemo(() => session.events.filter((event) => event.kind !== "typing").slice(-14).reverse(), [session.events, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const crop = pipeline as { setCropTarget?: (element: HTMLElement | null) => void; surface?: "browser" | "window" | "monitor" };
+  const reasons = loop.current.reasonHeard;
 
   const vm: CaptureVM = {
     started,
@@ -338,10 +431,13 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     setConsented,
     start,
     endTask,
-    sessionId: L.id,
+    sessionId: session.id,
     source,
-    voice: { mode: voice.mode, connected: voice.connected, status: voice.status, isSpeaking: voice.isSpeaking },
+    voice: { mode: voice.mode, connected: voice.connected, status: voice.status, isSpeaking: voice.isSpeaking, degraded: voice.degraded, lastError: voice.lastError },
+    turnPhase: voice.turnPhase,
+    gateOpen: voice.gateOpen,
     sttEngine: transcriber.engine,
+    stt: { engine: transcriber.engine, connected: transcriber.connected },
     pipeline: {
       videoRef: pipeline.videoRef,
       sharing: pipeline.sharing,
@@ -361,25 +457,29 @@ function Capture({ source, governor: govConfig, tools }: { agentId?: string; sou
     decision,
     questionsLast10Min: governor.current.questionsInLast10Min(nowSecs()),
     budget: governor.current.config.maxPer10Min,
-    openWindow: openWin && governor.current.window ? { ...openWin, phase: governor.current.window.phase } : undefined,
-    partial,
+    openWindow: openWindow && governorWindow ? { ...openWindow, phase: voice.turnPhase === "listening" || voice.turnPhase === "closing" ? "answering" : "asking" } : undefined,
+    partial: voice.partial || partial,
     queued,
     askedCount: queue.current.askedCount,
     guardrailAsked: queue.current.guardrailAsked,
-    toDebrief: queue.current.items.filter((c) => c.status === "debrief").length,
+    toDebrief: loop.current.deferred().length,
+    deferred: loop.current.deferred(),
+    deferredCount: loop.current.deferred().length,
     events,
-    candidateFor: (eventId) => queue.current.items.find((c) => c.eventId === eventId && c.kind === "why") ?? queue.current.items.find((c) => c.eventId === eventId),
-    transcript: L.transcript,
-    ledger: { framesSeen: pipeline.framesSeen, framesKept: L.frames.length, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred, secondsStruck: struck },
+    candidateFor: (eventId) => queue.current.items.find((candidate) => candidate.eventId === eventId && candidate.kind === "why") ?? queue.current.items.find((candidate) => candidate.eventId === eventId),
+    transcript: session.transcript,
+    ledger: { framesSeen: pipeline.framesSeen, framesKept: session.frames.length, entitiesRedacted: entitiesRedacted.current + pipeline.piiBlurred, secondsStruck: struckSeconds },
     strike: () => strike(),
-    notNow,
+    notNow: () => voiceRef.current.cancelTurn("user"),
     holding,
-    setHolding,
-    submitTypedAnswer: (text) => {
-      if (!text.trim() && !openWin?.answerText) return;
-      void closeWindow("answered", { answerText: text.trim() || undefined });
-    },
+    setHolding: setCaptureHolding,
+    submitTypedAnswer: (text) => voiceRef.current.submitTyped(text),
     synced,
+    reasonHeard: reasons.at(-1)?.quote,
+    reasonHeardItems: reasons,
+    noisy,
+    chainedCount: loop.current.chainedCount,
+    forced: activeForced.current,
   };
   return <CaptureView vm={vm} />;
 }

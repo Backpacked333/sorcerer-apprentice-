@@ -1,6 +1,7 @@
 import { CandidateQueue, type Candidate } from "./curiosity";
 import { Governor, type OpenWindow, type Signals } from "./governor";
 import { redactText } from "./redact";
+import type { QuestionWindow } from "./events";
 import type { TurnResult } from "./voice-turn";
 
 export interface LoopSignals extends Signals {
@@ -88,6 +89,21 @@ export function windowOutcome(result: TurnResult): MappedWindowOutcome {
   return { outcome: "aborted", candidateStatus: "debrief", governor: "short_close" };
 }
 
+/** Find the closed window a late log_answer may safely enrich without touching the active replacement. */
+export function findLateAnswerWindow(windows: QuestionWindow[], stepRef: string, now: number, maxAgeSecs = 15): QuestionWindow | undefined {
+  return windows
+    .filter(
+      (window) =>
+        window.stepRef === stepRef &&
+        window.closedAt !== undefined &&
+        now - window.closedAt >= 0 &&
+        now - window.closedAt <= maxAgeSecs &&
+        window.outcome !== "aborted" &&
+        window.outcome !== "off_record",
+    )
+    .sort((left, right) => (right.closedAt ?? Number.NEGATIVE_INFINITY) - (left.closedAt ?? Number.NEGATIVE_INFINITY))[0];
+}
+
 const LIMIT_ANSWER = /\b(only|every|always|never|unless|except|over|above|under|below|more than|less than|at least|up to)\b/i;
 const WHO_ANSWER = /\b(ask|check with|sign|approv\w*|releas\w*|decid\w*)\b/i;
 const STOP_ANSWER = /\b(stop|wait|hold off|check with|ask)\b/i;
@@ -121,16 +137,12 @@ export class CaptureLoop {
       if (withinGrace && allowedByCount && this.governor.canChain(signals)) {
         const sibling = this.bestSibling(this.pendingWhy.id, signals.now);
         if (sibling) {
-          this.chained += 1;
-          this.chainedParents.add(this.pendingWhy.id);
-          this.pendingWhy = undefined;
-          this.pendingSince = Number.NEGATIVE_INFINITY;
           return {
             type: "open",
             candidate: sibling,
             retro: sibling.invoice !== undefined && sibling.invoice !== signals.currentInvoice,
             followup: true,
-            forced: this.mustChain.delete(sibling.parentId ?? ""),
+            forced: this.mustChain.has(sibling.parentId ?? ""),
           };
         }
       }
@@ -156,7 +168,26 @@ export class CaptureLoop {
     };
   }
 
+  /** Revalidate the selected action against the newest activity snapshot immediately before opening it. */
+  isFresh(action: Extract<LoopAction, { type: "open" }>, signals: LoopSignals): boolean {
+    this.queue.expire(signals.now, signals.currentInvoice);
+    const candidate = action.candidate;
+    if (signals.paused || !signals.sttHealthy || signals.transcriberHealthy === false) return false;
+    if (candidate.status !== "queued" || (candidate.retryAfter !== undefined && candidate.retryAfter > signals.now)) return false;
+    if (!this.isCurrentOrGrace(candidate, signals)) return false;
+    if (action.followup) return this.governor.canChain(signals);
+    const value = candidate.value - (candidate.leftAt === undefined ? 0 : 0.1);
+    return this.governor.canOpen(signals, value);
+  }
+
   opened(candidate: Candidate, now: number): OpenWindow {
+    if (candidate.parentId && this.pendingWhy?.id === candidate.parentId) {
+      this.chained += 1;
+      this.chainedParents.add(candidate.parentId);
+      this.mustChain.delete(candidate.parentId);
+      this.pendingWhy = undefined;
+      this.pendingSince = Number.NEGATIVE_INFINITY;
+    }
     this.queue.markAsked(candidate.id);
     return this.governor.open(candidate.id, now);
   }
@@ -176,7 +207,7 @@ export class CaptureLoop {
     }
 
     if (outcome === "answered" && heard.trim()) {
-      this.queue.markFilled(candidate.id, "window", heard);
+      this.queue.markFilled(candidate.id, "window", heard, now);
       this.governor.markAnswered(now);
       this.governor.close(now);
       if (candidate.kind === "why" && !this.chainedParents.has(candidate.id)) {
@@ -196,6 +227,29 @@ export class CaptureLoop {
     }
     candidate.status = "debrief";
     if (outcome === "deferred") candidate.userDeferred = true;
+    this.governor.close(now);
+  }
+
+  /** Apply the exact candidate and governor effects produced by windowOutcome. */
+  applyOutcome(candidate: Candidate, mapped: MappedWindowOutcome, now: number): void {
+    if (mapped.candidateStatus === "filled" && mapped.answerText?.trim()) {
+      this.closed({ candidate, outcome: "answered", heard: mapped.answerText, now });
+      return;
+    }
+
+    candidate.status = mapped.candidateStatus;
+    candidate.filledBy = mapped.filledBy;
+    candidate.userDeferred = mapped.userDeferred;
+    candidate.retryAfter = mapped.retryAfter;
+
+    if (mapped.governor === "abort") {
+      this.governor.abort();
+      return;
+    }
+    if (mapped.governor === "short_close") {
+      this.governor.closeWith(now, { cooldownSecs: this.governor.config.abortCooldownSecs ?? 8, refund: true });
+      return;
+    }
     this.governor.close(now);
   }
 

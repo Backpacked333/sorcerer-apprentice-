@@ -213,3 +213,81 @@ describe("governor stays blind to an animating occluder", () => {
     expect(diffGray(grab(0), grab(1)).changedCells).toBeGreaterThan(0);
   });
 });
+
+// ---- the hook wires every consumer through drawFrame (minimal React harness, as in vision-pipeline.test.ts) ----
+const h = vi.hoisted(() => ({ index: 0, slots: [] as { value?: unknown; deps?: unknown[]; cleanup?: () => void }[], effects: [] as (() => void)[] }));
+vi.mock("react", () => {
+  const slot = () => h.slots[h.index++] ?? (h.slots[h.index - 1] = {});
+  const changed = (s: typeof h.slots[number], deps: unknown[]) => !s.deps || deps.some((d, i) => !Object.is(d, s.deps![i]));
+  return {
+    useRef: (value: unknown) => { const s = slot(); return s.value ??= { current: value }; },
+    useState: (value: unknown) => { const s = slot(); if (!("value" in s)) s.value = value; return [s.value, (v: unknown) => { s.value = typeof v === "function" ? v(s.value) : v; }]; },
+    useCallback: (fn: unknown, deps: unknown[]) => { const s = slot(); if (changed(s, deps)) { s.value = fn; s.deps = deps; } return s.value; },
+    useEffect: (fn: () => (() => void) | undefined, deps: unknown[]) => { const s = slot(); if (changed(s, deps)) { s.deps = deps; h.effects.push(() => { s.cleanup?.(); s.cleanup = fn(); }); } },
+  };
+});
+vi.mock("./telemetry", () => ({ subscribeTelemetry: () => () => {} }));
+
+describe("useScreenPipeline capture API", async () => {
+  const { useScreenPipeline } = await import("@/components/useScreenPipeline");
+  type P = ReturnType<typeof useScreenPipeline>;
+  const setup = (surface: string, videoW: number, videoH: number) => {
+    h.index = 0; h.slots = []; h.effects = [];
+    const log: string[] = [];
+    const ctx = { save() {}, restore() {}, resetTransform() {}, fillStyle: "", globalAlpha: 1, globalCompositeOperation: "source-over", filter: "none",
+      drawImage: () => log.push("drawImage"), fillRect: () => log.push("fillRect"), getImageData: () => { log.push("read"); return { data: new Uint8ClampedArray(64 * 36 * 4) }; } };
+    const fetchMock = vi.fn(async () => ({ status: 503, ok: false, json: async () => ({ mock: true }) }));
+    const track = { stop() {}, addEventListener() {}, getSettings: () => ({ displaySurface: surface, width: videoW, height: videoH }) };
+    const gdm = vi.fn(async () => ({ getTracks: () => [track], getVideoTracks: () => [track] }));
+    vi.stubGlobal("window", Object.assign(globalThis, { innerWidth: 1440, innerHeight: 900 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("document", { createElement: () => ({ getContext: () => ctx, toDataURL: () => { log.push("encode"); return "data:image/jpeg;base64,/9j/"; } }) });
+    vi.stubGlobal("navigator", { mediaDevices: { getDisplayMedia: gdm } });
+    let p!: P;
+    const render = () => { h.index = 0; p = useScreenPipeline({ sessionStart: 0, source: "both", onEvent: () => {} }); h.effects.splice(0).forEach((f) => f()); return p; };
+    render();
+    p.videoRef.current = { videoWidth: videoW, videoHeight: videoH, play: async () => {} } as unknown as HTMLVideoElement;
+    return { log, fetchMock, gdm, render, get p() { return p; } };
+  };
+  const el = (r: Rect) => ({ isConnected: true, getBoundingClientRect: () => ({ left: r.x, top: r.y, width: r.w, height: r.h }) }) as unknown as HTMLElement;
+
+  it("workspace start calls getDisplayMedia synchronously with tab hints, paints the card in the diff before reading, sends app", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    try {
+      const s = setup("browser", 2880, 1800);
+      const started = s.p.start({ mode: "workspace", app: "claims" });
+      expect(s.gdm).toHaveBeenCalledTimes(1); // before any await
+      expect(s.gdm.mock.calls[0]).toEqual([expect.objectContaining({ preferCurrentTab: true, surfaceSwitching: "exclude", monitorTypeSurfaces: "exclude", video: { displaySurface: "browser", frameRate: { ideal: 5, max: 10 } } })]);
+      await started; s.render();
+      expect([s.p.selfCapture, s.p.surface, s.p.degraded]).toEqual([true, "browser", null]);
+      s.p.setOccluders([el({ x: 1040, y: 560, w: 348, h: 260 })]); s.p.setCropTarget(el({ x: 0, y: 64, w: 1440, h: 836 })); s.render();
+      await vi.advanceTimersByTimeAsync(500); s.render();
+      expect(s.log.slice(0, 3)).toEqual(["drawImage", "fillRect", "read"]);
+      expect(s.log).toContain("encode");
+      expect(s.log.indexOf("fillRect", s.log.indexOf("read"))).toBeLessThan(s.log.indexOf("encode"));
+      expect(JSON.parse((s.fetchMock.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toMatchObject({ app: "claims" });
+      expect(s.p.lastSentUrl).toMatch(/^data:image\/jpeg/);
+      s.p.stop();
+    } finally { h.slots.forEach((x) => x.cleanup?.()); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); }
+  });
+  it("workspace on another surface is wrong_surface: no vision frame, no paint of this tab's rects", async () => {
+    vi.useFakeTimers(); vi.setSystemTime(0);
+    try {
+      const s = setup("window", 1920, 1080);
+      await s.p.start({ mode: "workspace" }); s.render();
+      expect([s.p.selfCapture, s.p.degraded, s.p.piiMode]).toEqual([false, "wrong_surface", "manual-only"]);
+      s.p.setOccluders([el({ x: 1040, y: 560, w: 348, h: 260 })]); s.render();
+      await vi.advanceTimersByTimeAsync(2000); s.render();
+      expect(s.fetchMock).not.toHaveBeenCalled();
+      expect(s.log).not.toContain("fillRect");
+      expect(s.log).not.toContain("encode");
+      s.p.stop();
+    } finally { h.slots.forEach((x) => x.cleanup?.()); vi.clearAllTimers(); vi.useRealTimers(); vi.unstubAllGlobals(); }
+  });
+  it("default start keeps the original share prompt and ignores a click event passed as options", async () => {
+    const s = setup("browser", 1440, 900);
+    await s.p.start({ target: {} } as never);
+    expect(s.gdm.mock.calls[0]).toEqual([{ video: { frameRate: 4 }, audio: false }]);
+    s.p.stop(); h.slots.forEach((x) => x.cleanup?.()); vi.unstubAllGlobals();
+  });
+});

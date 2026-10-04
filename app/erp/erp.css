@@ -339,7 +339,7 @@ a.erp-nav-item.is-active:hover { background: rgba(255, 255, 255, .17); }
 .erp-row a:focus-visible { outline: none; }
 .erp-row:has(a:focus-visible) { box-shadow: inset 0 0 0 2px var(--erp-blue); }
 .erp-desc { display: block; color: var(--erp-muted); font-size: 14px; }
-.erp-num-plain { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.erp-num-plain, .erp-row-id, .erp-table .is-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .erp-empty { color: var(--erp-muted); text-align: center; }
 
 /* ---------- motion ---------- */

@@ -149,6 +149,28 @@ useScreenPipeline({ sessionStart: number /*epoch ms*/, source: "vision"|"dom"|"b
 - `setPaused(true)` and `bumpEpoch()` advance a **consent epoch**; any vision result from an older epoch is discarded. Masks are painted before a frame leaves the browser.
 - The governor (A) reads `signals`; the matcher (C) reads `currentState`. B must keep both refs' meaning stable.
 
+#### Capture frame pipeline (additive to P-23/P-24, overhaul WP1)
+
+Every pixel that leaves the pipeline (the 64×36 diff thumbnail, the 1024 px vision frame, the 960 px stored still) is drawn by **one** helper, `drawFrame` in `lib/capture-frame.ts`: `drawImage(video, crop)` → paint occluders + manual masks + DOM PII (opaque `#000`, `paintMaskRects`) → only then `getImageData` / `toDataURL`. All new fields are optional for callers; with no crop target, no occluders and no masks the frame is drawn exactly as before, and `?share=0` never calls `start()`.
+
+```ts
+start(opts?: { mode?: "tab" | "workspace"; app?: "erp" | "claims"; queue?: string }): Promise<void>
+setCropTarget(el: HTMLElement | null): void   // the ERP iframe or its wrapper; crop applies only on a self-tab capture
+setOccluders(els: HTMLElement[]): void         // every Tacit surface floating over the ERP; painted out of every frame
+surface: "browser" | "window" | "monitor" | undefined
+selfCapture: boolean                            // browser surface and video aspect within 2 % of innerWidth/innerHeight (or a matching Capture Handle)
+degraded: "wrong_surface" | null                // workspace mode on a non-self surface: no vision frames, no stills; telemetry continues
+lastSentUrl: string | null                      // the last masked JPEG that left the browser (vision frame or still): the honest "What I see"
+piiMode: "dom" | "manual-only"                  // whether DOM-published PII rects are being painted on the current frames
+```
+
+- `start()` calls `getDisplayMedia` synchronously before any `await`; call it first inside the click handler. `"tab"` (default) keeps the original prompt `{ video: { frameRate: 4 }, audio: false }`. `"workspace"` asks `{ video: { displaySurface: "browser", frameRate: { ideal: 5, max: 10 } }, audio: false, preferCurrentTab: true, surfaceSwitching: "exclude", monitorTypeSurfaces: "exclude" }`. A click event passed as `opts` is ignored.
+- Occluders: per element, the union of its `getBoundingClientRect()` over the last 750 ms (sampled every 100 ms while sharing and before every frame), padded `{ t: 32, r: 52, b: 72, l: 52 }` CSS px, snapped outward to 8 px and held 5 s before shrinking (so a breathing card never moves the black box's edges), projected into crop/video space (DPR and letterboxing handled). Only applied on a self-tab capture: on any other surface this tab's rects are not in the frame.
+- DOM PII, same tab (workspace iframe): the pipeline reads `iframe.contentDocument.querySelectorAll("[data-pii]")` synchronously each frame (`collectPiiRects`) and adds the iframe content-box offset. Two windows: `PiiPublisher` broadcasts on `"tacit-erp-pii"` with `sourceId = piiSourceId({ origin, app, queue })` = `"<sandbox origin>|<app>|<queue>"` (queue from `?queue=` or the ERP header link), on layout/scroll/resize/DOM change and a 1 s heartbeat; the pipeline subscribes with the same pairing (`start({ queue })`, default `"expert"` for `erp`) and paints rects no older than 3 s, only when the surface is a browser tab other than this one. Otherwise `piiMode` is `"manual-only"`.
+- Manual masks stay normalized to the full video frame and are re-projected into the crop.
+- `POST /api/vision` body gains `app: "erp" | "claims"` (default `"erp"`); the route's schema strips unknown keys, so older servers accept it.
+- Not verifiable by an agent: the share picker, Capture Handle behaviour, and the painted preview in a real Chrome share. Human check: workspace share → the "What I see" preview (`lastSentUrl`) shows the card area and PII black, and the governor still reaches "asking".
+
 ---
 
 ## 3. Voice — `components/voice.tsx` · Owner **A** · Consumers C (Map, Teach controllers), D (status badges)

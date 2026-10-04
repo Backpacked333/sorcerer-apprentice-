@@ -7,14 +7,17 @@
  */
 import { createContext, useCallback, useContext, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { ConversationProvider, useConversation, useConversationClientTool, useConversationControls, useConversationMode, useConversationStatus, useScribe, type ScribeCallbacks } from "@elevenlabs/react";
-import { gateState, initialTurnState, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
-import { VoiceTurnAdapter } from "@/lib/voice-turn-adapter";
+import { composedVoiceGateState, initialTurnState, type TurnEffect, type TurnEvent, type TurnOptions, type TurnPhase, type TurnResult, type TurnState } from "@/lib/voice-turn";
+import { stopAndClearMediaStream, VoiceTurnAdapter } from "@/lib/voice-turn-adapter";
 export type { TurnOptions, TurnPhase, TurnResult } from "@/lib/voice-turn";
 import { AgentSpeechTimeline, type VoiceCommand } from "@/lib/voice-protocol";
 import {
   AgentSpeechTracker,
   buildVoiceHubScribeOptions,
   cleanupVoiceHubProvider,
+  createTurnHubSubscriber,
+  routeAgentAsrMessage,
+  routeWebSpeechResult,
   VoiceHubConnectionCoordinator,
   voiceHubConfigFingerprint,
   VoiceHubRouter,
@@ -408,6 +411,8 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const micMutedRef = useRef(true);
   const gateHoldUntilRef = useRef(0);
   const sessionStartRef = useRef<number | undefined>(undefined);
+  const sessionRequestedRef = useRef(false);
+  const lastHumanSpeechAtRef = useRef(Number.NEGATIVE_INFINITY);
   const turnDispatchRef = useRef<(event: TurnEvent) => void>(() => {});
   const turnEffectRef = useRef<(effect: TurnEffect, generation: number) => void | Promise<void>>(() => {});
   const turnConnectedRef = useRef(false);
@@ -442,6 +447,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const fatalScribeRef = useRef<(reason: string) => void>(() => {});
   const scribeDisconnectRef = useRef<() => void>(() => {});
   const reconcileRef = useRef<() => void>(() => {});
+  sessionRequestedRef.current = sessionRequested;
   if (!turnAdapterRef.current) turnAdapterRef.current = new VoiceTurnAdapter({
     now: () => nowTurnRef.current(),
     agentConnected: () => turnConnectedRef.current,
@@ -484,11 +490,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     const words = text.trim().split(/\s+/).filter(Boolean).length;
     const until = Date.now() + (2 + 0.45 * words) * 1000;
     expectedSpeechTextRef.current = text;
+    turnAdapterRef.current!.authorizeLegacy();
     authorization.current!.authorize();
     extendGateHold(until);
   }, [extendGateHold]);
-  const gateIsOpenAt = useCallback((now: number) => gateState({
-    turnActive: turnAdapterRef.current!.snapshot().phase,
+  const gateIsOpenAt = useCallback((now: number) => composedVoiceGateState({
+    turnPhase: turnAdapterRef.current!.snapshot().phase,
+    legacyAuthorized: authorization.current!.snapshot().authorized,
     now,
     gateHoldUntil: gateHoldUntilRef.current,
     micMuted: micMutedRef.current,
@@ -599,6 +607,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       setGateHoldUntil(0);
       applyConversationGate(controls, false);
       if (!degradedAgentFallbackRef.current) turnAdapterRef.current!.disconnect();
+      stopAndClearMediaStream(clipStreamRef);
       emit("agent", "disconnect", details);
     },
     onError: (message, context) => emit("agent", "error", { message, context }),
@@ -610,7 +619,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
         speechTrackerRef.current!.refine(m.message);
       }
       if (m.role === "user" && !m.message.trimStart().startsWith("[")) {
-        turnDispatchRef.current({ type: "HUMAN_COMMIT", at: nowTurnRef.current(), text: m.message, source: "agent_asr" });
+        const routed = routeAgentAsrMessage({ text: m.message, atMs: Date.now(), timeline: timelineRef.current!, sessionStartMs: sessionStartRef.current });
+        if (routed.human) {
+          lastHumanSpeechAtRef.current = Math.max(lastHumanSpeechAtRef.current, routed.at);
+          if (turnAdapterRef.current!.snapshot().phase !== "idle") turnDispatchRef.current({ type: "HUMAN_COMMIT", at: routed.at, text: routed.text, source: "agent_asr" });
+        }
       }
       setMessages((xs) => [...xs, { role: m.role === "agent" ? "agent" : "user", text: m.message, t: Date.now() }]);
       emit("agent", "message", m);
@@ -642,15 +655,12 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       setTranscriberRevision((revision) => revision + 1);
     };
   }, []);
-  useEffect(() => hubRef.current!.subscribe("__voice_turn__", () => ({
-    enabled: turnAdapterRef.current!.snapshot().phase !== "idle",
-    onPartial: (text) => turnDispatchRef.current({ type: "HUMAN_PARTIAL", at: nowTurnRef.current(), text }),
-    onCommitted: (text, _startSecs, endSecs) => turnDispatchRef.current({ type: "HUMAN_COMMIT", at: endSecs ?? nowTurnRef.current(), text, source: "scribe" }),
-    onCommand: (command, _text, meta) => {
-      if (command !== "off_record" && command !== "not_now") return;
-      const at = sessionStartRef.current === undefined ? nowTurnRef.current() : Math.max(0, (meta.endedAtMs - sessionStartRef.current) / 1_000);
-      turnDispatchRef.current({ type: "COMMAND", at, command });
-    },
+  useEffect(() => hubRef.current!.subscribe("__voice_turn__", () => createTurnHubSubscriber({
+    sessionActive: sessionRequestedRef.current,
+    turnActive: turnAdapterRef.current!.snapshot().phase !== "idle",
+    now: () => nowTurnRef.current(),
+    dispatch: (event) => turnDispatchRef.current(event),
+    noteHumanSpeech: (at) => { lastHumanSpeechAtRef.current = Math.max(lastHumanSpeechAtRef.current, at); },
   })), []);
   const refreshTranscribers = useCallback(() => setTranscriberRevision((revision) => revision + 1), []);
   const sttForcedOff = typeof window !== "undefined" && new URLSearchParams(window.location.search).get("stt") === "off";
@@ -805,17 +815,13 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
           const text = result[0].transcript.trim();
           if (!text) continue;
           if (result.isFinal) {
-            const routed = hubRef.current!.commit(text, Date.now());
+            const { routed } = routeWebSpeechResult(hubRef.current!, { text, isFinal: true, atMs: Date.now() });
             setTranscriberState((state) => ({ ...state, partial: "" }));
             emitRef.current("scribe", "commit", { text, engine: "webspeech", speaker: routed.speaker, humanText: routed.text, command: routed.command });
-            const at = sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000;
-            if (routed.command === "off_record" || routed.command === "not_now") turnDispatchRef.current({ type: "COMMAND", at, command: routed.command });
-            else if (routed.speaker !== "agent" && routed.text) turnDispatchRef.current({ type: "HUMAN_COMMIT", at, text: routed.text, source: "scribe" });
           } else {
-            const routed = hubRef.current!.partial(text, Date.now());
+            const { routed } = routeWebSpeechResult(hubRef.current!, { text, isFinal: false, atMs: Date.now() });
             if (routed.changed) setTranscriberState((state) => ({ ...state, partial: routed.text }));
             emitRef.current("scribe", "partial", { text, engine: "webspeech", attribution: routed.human ? "human" : "agent" });
-            if (routed.human && routed.text) turnDispatchRef.current({ type: "HUMAN_PARTIAL", at: sessionStartRef.current === undefined ? Date.now() / 1_000 : (Date.now() - sessionStartRef.current) / 1_000, text: routed.text });
           }
         }
       };
@@ -906,10 +912,11 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     emit("tool", "dispatch", { name, params });
     const fn = tools.current[name];
     const activeTurn = turnAdapterRef.current!.snapshot().phase !== "idle";
+    const turnGeneration = turnAdapterRef.current!.currentGeneration();
     if (!fn && !activeTurn) return `no handler for ${name}`;
     let out: string | void;
     try { out = await fn?.(params ?? {}); }
-    finally { turnDispatchRef.current({ type: "TOOL", at: nowTurnRef.current(), name, params: params ?? {} }); }
+    finally { turnAdapterRef.current!.dispatchForGeneration(turnGeneration, { type: "TOOL", at: nowTurnRef.current(), name, params: params ?? {} }); }
     return out ?? "ok";
   };
   useConversationClientTool("log_answer", handle("log_answer"));
@@ -989,8 +996,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   turnCleanupRef.current = () => {
     turnAdapterRef.current!.disconnect();
     void stopClip(false);
-    clipStreamRef.current?.getTracks().forEach((track) => track.stop());
-    clipStreamRef.current = null;
+    stopAndClearMediaStream(clipStreamRef);
   };
 
   const runTurnEffect = useCallback(async (effect: TurnEffect, generation: number) => {
@@ -1059,15 +1065,21 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   }, []);
   const cancelTurn = useCallback<VoiceApi["cancelTurn"]>((reason) => turnAdapterRef.current!.cancel(reason), []);
   const submitTyped = useCallback<VoiceApi["submitTyped"]>((text) => turnAdapterRef.current!.submitTyped(text), []);
-  const setSessionStart = useCallback((epochMs: number) => { sessionStartRef.current = epochMs; hubRef.current!.setSessionStart(epochMs); }, []);
+  const setSessionStart = useCallback((epochMs: number) => {
+    sessionStartRef.current = epochMs;
+    lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
+    hubRef.current!.setSessionStart(epochMs);
+  }, []);
 
   const connect = useCallback<VoiceApi["connect"]>(
     async (opts) => {
       degradedAgentFallbackRef.current = false;
+      lastHumanSpeechAtRef.current = Number.NEGATIVE_INFINITY;
       hubRef.current!.setSessionStart(opts?.sessionStartMs);
       sessionStartRef.current = opts?.sessionStartMs;
       scribeKeytermsRef.current = opts?.keyterms;
       setTranscriberRevision((revision) => revision + 1);
+      sessionRequestedRef.current = true;
       setSessionRequested(true);
       if (configuredMode === "fallback") {
         setFallbackConnected(true);
@@ -1125,6 +1137,8 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
     turnAdapterRef.current!.disconnect();
     degradedAgentFallbackRef.current = false;
     void stopClip(false);
+    stopAndClearMediaStream(clipStreamRef);
+    sessionRequestedRef.current = false;
     setSessionRequested(false);
     hubRef.current!.setSessionStart(undefined);
     scribeKeytermsRef.current = undefined;
@@ -1207,8 +1221,9 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
   const mode: VoiceApi["mode"] = configuredMode === "agent" && !voiceError ? "agent" : "fallback";
   const degraded = Boolean(voiceError || sttError);
   const lastError = voiceError ?? sttError;
-  const gateOpen = gateState({
-    turnActive: turnState.phase,
+  const gateOpen = composedVoiceGateState({
+    turnPhase: turnState.phase,
+    legacyAuthorized: authorization.current.snapshot().authorized,
     now: Date.now(),
     gateHoldUntil,
     micMuted,
@@ -1242,7 +1257,7 @@ function VoiceInner({ agentId, tools, onDebugEvent, children }: { agentId?: stri
       cancelTurn,
       submitTyped,
       setSessionStart,
-      lastHumanSpeechAt: () => turnAdapterRef.current!.snapshot().lastHumanSpeechAt,
+      lastHumanSpeechAt: () => lastHumanSpeechAtRef.current,
       turnPhase: turnState.phase,
       partial: turnState.partial,
       stt: { engine: transcriberState.engine, connected: transcriberState.connected },

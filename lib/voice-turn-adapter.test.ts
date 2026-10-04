@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { VoiceTurnAdapter, type VoiceTurnAdapterPorts } from "./voice-turn-adapter";
+import { stopAndClearMediaStream, VoiceTurnAdapter, type VoiceTurnAdapterPorts } from "./voice-turn-adapter";
 import type { TurnEffect, TurnOptions, TurnResult } from "./voice-turn";
 
 const listeningTurn: TurnOptions = { tag: "ASK", text: "What made you choose that route?", listen: true };
@@ -42,6 +42,16 @@ function speakingThenListening(h: ReturnType<typeof harness>) {
 }
 
 describe("VoiceTurnAdapter orchestration", () => {
+  it("stops and clears every shared clip-stream track on teardown", () => {
+    const first = { stop: vi.fn() };
+    const second = { stop: vi.fn() };
+    const ref: { current: { getTracks(): Array<{ stop(): void }> } | null } = { current: { getTracks: () => [first, second] } };
+    stopAndClearMediaStream(ref);
+    expect(first.stop).toHaveBeenCalledOnce();
+    expect(second.stop).toHaveBeenCalledOnce();
+    expect(ref.current).toBeNull();
+  });
+
   it("resolves a no-listen turn only after speech falls and the acknowledgement grace expires", async () => {
     const h = harness();
     const result = h.adapter.turn({ tag: "PRAISE", text: "Nicely handled.", listen: false });
@@ -218,5 +228,28 @@ describe("VoiceTurnAdapter orchestration", () => {
     h.adapter.disconnect(13.2);
     await expect(result).resolves.toMatchObject({ via: "aborted", abortReason: "disconnected", closedAt: 13.1 });
     expect(h.effects.filter((effect) => effect.type === "RESOLVE")).toHaveLength(1);
+  });
+
+  it("rejects a stale async tool completion from a superseded generation", async () => {
+    const h = harness();
+    const first = h.adapter.turn(listeningTurn);
+    const staleGeneration = h.adapter.currentGeneration();
+    const second = h.adapter.turn({ ...listeningTurn, text: "Replacement question" });
+    await expect(first).resolves.toMatchObject({ abortReason: "superseded" });
+
+    expect(h.adapter.dispatchForGeneration(staleGeneration, { type: "TOOL", at: 12, name: "log_answer", params: { stale: true } })).toBe(false);
+    expect(h.adapter.snapshot().close).toBeUndefined();
+    h.adapter.cancel("user", 13);
+    await expect(second).resolves.toMatchObject({ abortReason: "user" });
+  });
+
+  it("lets an explicit legacy authorization clear turn squelch", async () => {
+    const h = harness();
+    const result = h.adapter.turn(listeningTurn);
+    h.adapter.cancel("user", 11);
+    await result;
+    expect(h.adapter.isSquelched()).toBe(true);
+    h.adapter.authorizeLegacy();
+    expect(h.adapter.isSquelched()).toBe(false);
   });
 });

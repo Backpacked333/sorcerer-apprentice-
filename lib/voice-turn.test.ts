@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   gateState,
+  composedVoiceGateState,
   initialTurnState,
   reduce,
   type TurnEffect,
@@ -50,6 +51,16 @@ function finish(state: TurnState, at = 18) {
 }
 
 describe("gate", () => {
+  it("keeps legacy speech authorized after its estimated hold expires", () => {
+    expect(composedVoiceGateState({
+      turnPhase: "idle",
+      legacyAuthorized: true,
+      now: 20,
+      gateHoldUntil: 10,
+      micMuted: true,
+      squelch: false,
+    })).toBe(true);
+  });
   it("is closed at rest when the legacy microphone is muted", () => {
     expect(gateState({ turnActive: false, now: 10, gateHoldUntil: 0, micMuted: true, squelch: false })).toBe(false);
   });

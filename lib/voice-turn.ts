@@ -137,6 +137,13 @@ export function gateState({ turnActive, now, gateHoldUntil, micMuted, squelch }:
   return active || now < gateHoldUntil || !micMuted;
 }
 
+export function composedVoiceGateState(input: Omit<GateStateInput, "turnActive"> & { turnPhase: TurnPhase; legacyAuthorized: boolean }): boolean {
+  return gateState({
+    ...input,
+    turnActive: input.legacyAuthorized || input.turnPhase !== "idle",
+  });
+}
+
 export interface TurnTransition {
   state: TurnState;
   effects: TurnEffect[];

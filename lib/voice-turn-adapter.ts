@@ -9,6 +9,13 @@ export interface VoiceTurnAdapterPorts {
   onError?: (error: unknown) => void;
 }
 
+export function stopAndClearMediaStream(ref: { current: { getTracks(): ArrayLike<{ stop(): void }> } | null }): void {
+  const stream = ref.current;
+  ref.current = null;
+  if (!stream) return;
+  for (const track of Array.from(stream.getTracks())) track.stop();
+}
+
 export class VoiceTurnAdapter {
   private state: TurnState = initialTurnState;
   private readonly pending: Array<{ generation: number; resolve: (result: TurnResult) => void }> = [];
@@ -20,6 +27,7 @@ export class VoiceTurnAdapter {
   snapshot() { return this.state; }
   currentGeneration() { return this.generation; }
   isSquelched() { return this.squelched; }
+  authorizeLegacy() { this.squelched = false; }
 
   turn(options: TurnOptions): Promise<TurnResult> {
     const generation = ++this.generation;

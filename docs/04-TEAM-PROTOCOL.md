@@ -31,6 +31,7 @@ Each lane has its own doc (`docs/lanes/<lane>-*.md`) with the task list, accepta
 
 | Path | Owner | Notes |
 |---|---|---|
+| `lib/memory.ts`, `lib/memory.test.ts` | **C** | bounded application-owned memory, evidence validation and cancellable reasoning handoffs; Roy authorized this cross-lane integration |
 | `components/voice.tsx`, `lib/voice-turn.tool-evidence.test.ts`, `lib/voice-turn.tool-lifecycle.test.ts`, `lib/voice-turn.partial-speech.test.ts`, `lib/voice-retry-output.test.ts` | **A** | `VoiceApi` is a contract: additive only; client-tool evidence acknowledgment, lifecycle and retry playback regressions |
 | `agents/interviewer.md`, `agents/tutor.md`, `agents/tools.json` | **A** | C proposes tutor/debrief wording via issue or courtesy PR |
 | `scripts/create-agents.ts`, `app/api/scribe-token/`, `app/api/agent-token/`, `app/voice-check/` | **A** | |

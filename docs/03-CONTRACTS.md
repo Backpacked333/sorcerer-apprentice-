@@ -5,6 +5,22 @@
 
 Legend: **Owner** = the only lane that edits the defining file. **Consumers** = lanes that depend on it.
 
+### Application-owned working memory · Owner C · Consumers A, B, D
+
+`buildMemory(log, candidates?)` projects one session into at most 16 observable events,
+32 finalized expert transcript spans, 12 pending candidates and 12 question outcomes.
+It excludes redacted/off-record evidence (including overlapping speech) and never
+treats agent speech or `log_answer` summaries as expert quotations. The persisted
+session log remains authoritative; no provider conversation ID or hidden chat history is retained.
+
+`validateProposal(memory, output)` checks candidate identities, bounded questions and
+literal quote/source matches. Relationship claims always have `status: "proposed"`:
+quote membership proves provenance, **not entailment, policy or confirmation**.
+`MemoryFlight` serializes background calls, aborts on invalidation and accepts results
+only if the complete bounded input is still identical. Callers must invalidate on
+consent/pause/end and recheck prepared questions at dispatch. No cross-session retrieval.
+This foundation alone does not invoke models, persist a profile or authorize speech.
+
 ---
 
 ## 1. The Work Map — `lib/workmap.ts` · Owner **C** · Consumers A, B, D
